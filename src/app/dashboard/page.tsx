@@ -424,7 +424,9 @@ export default function DashboardPage() {
             <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em] opacity-80">Payment Collections</h3>
             <div className="bg-surface border-2 border-outline rounded-2xl shadow-hard p-4 flex-1">
               <div className="grid grid-cols-2 gap-3">
-                {Object.entries(metrics.paymentMethodsBreakdown).map(([method, data]: [string, any]) => {
+                {Object.entries(metrics.paymentMethodsBreakdown)
+                  .filter(([method]) => method.toLowerCase() !== "store credit" && method.toLowerCase() !== "credit")
+                  .map(([method, data]: [string, any]) => {
                   const totalAmt = Object.values(metrics.paymentMethodsBreakdown).reduce((sum: number, item: any) => sum + item.amount, 0);
                   const percentage = totalAmt > 0 ? (data.amount / totalAmt) * 100 : 0;
                   return (
@@ -755,7 +757,6 @@ export default function DashboardPage() {
                     </div>
                   </th>
                   <th className="px-6 py-3 text-right">Amount Paid</th>
-                  <th className="px-6 py-3 text-right">Outstanding</th>
                   <th
                     className="px-6 py-3 cursor-pointer hover:bg-neutral-800 transition-colors"
                     onClick={() => handleSort("method")}
@@ -779,7 +780,7 @@ export default function DashboardPage() {
               <tbody className="divide-y divide-outline-variant/30 text-xs font-bold text-on-surface">
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-8 py-16 text-center text-on-surface-variant font-bold uppercase tracking-widest opacity-40">
+                    <td colSpan={8} className="px-8 py-16 text-center text-on-surface-variant font-bold uppercase tracking-widest opacity-40">
                       <Receipt className="w-12 h-12 mx-auto mb-3" />
                       No sales records found.
                     </td>
@@ -812,9 +813,6 @@ export default function DashboardPage() {
                         <td className="px-6 py-3.5 text-right text-green-600 font-black">
                           {formatCurrency(order.amountPaid)}
                         </td>
-                        <td className={cn("px-6 py-3.5 text-right font-black", order.remainingAmount > 0 ? "text-error" : "text-on-surface-variant/40")}>
-                          {order.remainingAmount > 0 ? formatCurrency(order.remainingAmount) : "—"}
-                        </td>
                         <td className="px-6 py-3.5 uppercase text-[10px] tracking-wider">
                           <div className="flex items-center gap-1.5">
                             {getMethodIcon(order.paymentMethod || "Cash")}
@@ -830,11 +828,9 @@ export default function DashboardPage() {
                             "px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border",
                             order.status === "Paid"
                               ? "bg-green-500/10 text-green-600 border-green-500/20"
-                              : order.status === "Partially Paid"
-                                ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
-                                : "bg-red-500/10 text-red-600 border-red-500/20"
+                              : "bg-red-500/10 text-red-600 border-red-500/20"
                           )}>
-                            {order.status === "Paid" ? "Paid" : order.status === "Partially Paid" ? "Pending" : "Credit"}
+                            {order.status === "Paid" ? "Paid" : "Cancelled"}
                           </span>
                         </td>
                       </tr>
@@ -842,7 +838,7 @@ export default function DashboardPage() {
                       {/* Expandable Order Detail */}
                       {expandedOrder === order._id && (
                         <tr className="bg-surface-container-low/40">
-                          <td colSpan={9} className="px-6 py-4 border-b border-outline-variant/30">
+                          <td colSpan={8} className="px-6 py-4 border-b border-outline-variant/30">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs uppercase tracking-wider font-black">
                               {/* Left Side: Items */}
                               <div className="space-y-2">
@@ -874,18 +870,6 @@ export default function DashboardPage() {
                                 <div className="flex justify-between text-green-600 font-black">
                                   <span>Amount Paid:</span>
                                   <span>{formatCurrency(order.amountPaid)}</span>
-                                </div>
-                                {order.change > 0 && (
-                                  <div className="flex justify-between">
-                                    <span>Change Returned:</span>
-                                    <span>{formatCurrency(order.change)}</span>
-                                  </div>
-                                )}
-                                <div className="flex justify-between border-t border-dashed border-outline-variant pt-2 text-on-surface font-black text-xs">
-                                  <span>Outstanding balance:</span>
-                                  <span className={order.remainingAmount > 0 ? "text-error" : "text-green-600"}>
-                                    {formatCurrency(order.remainingAmount)}
-                                  </span>
                                 </div>
                               </div>
                             </div>

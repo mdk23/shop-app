@@ -94,7 +94,6 @@ export const remove = mutation({
 
     await ctx.db.patch(order._id, {
       amountPaid: newAmountPaid,
-      remainingAmount: newRemainingAmount,
       status: newStatus,
       splitPayments: updatedSplitPayments,
       paymentMethod: newMethod,
@@ -155,7 +154,6 @@ export const add = mutation({
 
     await ctx.db.patch(args.orderId, {
       amountPaid: newAmountPaid,
-      remainingAmount: newRemainingAmount,
       status: newStatus,
       splitPayments: updatedSplitPayments,
       paymentMethod: newMethod,
@@ -308,7 +306,6 @@ export const update = mutation({
 
     await ctx.db.patch(order._id, {
       amountPaid: newAmountPaid,
-      remainingAmount: newRemainingAmount,
       status: newStatus,
       splitPayments: updatedSplitPayments,
       paymentMethod: newMethod,

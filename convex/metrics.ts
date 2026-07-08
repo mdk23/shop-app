@@ -329,8 +329,8 @@ export async function recordOrderMetrics(
   // 3. Compile Deltas
   const deltas: MetricDeltas = {
     grossRevenue: order.total * sign,
-    cashCollected: Math.max(0, order.total - order.remainingAmount) * sign,
-    outstandingDebt: order.remainingAmount * sign,
+    cashCollected: order.amountPaid * sign,
+    outstandingDebt: 0,
 
     deliveryRevenue: (order.deliveryFeeAmount || 0) * sign,
     orderCount: 1 * sign,

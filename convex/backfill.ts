@@ -176,8 +176,8 @@ export const runAnalyticsBackfill = mutation({
 
       for (const o of dayOrders) {
         grossRevenue += o.total;
-        cashCollected += Math.max(0, o.total - o.remainingAmount);
-        outstandingDebt += o.remainingAmount;
+        cashCollected += o.amountPaid;
+        outstandingDebt += 0;
         deliveryRevenue += o.deliveryFeeAmount || 0;
         orderCount += 1;
         
@@ -323,11 +323,25 @@ export const removeDebtFields = mutation({
       }
     }
 
-    // Remove previousDebt, debtSettled, storeCreditAdded from orders
+    // Remove previousDebt, debtSettled, storeCreditAdded, change, remainingAmount from orders
     const orders = await ctx.db.query("orders").collect();
     for (const o of orders) {
-      if ((o as any).previousDebt !== undefined || (o as any).debtSettled !== undefined || (o as any).storeCreditAdded !== undefined) {
-        await ctx.db.patch(o._id, { previousDebt: undefined, debtSettled: undefined, storeCreditAdded: undefined } as any);
+      if (
+        (o as any).previousDebt !== undefined ||
+        (o as any).debtSettled !== undefined ||
+        (o as any).storeCreditAdded !== undefined ||
+        (o as any).change !== undefined ||
+        (o as any).remainingAmount !== undefined ||
+        (o as any).saveChangeAsCredit !== undefined
+      ) {
+        await ctx.db.patch(o._id, {
+          previousDebt: undefined,
+          debtSettled: undefined,
+          storeCreditAdded: undefined,
+          change: undefined,
+          remainingAmount: undefined,
+          saveChangeAsCredit: undefined,
+        } as any);
       }
     }
   },

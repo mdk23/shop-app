@@ -27,7 +27,6 @@ export const create = mutation({
     customerId: v.id("customers"),
     paymentMethod: v.string(),
     amountPaid: v.number(),
-    change: v.number(),
     // Auth & Caixa integration (optional for backward compat)
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
@@ -256,8 +255,6 @@ export const create = mutation({
       throw new Error(`Insufficient payment. All orders must be paid in full (Total: ${args.total}, Provided: ${args.amountPaid}).`);
     }
 
-    const changeReturned = args.amountPaid - args.total;
-
     // 6. Calculate Sale Status
     const status = "Paid";
 
@@ -267,8 +264,6 @@ export const create = mutation({
       status,
       paymentMethod: args.paymentMethod,
       amountPaid: args.amountPaid,
-      remainingAmount: Math.max(0, args.total - args.amountPaid),
-      change: changeReturned,
       customerId: args.customerId,
       createdAt: now,
       orderCode,
@@ -285,21 +280,10 @@ export const create = mutation({
       itemSummary: itemSummary,
     });
     
-    // 8.5 Deduct stock and write to movements ledger
-    for (const [ingId, needed] of ingredientUsage.entries()) {
-      await ctx.runMutation(internal.inventory.mutateStock, {
-        itemId: ingId,
-        quantity: -needed,
-        movementType: "sale_consumption",
-        referenceType: "order",
-        referenceId: orderId,
-        userId: userId,
-        username: username,
-        notes: `POS sale checkout for Order ${orderCode}`,
-      });
-    }
-    
-    // 9. Record initial payment(s) if amount > 0
+    // Note: Stock deduction is deferred to the updatePrepStatus mutation when KDS marks the order as "completed"
+    // 9. Record payment(s) if amount > 0
+    const changeReturned = args.amountPaid - args.total;
+
     if (args.splitPayments && args.splitPayments.length > 0) {
       let changeRemaining = changeReturned;
       let paymentsToRecord = args.splitPayments.map(p => ({ ...p }));
@@ -335,7 +319,7 @@ export const create = mutation({
       await ctx.db.insert("payments", {
         orderId,
         method: args.paymentMethod,
-        amount: args.total,
+        amount: args.amountPaid - changeReturned,
         createdAt: now,
       });
     }
@@ -692,6 +676,105 @@ export const updatePrepStatus = mutation({
   handler: async (ctx, args) => {
     const order = await ctx.db.get(args.orderId);
     if (!order) throw new Error("Order not found");
+    
+    // Prevent double deduction if already completed
+    if (args.status === "completed" && order.prepStatus !== "completed") {
+      const items = await ctx.db
+        .query("orderItems")
+        .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
+        .collect();
+        
+      const ingredientUsage: Map<Id<"ingredients">, number> = new Map();
+      const addUsage = (id: Id<"ingredients">, qty: number) => {
+        const current = ingredientUsage.get(id) || 0;
+        ingredientUsage.set(id, current + qty);
+      };
+
+      const allIngredients = await ctx.db.query("ingredients").collect();
+      const eggsIngredient = allIngredients.find(i => 
+        i.name.toLowerCase() === "ovos" || 
+        i.name.toLowerCase() === "eggs" ||
+        i.name.toLowerCase() === "eggs (pcs)"
+      );
+
+      for (const item of items) {
+        const dish = await ctx.db.get(item.dishId);
+        if (!dish) continue;
+
+        // A. Packaging Deduction
+        if (dish.isCombo) {
+          if (dish.comboPackaging && dish.comboPackaging.length > 0) {
+            for (const pack of dish.comboPackaging) {
+              addUsage(pack.ingredientId, pack.quantity * item.quantity);
+            }
+          } else if (dish.comboPackagingIngredientId && dish.comboPackagingQuantity) {
+            addUsage(dish.comboPackagingIngredientId, dish.comboPackagingQuantity * item.quantity);
+          }
+        } else {
+          if (dish.standalonePackaging && dish.standalonePackaging.length > 0) {
+            for (const pack of dish.standalonePackaging) {
+              addUsage(pack.ingredientId, pack.quantity * item.quantity);
+            }
+          } else if (dish.standalonePackagingIngredientId && dish.standalonePackagingQuantity) {
+            addUsage(dish.standalonePackagingIngredientId, dish.standalonePackagingQuantity * item.quantity);
+          }
+        }
+
+        // B. Raw Ingredients Deduction
+        const name = dish.name.toLowerCase();
+        const isEggDish = name.includes("ovo ") || name === "ovo" || name.includes("egg");
+
+        if (!dish.isCombo) {
+          if (isEggDish && eggsIngredient) {
+            addUsage(eggsIngredient._id, item.quantity);
+          } else {
+            const dishIngredients = await ctx.db
+              .query("dishIngredients")
+              .withIndex("by_dish", (q) => q.eq("dishId", item.dishId))
+              .collect();
+            for (const di of dishIngredients) {
+              addUsage(di.ingredientId, di.quantity * item.quantity);
+            }
+          }
+        }
+
+        // C. Combo Selections Deduction
+        if (item.comboSelections) {
+          for (const comboItem of item.comboSelections) {
+            if (comboItem.dishId) {
+              const selectedDish = await ctx.db.get(comboItem.dishId as Id<"dishes">);
+              if (!selectedDish) continue;
+
+              const comboDishIngredients = await ctx.db
+                .query("dishIngredients")
+                .withIndex("by_dish", (q) => q.eq("dishId", comboItem.dishId as Id<"dishes">))
+                .collect();
+              
+              for (const di of comboDishIngredients) {
+                const ing = await ctx.db.get(di.ingredientId);
+                if (ing?.category === "Packaging") continue;
+                addUsage(di.ingredientId, di.quantity * item.quantity);
+              }
+            }
+          }
+        }
+      }
+
+      // Perform stock deduction
+      for (const [ingId, needed] of ingredientUsage.entries()) {
+        await ctx.runMutation(internal.inventory.mutateStock, {
+          itemId: ingId,
+          quantity: -needed,
+          movementType: "sale_consumption",
+          referenceType: "order",
+          referenceId: order._id,
+          userId: order.userId,
+          username: order.username,
+          notes: `KDS Completion for Order ${order.orderCode ?? order._id.slice(-6)}`,
+        });
+      }
+    }
+
     await ctx.db.patch(args.orderId, { prepStatus: args.status });
   },
 });

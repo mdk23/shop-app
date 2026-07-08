@@ -74,8 +74,6 @@ export default defineSchema({
     status: v.string(), // Paid, Partially Paid, Pending
     paymentMethod: v.optional(v.string()), // POS, M-Pesa, etc.
     amountPaid: v.number(),
-    remainingAmount: v.number(),
-    change: v.number(),
     customerId: v.id("customers"),
     createdAt: v.number(),
     orderCode: v.optional(v.string()),

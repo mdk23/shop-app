@@ -246,7 +246,6 @@ export default function SalesPage() {
       return {
         totalSales: 0,
         totalCollected: 0,
-        totalDebt: 0,
         count: 0,
         paymentData: [],
         topDishes: [],
@@ -270,7 +269,6 @@ export default function SalesPage() {
       }
       return acc + o.amountPaid;
     }, 0);
-    const totalDebt = activeOrders.reduce((acc, o) => acc + o.remainingAmount, 0);
 
     // Payment methods map
     const paymentMap: Record<string, number> = {};
@@ -342,7 +340,6 @@ export default function SalesPage() {
     return {
       totalSales,
       totalCollected,
-      totalDebt,
       count: activeOrders.length,
       paymentData,
       topDishes,
@@ -427,7 +424,6 @@ export default function SalesPage() {
       "Status",
       "Gross Total",
       "Amount Paid",
-      "Remaining Debt",
     ];
 
     const rows = filteredOrders.map((o) => {
@@ -459,7 +455,6 @@ export default function SalesPage() {
         o.status,
         o.total.toFixed(2),
         o.amountPaid.toFixed(2),
-        o.remainingAmount.toFixed(2),
       ];
     });
 
@@ -513,8 +508,8 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Top KPI Cards (4 columns grid) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Top KPI Cards (3 columns grid) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Gross Sales (with Order count at bottom) */}
           <motion.div
             initial={{ opacity: 0, y: 15 }}
@@ -555,25 +550,7 @@ export default function SalesPage() {
             </p>
           </motion.div>
 
-          {/* Pending Debt */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-surface border-2 border-outline p-6 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all"
-          >
-            <div>
-              <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-[0.2em] mb-2 opacity-80">
-                Pending Debt
-              </p>
-              <p className={cn("text-3xl font-display leading-none tracking-tight", metrics.totalDebt > 0 ? "text-error" : "text-on-surface")}>
-                {formatCurrency(metrics.totalDebt)}
-              </p>
-            </div>
-            <p className="text-[9px] font-bold text-on-surface-variant/60 mt-5 uppercase tracking-wider flex items-center gap-1">
-              <AlertCircle className="w-3.5 h-3.5 text-error" /> Outstanding Customer Balances
-            </p>
-          </motion.div>
+
 
           {/* Average Order Value */}
           <motion.div
@@ -1055,6 +1032,16 @@ export default function SalesPage() {
                       {renderSortIcon("client")}
                     </div>
                   </th>
+                  <th className="px-6 py-4 hide-on-mobile w-[10%]">Kitchen</th>
+                  <th 
+                    className="px-6 py-4 hide-on-mobile cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
+                    onClick={() => handleSort("delivery")}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Delivery</span>
+                      {renderSortIcon("delivery")}
+                    </div>
+                  </th>
                   <th 
                     className="px-6 py-4 hide-on-mobile cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
                     onClick={() => handleSort("method")}
@@ -1071,15 +1058,6 @@ export default function SalesPage() {
                     <div className="flex items-center gap-1">
                       <span>Payment</span>
                       {renderSortIcon("status")}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 hide-on-mobile cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
-                    onClick={() => handleSort("delivery")}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>Delivery</span>
-                      {renderSortIcon("delivery")}
                     </div>
                   </th>
                   <th className="px-6 py-4 text-right w-[10%]">Total Price</th>
@@ -1106,7 +1084,7 @@ export default function SalesPage() {
                               {order.orderCode ?? `#${order._id.slice(-6).toUpperCase()}`}
                             </p>
                             <p className="text-[9px] font-black text-on-surface-variant flex items-center gap-1 uppercase tracking-tighter opacity-60">
-                              <Clock className="w-3 h-3" /> {format(order.createdAt, "HH:mm")}
+                              <Clock className="w-3 h-3" /> {format(order.createdAt, "dd/MM/yyyy HH:mm")}
                             </p>
                           </div>
                         </div>
@@ -1127,6 +1105,27 @@ export default function SalesPage() {
                             )}
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 hide-on-mobile">
+                        <span className={cn(
+                          "inline-flex items-center px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border",
+                          order.prepStatus === "completed" ? "bg-success/10 text-success border-success/20" :
+                          order.prepStatus === "ready" ? "bg-primary/10 text-primary border-primary/20" :
+                          order.prepStatus === "preparing" ? "bg-warning/10 text-warning-dark border-warning/20" :
+                          "bg-surface-container-high text-on-surface-variant border-outline-variant"
+                        )}>
+                          {order.prepStatus || "pending"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 hide-on-mobile">
+                        <span className={cn(
+                          "inline-flex items-center px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border",
+                          order.orderType === "delivery"
+                            ? "bg-primary/10 text-primary border-primary/20"
+                            : "bg-surface-container-high text-on-surface-variant border-outline-variant"
+                        )}>
+                          {order.orderType === "delivery" ? "Delivery" : "Pickup"}
+                        </span>
                       </td>
                       <td className="px-6 py-4 hide-on-mobile">
                         {order.payments && order.payments.length > 0 ? (
@@ -1155,25 +1154,10 @@ export default function SalesPage() {
                           {order.status}
                         </div>
                       </td>
-                      <td className="px-6 py-4 hide-on-mobile">
-                        <span className={cn(
-                          "inline-flex items-center px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border",
-                          order.orderType === "delivery"
-                            ? "bg-primary/10 text-primary border-primary/20"
-                            : "bg-surface-container-high text-on-surface-variant border-outline-variant"
-                        )}>
-                          {order.orderType === "delivery" ? "Delivery" : "Pickup"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
                         <p className="font-display text-base lg:text-xl text-primary tracking-tighter">
                           {formatCurrency(order.total)}
                         </p>
-                        {order.remainingAmount > 0 && (
-                          <p className="text-[9px] font-black text-error uppercase tracking-tighter">
-                            Debt: {formatCurrency(order.remainingAmount)}
-                          </p>
-                        )}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -1299,12 +1283,6 @@ export default function SalesPage() {
                                         <span>Amount Paid</span>
                                         <span>{formatCurrency(order.amountPaid)}</span>
                                       </div>
-                                      {order.change > 0 && (
-                                        <div className="flex justify-between text-on-surface-variant/75">
-                                          <span>Change Returned</span>
-                                          <span>{formatCurrency(order.change)}</span>
-                                        </div>
-                                      )}
                                       {order.username && (
                                         <div className="flex justify-between text-on-surface-variant/75 pt-1.5 border-t border-dashed border-outline-variant">
                                           <span>Registered By</span>
@@ -1312,14 +1290,6 @@ export default function SalesPage() {
                                         </div>
                                       )}
                                     </div>
-                                  </div>
-                                  <div className="pt-3 border-t border-outline-variant mt-4 flex justify-between font-display text-xl">
-                                    <span className="uppercase tracking-tighter">
-                                      {order.remainingAmount > 0 ? "Outstanding" : "Balance"}
-                                    </span>
-                                    <span className={order.remainingAmount > 0 ? "text-error" : "text-green-500"}>
-                                      {formatCurrency(order.remainingAmount)}
-                                    </span>
                                   </div>
                                   <button
                                     onClick={() => setOrderToManagePayments(order)}

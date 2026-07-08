@@ -56,7 +56,6 @@ export const getDashboardMetrics = query({
       "eMola": { amount: 0, count: 0 },
       "BIM": { amount: 0, count: 0 },
       "Moza": { amount: 0, count: 0 },
-      "Store Credit": { amount: 0, count: 0 },
     };
 
     const productSalesMap: Record<string, number> = {};
@@ -84,6 +83,8 @@ export const getDashboardMetrics = query({
 
       if (m.paymentMethods) {
         for (const [method, info] of Object.entries(m.paymentMethods)) {
+          if (method.toLowerCase() === "store credit" || method.toLowerCase() === "credit") continue;
+          
           if (methodsBreakdown[method]) {
             methodsBreakdown[method].amount += (info as any).amount;
             methodsBreakdown[method].count += (info as any).count;

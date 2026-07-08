@@ -197,7 +197,7 @@ export function ThermalReceiptModal({ order, onClose, isKitchenTicket = false }:
   const discount = order.discount || 0;
 
   const paidAmount = order.amountPaid ?? (status === 'Paid' || status === 'paid' ? total : 0);
-  const remainingBalance = order.remainingAmount ?? Math.max(0, total - paidAmount);
+  const remainingBalance = Math.max(0, total - paidAmount);
 
   const handlePrint = () => {
     window.print();
