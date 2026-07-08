@@ -211,7 +211,7 @@ export function ThermalReceiptModal({ order, onClose, isKitchenTicket = false }:
 
           {/* Soft background striping layout of genuine POS ticket */}
           <div className="text-center pb-2 border-b border-dashed border-gray-300">
-            <h4 className="font-mono font-black text-base text-black tracking-widest uppercase mt-1">OLYMPIA CHICKEN</h4>
+            <h4 className="font-mono font-black text-base text-black tracking-widest uppercase mt-1">TAKE AWAY</h4>
             <p className="text-[9px] text-gray-400 font-bold tracking-widest mt-0.5 uppercase mb-2">
               {isKitchen ? "TALAO DE COZINHA" : "Comprovativo do Cliente"}
             </p>

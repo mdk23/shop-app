@@ -36,8 +36,7 @@ export const getDashboardMetrics = query({
     let grossRevenue = 0;
     let cashCollected = 0;
     let outstandingDebt = 0;
-    let debtSettled = 0;
-    let storeCreditAdded = 0;
+
     let deliveryRevenue = 0;
     let orderCount = 0;
     let deliveryOrdersCount = 0;
@@ -57,7 +56,6 @@ export const getDashboardMetrics = query({
       "eMola": { amount: 0, count: 0 },
       "BIM": { amount: 0, count: 0 },
       "Moza": { amount: 0, count: 0 },
-      "Bitcoin": { amount: 0, count: 0 },
       "Store Credit": { amount: 0, count: 0 },
     };
 
@@ -68,8 +66,7 @@ export const getDashboardMetrics = query({
       grossRevenue += m.grossRevenue;
       cashCollected += m.cashCollected;
       outstandingDebt += m.outstandingDebt;
-      debtSettled += m.debtSettled;
-      storeCreditAdded += m.storeCreditAdded;
+
       deliveryRevenue += m.deliveryRevenue;
       orderCount += m.orderCount;
       deliveryOrdersCount += m.deliveryOrdersCount;

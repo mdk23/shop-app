@@ -51,7 +51,6 @@ export const seed = mutation({
       name: "1/4 Roasted Chicken",
       price: 12.50,
       category: "Chicken",
-      imageUrl: "https://images.unsplash.com/photo-1598103442097-8b74394b95c6?auto=format&fit=crop&q=80&w=400",
       isActive: true,
       description: "Our signature roasted quarter chicken, perfectly seasoned and cooked to perfection.",
     });
@@ -60,7 +59,6 @@ export const seed = mutation({
       name: "1/2 Roasted Chicken",
       price: 18.90,
       category: "Chicken",
-      imageUrl: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&q=80&w=400",
       isActive: true,
       description: "A hearty half chicken, ideal for sharing or a big appetite.",
     });
@@ -69,7 +67,6 @@ export const seed = mutation({
       name: "Chicken & Rice Box",
       price: 14.50,
       category: "Chicken",
-      imageUrl: "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&q=80&w=400",
       isActive: true,
       description: "Tender chicken pieces served over a bed of fragrant basmati rice.",
     });
@@ -78,7 +75,6 @@ export const seed = mutation({
       name: "Soft Drink",
       price: 2.50,
       category: "Drinks",
-      imageUrl: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&q=80&w=400",
       isActive: true,
       description: "A refreshing cold beverage.",
     });

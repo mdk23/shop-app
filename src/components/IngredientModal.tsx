@@ -122,9 +122,7 @@ export function IngredientModal({ isOpen, onClose, initialData }: IngredientModa
                 <option value="Food">Food</option>
                 <option value="Packaging">Packaging</option>
                 <option value="Drinks">Drinks</option>
-                <option value="Sauces">Sauces</option>
-                <option value="Factory">Factory</option>
-                <option value="Supplies">Supplies</option>
+                <option value="Kitchen">Kitchen</option>
               </select>
             </div>
 

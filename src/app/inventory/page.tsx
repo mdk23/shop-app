@@ -166,7 +166,7 @@ export default function InventoryPage() {
           </div>
 
           <div className="px-6 py-4 border-b border-outline-variant bg-surface-container-low/30 overflow-x-auto flex items-center gap-2">
-            {["All", "Food", "Packaging", "Drinks", "Sauces", "Factory", "Supplies"].map((cat) => (
+            {["All", "Food", "Packaging", "Drinks", "Kitchen"].map((cat) => (
               <button
                 key={cat}
                 onClick={() => {

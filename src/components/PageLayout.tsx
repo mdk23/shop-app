@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { Clock } from "./Clock";
 import { SidebarProvider, useSidebar } from "./SidebarContext";
 import { Menu, ChevronDown, LogOut, User } from "lucide-react";
-import { ThemeToggle } from "./ThemeToggle";
+
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useRef, useEffect } from "react";
@@ -118,7 +118,7 @@ function LayoutContent({
               <Menu className="w-6 h-6" />
             </button>
             <h2 className="text-xl lg:text-3xl font-display text-on-surface truncate max-w-[150px] sm:max-w-none uppercase tracking-tighter">
-              Olympia Chicken
+              Take Away
             </h2>
           </div>
 
@@ -131,7 +131,7 @@ function LayoutContent({
             <div className="hidden sm:block">
               <Clock />
             </div>
-            <ThemeToggle />
+
             <div className="hidden sm:block h-12 w-[2px] bg-outline opacity-20" />
             <UserProfileMenu />
           </div>

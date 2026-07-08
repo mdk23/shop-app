@@ -10,44 +10,16 @@ async function calculateCustomerFinancials(db: DatabaseReader, customerId: Id<"c
     .collect();
 
   const totalPurchases = orders.reduce((sum, o) => sum + o.total, 0);
-
   const totalPaid = orders.reduce((sum, o) => sum + (o.amountPaid || 0), 0);
-  const balance = totalPaid - totalPurchases;
 
   return {
     totalPurchases,
     totalPaid,
-    balance,
     orderCount: orders.length,
   };
 }
 
-export const recalculateBalance = internalMutation({
-  args: { customerId: v.id("customers") },
-  handler: async (ctx, args) => {
-    const customer = await ctx.db.get(args.customerId);
-    if (!customer) return;
 
-    if (customer.isGeneric) {
-      if (customer.storeCreditBalance !== 0) {
-        await ctx.db.patch(args.customerId, {
-          storeCreditBalance: 0,
-        });
-      }
-      return 0;
-    }
-
-    const { balance } = await calculateCustomerFinancials(ctx.db, args.customerId);
-
-    if (customer.storeCreditBalance !== balance) {
-      await ctx.db.patch(args.customerId, {
-        storeCreditBalance: balance,
-      });
-    }
-    
-    return balance;
-  },
-});
 
 export const list = query({
   args: {},
@@ -109,7 +81,6 @@ export const create = mutation({
       phone1: args.phone1,
       phone2: args.phone2,
       phone3: args.phone3,
-      storeCreditBalance: 0,
       isGeneric: args.isGeneric ?? false,
       status: "active",
     });
@@ -129,7 +100,6 @@ export const getOrCreateGeneric = mutation({
     return await ctx.db.insert("customers", {
       name: "Generic Client",
       phone1: "000000000",
-      storeCreditBalance: 0,
       isGeneric: true,
     });
   },
@@ -147,25 +117,18 @@ export const getById = query({
         stats: {
           totalPurchases: 0,
           totalPaid: 0,
-          debt: 0,
-          credit: 0,
-          balance: 0,
           orderCount: 0,
         }
       };
     }
 
     const stats = await calculateCustomerFinancials(ctx.db, args.id);
-    const balance = stats.balance;
 
     return {
       ...customer,
       stats: {
         totalPurchases: stats.totalPurchases,
         totalPaid: stats.totalPaid,
-        debt: balance < 0 ? Math.abs(balance) : 0,
-        credit: balance > 0 ? balance : 0,
-        balance,
         orderCount: stats.orderCount,
       }
     };
@@ -193,9 +156,6 @@ export const remove = mutation({
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found");
     if (customer.isGeneric) throw new Error("Cannot delete generic client");
-    if (customer.storeCreditBalance !== 0) {
-      throw new Error("Cannot delete a client with an outstanding balance. Please settle debts or clear credits first.");
-    }
     
     // Fetch or create the Generic Client to reassign orders
     let generic = await ctx.db
@@ -207,7 +167,6 @@ export const remove = mutation({
       const newGenericId = await ctx.db.insert("customers", {
         name: "Generic Client",
         phone1: "000000000",
-        storeCreditBalance: 0,
         isGeneric: true,
       });
       generic = await ctx.db.get(newGenericId);
@@ -237,9 +196,6 @@ export const archive = mutation({
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found");
     if (customer.isGeneric) throw new Error("Cannot archive generic client");
-    if (customer.storeCreditBalance !== 0) {
-      throw new Error("Cannot archive a client with an outstanding balance. Please settle debts or clear credits first.");
-    }
     
     await ctx.db.patch(args.id, {
       status: "archived",

@@ -9,8 +9,7 @@ export default defineSchema({
   dishes: defineTable({
     name: v.string(),
     price: v.number(),
-    category: v.string(), // Chicken, Drinks, Sides, Oly Bar, Sweets
-    imageUrl: v.optional(v.string()),
+    category: v.string(), // Chicken, Drinks, Sides, Combos, Extras
     isActive: v.optional(v.boolean()),
     description: v.optional(v.string()),
     options: v.optional(v.any()), // JSON for flexible options
@@ -46,7 +45,7 @@ export default defineSchema({
 
   ingredients: defineTable({
     name: v.string(),
-    category: v.string(), // Food, Packaging, Drinks, Sauces, Factory, Supplies
+    category: v.string(), // Food, Packaging, Drinks, Kitchen
     stockQuantity: v.number(),
     unit: v.string(), // kg, ml, pcs
     lowStockThreshold: v.number(),
@@ -64,7 +63,6 @@ export default defineSchema({
     phone1: v.string(),
     phone2: v.optional(v.string()),
     phone3: v.optional(v.string()),
-    storeCreditBalance: v.number(), // Negative means debt, Positive means store credit
     isGeneric: v.optional(v.boolean()),
     status: v.optional(v.union(v.literal("active"), v.literal("archived"))),
   }).index("by_phone1", ["phone1"])
@@ -80,10 +78,8 @@ export default defineSchema({
     change: v.number(),
     customerId: v.id("customers"),
     createdAt: v.number(),
-    previousDebt: v.optional(v.number()),
-    debtSettled: v.optional(v.number()),
-    storeCreditAdded: v.optional(v.number()),
     orderCode: v.optional(v.string()),
+    prepStatus: v.optional(v.union(v.literal("pending"), v.literal("preparing"), v.literal("ready"), v.literal("completed"))),
     // Auth fields
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
@@ -332,8 +328,7 @@ export default defineSchema({
     grossRevenue: v.number(),
     cashCollected: v.number(),
     outstandingDebt: v.number(),
-    debtSettled: v.number(),
-    storeCreditAdded: v.number(),
+
     deliveryRevenue: v.number(),
     
     // Counts

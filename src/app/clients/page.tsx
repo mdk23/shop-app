@@ -53,14 +53,7 @@ export default function ClientsPage() {
   const handleArchive = (e: React.MouseEvent, customer: any) => {
     e.stopPropagation();
 
-    if (customer.storeCreditBalance !== 0) {
-      toast.error("Action Blocked", {
-        description: "Cannot archive a client with an outstanding balance. Please settle debts or clear credits first.",
-        duration: 6000,
-      });
-      return;
-    }
-    
+
     toast.warning(`Archive client ${customer.name}?`, {
       description: "Client will be hidden from the active list, but order history will be preserved.",
       action: {
@@ -152,8 +145,6 @@ export default function ClientsPage() {
                 <tr className="bg-surface-container-highest text-on-surface">
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] border-b-4 border-outline">Client Name</th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] border-b-4 border-outline">Contact Information</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] border-b-4 border-outline">Balance Summary</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] border-b-4 border-outline">Status</th>
                   <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-right border-b-4 border-outline">Actions</th>
                 </tr>
               </thead>
@@ -199,45 +190,7 @@ export default function ClientsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-10 h-10 rounded border-2 border-outline flex items-center justify-center",
-                          customer.storeCreditBalance < 0 ? "bg-error text-on-error" : 
-                          customer.storeCreditBalance > 0 ? "bg-green-700 text-white" : 
-                          "bg-surface-container-high text-on-surface-variant"
-                        )}>
-                          <Wallet className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className={cn(
-                            "text-2xl font-display",
-                            customer.storeCreditBalance < 0 ? "text-error" : 
-                            customer.storeCreditBalance > 0 ? "text-green-700" : 
-                            "text-on-surface-variant"
-                          )}>
-                            {formatCurrency(Math.abs(customer.storeCreditBalance))}
-                          </p>
-                          <p className="text-[10px] font-black uppercase tracking-[0.1em] opacity-40">
-                            {customer.storeCreditBalance < 0 ? "Outstanding Debt" : 
-                             customer.storeCreditBalance > 0 ? "Account Credit" : "Balanced"}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-6">
-                      <div className={cn(
-                        "inline-flex items-center gap-2 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border-2",
-                        customer.storeCreditBalance < 0 ? "bg-error/10 border-error text-error" : 
-                        customer.storeCreditBalance > 0 ? "bg-green-700/10 border-green-700 text-green-700" : 
-                        "bg-surface-container-low border-outline/10 text-on-surface-variant opacity-60"
-                      )}>
-                        {customer.storeCreditBalance < 0 ? <ArrowUpRight className="w-4 h-4" /> : 
-                         customer.storeCreditBalance > 0 ? <ArrowDownRight className="w-4 h-4" /> : null}
-                        {customer.storeCreditBalance < 0 ? "Unpaid" : 
-                         customer.storeCreditBalance > 0 ? "Credit" : "Clean"}
-                      </div>
-                    </td>
+
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -284,7 +237,7 @@ export default function ClientsPage() {
                 ))}
                 {displayCustomers.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-8 py-20 text-center opacity-20">
+                    <td colSpan={3} className="px-8 py-20 text-center opacity-20">
                       <Users className="w-20 h-20 mx-auto mb-4" />
                       <p className="font-display text-2xl uppercase">No clients found</p>
                     </td>

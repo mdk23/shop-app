@@ -21,7 +21,7 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("chicken");
-  const [imageUrl, setImageUrl] = useState("");
+
   const [isActive, setIsActive] = useState(true);
   const [description, setDescription] = useState("");
 
@@ -46,7 +46,7 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
       setName(initialData.name);
       setPrice(initialData.price.toString());
       setCategory(initialData.category);
-      setImageUrl(initialData.imageUrl || "");
+
       setIsActive(initialData.isActive ?? true);
       setDescription(initialData.description || "");
 
@@ -101,7 +101,7 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
       setName("");
       setPrice("");
       setCategory("chicken");
-      setImageUrl("");
+
       setIsActive(true);
       setDescription("");
       setIsCombo(false);
@@ -129,7 +129,7 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
       name,
       price: parseFloat(price),
       category,
-      imageUrl: imageUrl || undefined,
+
       isActive,
       description: description || undefined,
       ingredients: recipe,
@@ -292,10 +292,6 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
                     <option value="Sides">Sides</option>
                     <option value="Pizza">Pizza</option>
                     <option value="Combos">Combos</option>
-                    <option value="Brunch">Brunch</option>
-                    <option value="Oly Bar">Oly Bar</option>
-                    <option value="Sweets">Sweets</option>
-                    <option value="Hot Drinks">Hot Drinks</option>
                     <option value="Cold Drinks">Cold Drinks</option>
                     <option value="Extras">Extras</option>
                   </select>
@@ -316,16 +312,7 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
                   </label>
                 </div>
 
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Image URL (Optional)</label>
-                  <input
-                    type="url"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    className="w-full bg-surface-container-low border-2 border-outline rounded-lg px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-[2px_2px_0px_0px_var(--shadow-color)]"
-                    placeholder="https://images.unsplash.com/..."
-                  />
-                </div>
+
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Description (Optional)</label>
                   <textarea

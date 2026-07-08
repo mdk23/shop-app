@@ -99,22 +99,7 @@ export function CustomerSelect({ selectedCustomerId, onSelect }: CustomerSelectP
           </p>
         </div>
         
-        {selectedCustomer?.stats && !selectedCustomer.isGeneric && (
-          <div className="text-right shrink-0">
-            <p className={cn(
-              "text-xs font-black uppercase tracking-wider",
-              selectedCustomer.stats.balance < 0 ? "text-error" : "text-success"
-            )}>
-              {selectedCustomer.stats.balance < 0 ? "Debt" : "Credit"}
-            </p>
-            <p className={cn(
-              "text-sm font-black",
-              selectedCustomer.stats.balance < 0 ? "text-error" : "text-success"
-            )}>
-              {formatCurrency(Math.abs(selectedCustomer.stats.balance))}
-            </p>
-          </div>
-        )}
+
         <Search className="w-5 h-5 text-on-surface-variant ml-2" />
       </div>
 
@@ -176,24 +161,6 @@ export function CustomerSelect({ selectedCustomerId, onSelect }: CustomerSelectP
                         {customer.phone1}
                       </p>
                     </div>
-                    {!customer.isGeneric && (
-                      <div className="text-right shrink-0">
-                        <p className={cn(
-                          "text-[10px] font-black uppercase tracking-wider",
-                          customer.storeCreditBalance < 0 
-                            ? (selectedCustomerId === customer._id ? "text-white" : "text-error")
-                            : (selectedCustomerId === customer._id ? "text-white" : "text-success")
-                        )}>
-                          {customer.storeCreditBalance < 0 ? "Debt" : "Credit"}
-                        </p>
-                        <p className={cn(
-                          "text-xs font-black",
-                          selectedCustomerId === customer._id ? "text-on-primary" : "text-on-surface"
-                        )}>
-                          {formatCurrency(Math.abs(customer.storeCreditBalance))}
-                        </p>
-                      </div>
-                    )}
                     {selectedCustomerId === customer._id && <Check className="w-4 h-4 ml-2" />}
                   </button>
                 ))

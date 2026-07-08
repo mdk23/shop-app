@@ -1,12 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-be-vietnam), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-anton), sans-serif;
+  --font-sans: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-plus-jakarta-sans), sans-serif;
   --breakpoint-xs: 480px;
   --breakpoint-3xl: 1920px;
 
-  /* Olympia Dynamic Colors - Responsive to Dark Mode */
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
   --color-primary-container: var(--primary-container);
@@ -37,96 +36,45 @@
 
   /* Border Radii */
   --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
+  --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-xl: 1.5rem;
 }
 
 :root {
-  /* Light Mode - Refined Editorial Red & Soft Paper Surfaces */
-  --primary: #c41e21; /* Refined Brand Red */
-  --on-primary: #faf9f7; /* Soft Off-White */
-  --primary-container: #fce8e8; /* Subtle Red Container */
-  --on-primary-container: #620a0b; /* Deep Dark Red Text */
+  /* GustoFlow Light Theme - Vibrant Orange & Soft Blue Neutrals */
+  --primary: #9d4300;
+  --on-primary: #ffffff;
+  --primary-container: #f97316;
+  --on-primary-container: #582200;
 
-  --secondary: #a0181a; /* Deep Brand Crimson Hover */
-  --secondary-container: #fdf2f2; /* Light secondary container */
+  --secondary: #565e74;
+  --secondary-container: #dae2fd;
 
-  --background: #faf9f7; /* Soft Paper Background */
-  --foreground: #111111; /* Deep Charcoal Headlines */
-  --surface: #ffffff; /* Crisp Paper Surface */
-  --on-surface: #111111;
-  --on-surface-variant: #5c5a57; /* Neutral Muted Gray/Charcoal */
+  --background: #f8f9ff;
+  --foreground: #0b1c30;
+  --surface: #ffffff;
+  --on-surface: #0b1c30;
+  --on-surface-variant: #584237;
   
-  --outline: #dcdad4; /* Soft Neutral Outline */
-  --outline-variant: #e7e5e0; /* Very Soft Neutral Border */
+  --outline: #8c7164;
+  --outline-variant: #e0c0b1;
 
   --surface-container-lowest: #ffffff;
-  --surface-container-low: #f5f4f2;
-  --surface-container: #efeee9;
-  --surface-container-high: #e8e7e2;
-  --surface-container-highest: #e1dfda;
+  --surface-container-low: #eff4ff;
+  --surface-container: #e5eeff;
+  --surface-container-high: #dce9ff;
+  --surface-container-highest: #d3e4fe;
 
-  --error: #c41e21; /* Match brand red */
-  --on-error: #faf9f7;
-  --success: #15803d;
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --success: #006c49;
   --on-success: #ffffff;
   
-  --shadow-color: rgba(196, 30, 33, 0.05); /* Soft premium red shadow */
-
-  /* Tell browser to render native controls (calendar icons, scrollbars, etc.) in light mode */
+  --shadow-color: rgba(157, 67, 0, 0.08); /* Soft orange brand shadow */
   color-scheme: light;
 }
 
-.dark {
-  /* Dark Mode - Brand Luxury Command Center */
-  --primary: #df0004; /* Primary Red */
-  --on-primary: #fcfcfb; /* Off-White */
-  --primary-container: #9d0106; /* Deep Crimson */
-  --on-primary-container: #fcfcfb; /* Off-White */
-
-  --secondary: #9d0106; /* Deep Crimson */
-  --secondary-container: #121414; /* Surface Charcoal */
-
-  --background: #000000; /* Pure Black */
-  --foreground: #fcfcfb; /* Off-White */
-  --surface: #121414; /* Deep charcoal panels */
-  --on-surface: #fcfcfb; /* Off-White */
-  --on-surface-variant: #b1b1b1; /* Cool Gray */
-
-  --outline: #38393a; /* Surface Bright */
-  --outline-variant: #1c1e1f; /* Subtle border */
-
-  --surface-container-lowest: #000000; /* Pure Black */
-  --surface-container-low: #0c0d0d; /* Ultra deep panels */
-  --surface-container: #121414; /* Deep charcoal panel */
-  --surface-container-high: #1c1e1f; /* Glass/borders container */
-  --surface-container-highest: #38393a; /* Surface Bright */
-
-  --error: #df0004; /* Primary Red for critical alerts */
-  --on-error: #fcfcfb;
-  --success: #22c55e;
-  --on-success: #052e16;
-  
-  --shadow-color: rgba(223, 0, 4, 0.15); /* Accent Red shadows */
-
-  /* Tell browser to render native controls (calendar icons, scrollbars, etc.) in dark mode */
-  color-scheme: dark;
-}
-
-/* Date inputs in dark mode: set color-scheme on the element itself so the
-   browser draws its native calendar icon in the correct (light) color */
-.dark input[type="date"] {
-  color-scheme: dark;
-}
-
-/* Belt-and-suspenders: force-invert the calendar icon in Chromium.
-   Works regardless of color-scheme support level. */
-.dark input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1) contrast(1);
-  opacity: 0.85;
-  cursor: pointer;
-}
 
 body {
   background-color: var(--background);
@@ -139,17 +87,18 @@ body {
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   font-family: var(--font-display);
-  text-transform: uppercase;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
 }
 
-/* Typography Scales - Fluid & Adaptive */
-h1 { font-size: clamp(32px, 8vw, 83px); font-weight: 900; }
-h2 { font-size: clamp(24px, 6vw, 58px); font-weight: 900; }
-h3 { font-size: clamp(20px, 4vw, 39px); font-weight: 900; }
+/* Typography Scales */
+h1 { font-size: clamp(20px, 5vw, 24px); }
+h2 { font-size: clamp(18px, 4vw, 20px); }
+h3 { font-size: 18px; }
 
 /* Responsive Utilities */
 @utility hide-on-mobile {

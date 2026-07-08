@@ -151,8 +151,7 @@ export const logWastage = mutation({
       grossRevenue: 0,
       cashCollected: 0,
       outstandingDebt: 0,
-      debtSettled: 0,
-      storeCreditAdded: 0,
+
       deliveryRevenue: 0,
       orderCount: 0,
       cancelledOrderCount: 0,

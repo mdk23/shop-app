@@ -32,10 +32,6 @@ export function SuccessModal({ isOpen, orderId, onNewSale, onViewDetails }: Succ
 
   if (!isOpen || !order) return null;
 
-  const balance = order.customer?.storeCreditBalance || 0;
-  const remainingDebt = balance < 0 ? Math.abs(balance) : 0;
-  const currentCredit = balance > 0 ? balance : 0;
-
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/80 backdrop-blur-xl">
       <motion.div
@@ -87,23 +83,7 @@ export function SuccessModal({ isOpen, orderId, onNewSale, onViewDetails }: Succ
                 <span className="text-on-surface font-display text-base">{formatCurrency(order.total)}</span>
               </div>
 
-              {(order.debtSettled ?? 0) > 0 && (
-                <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
-                  <span className="text-on-surface-variant flex items-center gap-2">
-                    <History className="w-4 h-4 text-orange-600" /> Debt Settled
-                  </span>
-                  <span className="text-orange-600">-{formatCurrency(order.debtSettled ?? 0)}</span>
-                </div>
-              )}
-              
-              {(order.storeCreditAdded ?? 0) > 0 && (
-                <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
-                  <span className="text-on-surface-variant flex items-center gap-2">
-                    <Wallet className="w-4 h-4 text-green-700" /> Credit Added
-                  </span>
-                  <span className="text-green-700">+{formatCurrency(order.storeCreditAdded ?? 0)}</span>
-                </div>
-              )}
+
 
               {order.change > 0 && (
                 <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
@@ -114,17 +94,6 @@ export function SuccessModal({ isOpen, orderId, onNewSale, onViewDetails }: Succ
                 </div>
               )}
 
-              <div className={cn(
-                "pt-4 border-t-2 border-outline-variant/50 flex justify-between items-center",
-                remainingDebt > 0 ? "text-error" : "text-green-700"
-              )}>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">
-                  {remainingDebt > 0 ? "Remaining Debt" : "Account Credit"}
-                </span>
-                <span className="text-3xl font-display">
-                  {formatCurrency(remainingDebt > 0 ? remainingDebt : currentCredit)}
-                </span>
-              </div>
             </div>
           </div>
 

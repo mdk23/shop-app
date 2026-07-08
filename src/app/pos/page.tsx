@@ -5,14 +5,14 @@ import { PageLayout } from "@/components/PageLayout";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { formatCurrency, cn } from "@/lib/utils";
-import { ShoppingCart, Plus, Minus, Trash2, ArrowRight, X, Egg, Pizza as PizzaIcon, Sparkles, History } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, ArrowRight, X, Pizza as PizzaIcon, Sparkles, History, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { CustomerSelect } from "@/components/pos/CustomerSelect";
 import { PaymentModal } from "@/components/pos/PaymentModal";
 import { SuccessModal } from "@/components/pos/SuccessModal";
 import { DishCustomizationModal } from "@/components/pos/DishCustomizationModal";
-import { PizzaPromoModal } from "@/components/pos/PizzaPromoModal";
+
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { ThermalReceiptModal } from "@/components/pos/ReceiptModal";
@@ -28,7 +28,7 @@ type CartItem = {
   comboSelections?: { category: string; dishId?: any; name: string; extraCharge: number }[];
 };
 
-const categories = ["Chicken", "Sides", "Pizza", "Combos", "Brunch", "Oly Bar", "Sweets", "Hot Drinks", "Cold Drinks", "Extras"];
+const categories = ["Chicken", "Sides", "Pizza", "Combos", "Cold Drinks", "Extras"];
 
 export default function POSPage() {
   const { currentUser } = useAuth();
@@ -36,11 +36,6 @@ export default function POSPage() {
   const recentOrders = useQuery(api.orders.listRecent, { limit: 20 });
   const router = useRouter();
 
-  // Promo settings
-  const pizzaPromoSetting = useQuery(api.settings.getByKey, { key: "pizzaPromo" });
-  const pizzaPromoDishIdSetting = useQuery(api.settings.getByKey, { key: "pizzaPromoDishId" });
-  const isPromoActive = pizzaPromoSetting?.isActive ?? false;
-  const pizzaPromoDishId = pizzaPromoDishIdSetting?.label ?? null;
 
   const [selectedCategory, setSelectedCategory] = useState("Chicken");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -48,10 +43,7 @@ export default function POSPage() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
   const [customizingDish, setCustomizingDish] = useState<any | null>(null);
-  const [customizingEggDish, setCustomizingEggDish] = useState<any | null>(null);
-  const [eggQuantity, setEggQuantity] = useState<number>(1);
-  const [eggInputVal, setEggInputVal] = useState<string>("1");
-  const [isPizzaPromoOpen, setIsPizzaPromoOpen] = useState(false);
+
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<any | null>(null);
 
@@ -85,15 +77,7 @@ export default function POSPage() {
   );
 
   const addToCart = (dish: any) => {
-    const isEgg = dish.name.toLowerCase().includes("ovo") || dish.name.toLowerCase().includes("egg") || (dish.category === "Brunch" && (dish.name.toLowerCase().includes("ovo") || dish.name.toLowerCase().includes("egg")));
     const isCombo = dish.category === "Combos" || dish.name.toLowerCase().includes("combo");
-
-    if (isEgg) {
-      setCustomizingEggDish(dish);
-      setEggQuantity(1);
-      setEggInputVal("1");
-      return;
-    }
 
     if (isCombo) {
       setCustomizingDish(dish);
@@ -124,20 +108,6 @@ export default function POSPage() {
     toast.success(`Added ${dish.name}`, { duration: 1000, position: "bottom-center" });
   };
 
-  const handlePromoConfirm = (promoItem: any) => {
-    setCart((prev) => [
-      ...prev,
-      {
-        ...promoItem,
-        cartItemId: `promo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      },
-    ]);
-    setIsPizzaPromoOpen(false);
-    toast.success(`🍕 Pizza Promo added — ${formatCurrency(promoItem.price * promoItem.quantity)}`, {
-      duration: 1500,
-      position: "bottom-center",
-    });
-  };
 
   const handleCustomConfirm = (customItem: any) => {
     setCart((prev) => {
@@ -182,49 +152,6 @@ export default function POSPage() {
     toast.success(`Added ${customItem.name} to tray`, { duration: 1000, position: "bottom-center" });
   };
   
-  const handleEggConfirm = () => {
-    if (!customizingEggDish || eggQuantity < 1) return;
-
-    const isPlain = customizingEggDish.name.toLowerCase().includes("unidade") || customizingEggDish.name.toLowerCase() === "egg" || customizingEggDish.name.toLowerCase() === "eggs";
-    const basePrice = 25;
-    const serviceFee = isPlain ? 0 : customizingEggDish.price;
-    const modifiers = !isPlain && serviceFee > 0 ? [
-      { name: `Prep: ${customizingEggDish.name}`, price: serviceFee }
-    ] : [];
-
-    setCart((prev) => {
-      const existingIdx = prev.findIndex((item) => {
-        if (item.dishId !== customizingEggDish._id) return false;
-        const m1 = item.modifiers || [];
-        const m2 = modifiers;
-        if (m1.length !== m2.length) return false;
-        return m1[0]?.price === m2[0]?.price;
-      });
-
-      if (existingIdx > -1) {
-        return prev.map((item, idx) =>
-          idx === existingIdx
-            ? { ...item, quantity: item.quantity + eggQuantity }
-            : item
-        );
-      }
-
-      return [
-        ...prev,
-        {
-          cartItemId: `${customizingEggDish._id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          dishId: customizingEggDish._id,
-          name: customizingEggDish.name,
-          price: basePrice,
-          quantity: eggQuantity,
-          modifiers,
-        },
-      ];
-    });
-
-    setCustomizingEggDish(null);
-    toast.success(`Added ${eggQuantity} x ${customizingEggDish.name}`, { duration: 1000, position: "bottom-center" });
-  };
 
   const updateQuantity = (cartItemId: string, delta: number) => {
     setCart((prev) =>
@@ -279,35 +206,6 @@ export default function POSPage() {
         {/* LEFT PANEL: Menu */}
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Pizza Promo Button */}
-          {isPromoActive && pizzaPromoDishId && (
-            <motion.button
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              onClick={() => setIsPizzaPromoOpen(true)}
-              className="w-full mb-4 flex items-center justify-between gap-4 px-5 py-4 bg-primary text-on-primary rounded-2xl border-brutal shadow-hard hover:-translate-y-0.5 hover:shadow-[6px_6px_0px_0px_var(--shadow-color)] active:translate-y-0 active:shadow-none transition-all group relative overflow-hidden"
-            >
-              <div className="flex items-center gap-3 relative z-10">
-                <div className="w-10 h-10 rounded-xl bg-on-primary/10 flex items-center justify-center">
-                  <PizzaIcon className="w-5 h-5" />
-                </div>
-                <div className="text-left">
-                  <p className="font-black text-sm uppercase tracking-widest">🍕 Pizza Promo</p>
-                  <p className="text-[10px] font-bold text-on-primary/70 uppercase tracking-[0.15em]">Any 2 Pizzas — 1 000 MT</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 relative z-10">
-                <Sparkles className="w-4 h-4 opacity-70" />
-                <span className="font-black text-xl tracking-tighter">1 000 MT</span>
-              </div>
-              <motion.div
-                initial={{ x: "-100%" }}
-                animate={{ x: "100%" }}
-                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                className="absolute inset-0 bg-white/10 skew-x-[20deg]"
-              />
-            </motion.button>
-          )}
 
           <div className="flex overflow-x-auto scrollbar-hide gap-2 mb-4 lg:mb-6 border-b border-outline-variant/30 pb-4 -mx-2 px-2 lg:mx-0 lg:px-0 lg:grid lg:grid-cols-4 xl:grid-cols-8 lg:gap-2">
             {categories.map((cat) => (
@@ -338,19 +236,7 @@ export default function POSPage() {
                   onClick={() => addToCart(dish)}
                   className="group bg-surface border-2 border-outline rounded-2xl overflow-hidden hover:shadow-hard hover:-translate-y-1 transition-all text-left flex flex-col relative"
                 >
-                  <div className="aspect-square overflow-hidden bg-surface-container-low border-b-2 border-outline hide-on-mobile">
-                    {dish.imageUrl ? (
-                      <img
-                        src={dish.imageUrl}
-                        alt={dish.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center opacity-20">
-                        <ShoppingCart className="w-8 h-8 text-on-surface" />
-                      </div>
-                    )}
-                  </div>
+
                   <div className="p-3 flex-1 flex flex-col min-h-[90px]">
                     <h3 className="text-sm lg:text-base font-black text-on-surface mb-1 group-hover:text-primary transition-colors leading-[0.9] break-words">
                       {dish.name}
@@ -593,173 +479,8 @@ export default function POSPage() {
         onConfirm={handleCustomConfirm}
       />
 
-      {isPizzaPromoOpen && pizzaPromoDishId && (
-        <PizzaPromoModal
-          isOpen={isPizzaPromoOpen}
-          onClose={() => setIsPizzaPromoOpen(false)}
-          allDishes={dishes || []}
-          pizzaPromoDishId={pizzaPromoDishId}
-          onConfirm={handlePromoConfirm}
-        />
-      )}
-      {customizingEggDish && (() => {
-        const isPlain = customizingEggDish.name.toLowerCase().includes("unidade") || customizingEggDish.name.toLowerCase() === "egg" || customizingEggDish.name.toLowerCase() === "eggs";
-        const serviceFee = isPlain ? 0 : customizingEggDish.price;
-        const baseCost = eggQuantity * 25;
-        const lineTotal = baseCost + serviceFee;
-        
-        return (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="bg-surface border-2 border-outline rounded-3xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden text-left"
-            >
-              {/* Header */}
-              <div className="p-6 border-b border-outline-variant flex items-center justify-between bg-primary/5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-soft">
-                    <Egg className="w-5 h-5 animate-pulse" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-on-surface leading-tight">
-                      {customizingEggDish.name}
-                    </h3>
-                    <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-                      Customização Rápida
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setCustomizingEggDish(null)}
-                  className="w-10 h-10 rounded-xl border border-outline hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              {/* Body */}
-              <div className="p-6 space-y-6">
-                {/* Stepper controls */}
-                <div className="flex flex-col items-center justify-center gap-4 bg-surface-container-low p-4 rounded-2xl border border-outline-variant/30">
-                  <span className="text-xs font-black text-on-surface-variant/80 uppercase tracking-widest">Quantidade de Ovos</span>
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => {
-                        const newQty = Math.max(0, eggQuantity - 1);
-                        setEggQuantity(newQty);
-                        setEggInputVal(newQty.toString());
-                      }}
-                      className="w-14 h-14 rounded-2xl bg-surface-container-high hover:bg-surface-container-highest border border-outline text-on-surface flex items-center justify-center shadow-soft active:scale-95 transition-all"
-                    >
-                      <Minus className="w-6 h-6" />
-                    </button>
 
-                    <input
-                      type="text"
-                      value={eggInputVal}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setEggInputVal(val);
-                        const parsed = parseInt(val, 10);
-                        if (!isNaN(parsed)) {
-                          setEggQuantity(Math.max(0, parsed));
-                        } else {
-                          setEggQuantity(0);
-                        }
-                      }}
-                      className="bg-surface-container-lowest border-2 border-outline focus:border-primary text-center font-black text-3xl w-28 h-14 rounded-2xl text-on-surface transition-all"
-                    />
-
-                    <button
-                      onClick={() => {
-                        const newQty = eggQuantity + 1;
-                        setEggQuantity(newQty);
-                        setEggInputVal(newQty.toString());
-                      }}
-                      className="w-14 h-14 rounded-2xl bg-surface-container-high hover:bg-surface-container-highest border border-outline text-on-surface flex items-center justify-center shadow-soft active:scale-95 transition-all"
-                    >
-                      <Plus className="w-6 h-6" />
-                    </button>
-                  </div>
-
-                  {eggQuantity < 1 && (
-                    <p className="text-xs font-black text-primary flex items-center gap-1.5 mt-1">
-                      ⚠️ At least 1 egg is required.
-                    </p>
-                  )}
-                </div>
-
-                {/* Touch Quick Select Grid */}
-                <div className="space-y-2">
-                  <span className="text-xs font-black text-on-surface-variant/80 uppercase tracking-widest block">Seleção Rápida</span>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[1, 2, 3, 4, 5, 6, 8, 10].map((num) => (
-                      <button
-                        key={num}
-                        onClick={() => {
-                          setEggQuantity(num);
-                          setEggInputVal(num.toString());
-                        }}
-                        className={cn(
-                          "py-3 rounded-xl font-black text-sm transition-all active:scale-95 border",
-                          eggQuantity === num
-                            ? "bg-primary border-primary text-on-primary shadow-hard scale-105"
-                            : "bg-surface-container-high border-outline text-on-surface-variant hover:text-on-surface hover:border-outline"
-                        )}
-                      >
-                        {num} {num === 1 ? "Ovo" : "Ovos"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Price Breakdown */}
-                <div className="bg-surface-container-low border border-outline rounded-2xl p-4 space-y-3 font-mono">
-                  <div className="flex justify-between text-xs text-on-surface-variant">
-                    <span>Ovos ({eggQuantity} x 25.00 MT):</span>
-                    <span className="text-on-surface font-bold">{formatCurrency(baseCost)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-on-surface-variant pb-2 border-b border-outline-variant/50">
-                    <span>Taxa de Prep/Serviço:</span>
-                    <span className="text-on-surface font-bold">
-                      {serviceFee === 0 ? "Grátis" : `+ ${formatCurrency(serviceFee)}`}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-end pt-1">
-                    <span className="text-xs font-black text-primary uppercase tracking-widest font-sans">Total</span>
-                    <span className="text-2xl font-black text-primary font-sans tracking-tight">
-                      {formatCurrency(lineTotal)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="p-6 border-t border-outline-variant flex items-center justify-end gap-3 bg-surface-container-low/20">
-                <button
-                  onClick={() => setCustomizingEggDish(null)}
-                  className="px-6 py-3 rounded-xl border-2 border-outline font-black text-xs uppercase tracking-widest text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  disabled={eggQuantity < 1}
-                  onClick={handleEggConfirm}
-                  className={cn(
-                    "px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 transition-all shadow-hard active:scale-95",
-                    eggQuantity < 1
-                      ? "bg-surface-dim border border-outline text-on-surface-variant/80 cursor-not-allowed"
-                      : "bg-primary text-on-primary hover:bg-secondary"
-                  )}
-                >
-                  Adicionar ao Tray
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        );
-      })()}
       <PaymentModal
         isOpen={isPaymentModalOpen}
         onClose={() => setIsPaymentModalOpen(false)}

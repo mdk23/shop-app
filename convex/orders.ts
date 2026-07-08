@@ -28,7 +28,6 @@ export const create = mutation({
     paymentMethod: v.string(),
     amountPaid: v.number(),
     change: v.number(),
-    saveChangeAsCredit: v.boolean(),
     // Auth & Caixa integration (optional for backward compat)
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
@@ -49,13 +48,6 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const customer = await ctx.db.get(args.customerId);
     if (!customer) throw new Error("Customer not found");
-
-    // Generic Client rules
-    if (customer.isGeneric) {
-      if (args.amountPaid !== args.total) {
-        throw new Error("Generic Client sales must be paid in the exact amount (no overpayment or underpayment)");
-      }
-    }
 
     // Resolve user identity: ensure both userId and username are populated if either is provided
     let userId = args.userId;
@@ -259,52 +251,17 @@ export const create = mutation({
 
     const orderCode = `ORD-${String(sequenceNumber).padStart(3, "0")}`;
 
-    // 5. Calculate Financial Breakdown
-    const previousBalance = customer.storeCreditBalance;
-    const previousDebt = previousBalance < 0 ? Math.abs(previousBalance) : 0;
-    const previousCredit = previousBalance > 0 ? previousBalance : 0;
-
-    // Total Due for the cashier is the current sale plus any debt
-    // Note: Credit is handled implicitly by the cashier accepting less payment
-    const totalDue = args.total + previousDebt;
-
-    // How much of the amount paid actually went towards settling debt?
-    // First we cover the current sale, then we cover debt.
-    const amountTowardsDebtAndCredit = Math.max(0, args.amountPaid - args.total);
-    const debtSettled = Math.min(previousDebt, amountTowardsDebtAndCredit);
-    
-    // Store credit is only added if they pay more than the Total Due AND choose to save it
-    const overpayment = Math.max(0, args.amountPaid - totalDue);
-    const storeCreditAdded = (!customer.isGeneric && args.saveChangeAsCredit) ? overpayment : 0;
-    const changeReturned = (!args.saveChangeAsCredit && overpayment > 0) ? overpayment : 0;
-
-    // 6. Update Customer Balance
-    // New Balance = Old Balance + (Amount Paid - Change Returned) - Total Sale
-    // Wait, simpler: New Balance = Old Balance + balanceUpdate
-    // If they pay 1200 for a 700 sale and 300 debt, and return 200 change:
-    // balanceUpdate = (1200 - 200) - 700 = +300. -300 + 300 = 0. Perfect.
-    const actualPaymentApplied = args.amountPaid - changeReturned;
-    const balanceUpdate = actualPaymentApplied - args.total;
-
-    if (!customer.isGeneric) {
-      await ctx.db.patch(args.customerId, {
-        storeCreditBalance: customer.storeCreditBalance + balanceUpdate,
-      });
-    } else {
-      await ctx.db.patch(args.customerId, {
-        storeCreditBalance: 0,
-      });
+    // 5. Enforce Full Payment & Calculate Change
+    if (args.amountPaid < args.total) {
+      throw new Error(`Insufficient payment. All orders must be paid in full (Total: ${args.total}, Provided: ${args.amountPaid}).`);
     }
 
-    // 7. Calculate Sale Status
-    let status = "Pending";
-    if (args.amountPaid >= args.total) {
-      status = "Paid";
-    } else if (args.amountPaid > 0) {
-      status = "Partially Paid";
-    }
+    const changeReturned = args.amountPaid - args.total;
 
-    // 8. Create Sale (Order)
+    // 6. Calculate Sale Status
+    const status = "Paid";
+
+    // 7. Create Sale (Order)
     const orderId = await ctx.db.insert("orders", {
       total: args.total,
       status,
@@ -315,9 +272,7 @@ export const create = mutation({
       customerId: args.customerId,
       createdAt: now,
       orderCode,
-      previousDebt,
-      debtSettled,
-      storeCreditAdded,
+      prepStatus: "pending",
       userId: userId,
       username: username,
       cashRegisterSessionId: cashRegisterSessionId,
@@ -380,7 +335,7 @@ export const create = mutation({
       await ctx.db.insert("payments", {
         orderId,
         method: args.paymentMethod,
-        amount: actualPaymentApplied, // Record what was actually kept
+        amount: args.total,
         createdAt: now,
       });
     }
@@ -420,10 +375,6 @@ export const create = mutation({
       }
     }
 
-    // 12. Final Balance Sync (Source of Truth)
-    await ctx.runMutation(internal.customers.recalculateBalance, {
-      customerId: args.customerId,
-    });
 
     // 13. Record live counters and daily metrics
     const orderDoc = await ctx.db.get(orderId);
@@ -646,10 +597,7 @@ export const remove = mutation({
     // 7. Delete the order
     await ctx.db.delete(args.id);
 
-    // 8. Final Balance Sync (Source of Truth)
-    await ctx.runMutation(internal.customers.recalculateBalance, {
-      customerId: order.customerId,
-    });
+
   },
 });
 export const getById = query({
@@ -733,5 +681,36 @@ export const getOrderItems = query({
         return { ...item, dishName: dish?.name || "Unknown Dish" };
       })
     );
+  },
+});
+
+export const updatePrepStatus = mutation({
+  args: {
+    orderId: v.id("orders"),
+    status: v.union(v.literal("pending"), v.literal("preparing"), v.literal("ready"), v.literal("completed")),
+  },
+  handler: async (ctx, args) => {
+    const order = await ctx.db.get(args.orderId);
+    if (!order) throw new Error("Order not found");
+    await ctx.db.patch(args.orderId, { prepStatus: args.status });
+  },
+});
+
+export const listActiveOrders = query({
+  args: {},
+  handler: async (ctx) => {
+    const orders = await ctx.db
+      .query("orders")
+      .filter((q) => 
+        q.or(
+          q.eq(q.field("prepStatus"), "pending"),
+          q.eq(q.field("prepStatus"), "preparing"),
+          q.eq(q.field("prepStatus"), "ready")
+        )
+      )
+      .collect();
+      
+    // Sort by created time ascending (oldest first)
+    return orders.sort((a, b) => a.createdAt - b.createdAt);
   },
 });

@@ -1,5 +1,5 @@
 import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 
 export const runBackfill = action({
   args: {},
@@ -13,8 +13,7 @@ export const runBackfill = action({
     const activeSession: any = sessions[0];
     
     // 2. Call the backfill mutation
-    const result: any = await ctx.runMutation(internal.fixMovements.backfillCashMovements, {
-      sessionId: activeSession._id,
+    const result: any = await ctx.runMutation(api.fixMovements.backfillCashMovements, {
       startTime: activeSession.openedAt,
     });
     

@@ -114,8 +114,7 @@ interface MetricDeltas {
   grossRevenue: number;
   cashCollected: number;
   outstandingDebt: number;
-  debtSettled: number;
-  storeCreditAdded: number;
+
   deliveryRevenue: number;
   orderCount: number;
   cancelledOrderCount: number;
@@ -148,8 +147,7 @@ async function getOrCreateDailyMetrics(ctx: MutationCtx, dateString: string) {
     grossRevenue: 0,
     cashCollected: 0,
     outstandingDebt: 0,
-    debtSettled: 0,
-    storeCreditAdded: 0,
+
     deliveryRevenue: 0,
     orderCount: 0,
     cancelledOrderCount: 0,
@@ -185,8 +183,7 @@ export async function applyMetricsDeltas(
     grossRevenue: metric.grossRevenue + deltas.grossRevenue,
     cashCollected: metric.cashCollected + deltas.cashCollected,
     outstandingDebt: metric.outstandingDebt + deltas.outstandingDebt,
-    debtSettled: metric.debtSettled + deltas.debtSettled,
-    storeCreditAdded: metric.storeCreditAdded + deltas.storeCreditAdded,
+
     deliveryRevenue: metric.deliveryRevenue + deltas.deliveryRevenue,
     orderCount: metric.orderCount + deltas.orderCount,
     cancelledOrderCount: metric.cancelledOrderCount + deltas.cancelledOrderCount,
@@ -334,8 +331,7 @@ export async function recordOrderMetrics(
     grossRevenue: order.total * sign,
     cashCollected: Math.max(0, order.total - order.remainingAmount) * sign,
     outstandingDebt: order.remainingAmount * sign,
-    debtSettled: (order.debtSettled || 0) * sign,
-    storeCreditAdded: (order.storeCreditAdded || 0) * sign,
+
     deliveryRevenue: (order.deliveryFeeAmount || 0) * sign,
     orderCount: 1 * sign,
     cancelledOrderCount: changeType === "remove" ? 1 : 0,
@@ -366,8 +362,7 @@ export async function recordOrderMetrics(
     await incrementCounter(ctx, "today_gross_revenue", deltas.grossRevenue, dateString);
     await incrementCounter(ctx, "today_cash_collected", deltas.cashCollected, dateString);
     await incrementCounter(ctx, "today_outstanding_debt", deltas.outstandingDebt, dateString);
-    await incrementCounter(ctx, "today_debt_settled", deltas.debtSettled, dateString);
-    await incrementCounter(ctx, "today_store_credit_added", deltas.storeCreditAdded, dateString);
+
     await incrementCounter(ctx, "today_delivery_revenue", deltas.deliveryRevenue, dateString);
     
     await incrementCounter(ctx, "today_order_count", deltas.orderCount, dateString);
@@ -425,8 +420,7 @@ export async function adjustPaymentMetrics(
     grossRevenue: 0,
     cashCollected: diff,
     outstandingDebt: -diff,
-    debtSettled: 0,
-    storeCreditAdded: 0,
+
     deliveryRevenue: 0,
     orderCount: 0,
     cancelledOrderCount: 0,

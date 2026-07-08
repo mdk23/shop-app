@@ -97,27 +97,13 @@ export function CustomerHistory({ customerId, onClose }: CustomerHistoryProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="grid grid-cols-1 gap-4 mb-8">
                 <div className="bg-surface-container-low p-6 border-2 border-outline rounded shadow-hard flex flex-col justify-between">
                   <div>
                     <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest mb-1">Total Purchases</p>
                     <p className="text-3xl font-display text-on-surface">{formatCurrency(customer.stats?.totalPurchases || 0)}</p>
                   </div>
                   <p className="text-[9px] font-medium text-on-surface-variant/60 mt-3 leading-tight">Sum of all completed orders over time.</p>
-                </div>
-                <div className="bg-surface-container-low p-6 border-2 border-outline rounded shadow-hard flex flex-col justify-between">
-                  <div>
-                    <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest mb-1">Current Balance</p>
-                    <p className={cn(
-                      "text-3xl font-display",
-                      (customer.stats?.balance || 0) < 0 ? "text-error" : "text-green-700"
-                    )}>
-                      {formatCurrency(customer.stats?.balance || 0)}
-                    </p>
-                  </div>
-                  <p className="text-[9px] font-medium text-on-surface-variant/60 mt-3 leading-tight">
-                    {(customer.stats?.balance || 0) < 0 ? "Negative balance indicates unpaid debt." : "Positive balance indicates store credit."}
-                  </p>
                 </div>
               </div>
 
@@ -144,7 +130,7 @@ export function CustomerHistory({ customerId, onClose }: CustomerHistoryProps) {
                       </div>
                       <div className="flex justify-center col-span-1">
                         <div className="px-2 py-1 bg-surface-container-low border border-outline rounded text-[8px] font-black uppercase tracking-tighter">
-                          {order.amountPaid === 0 ? "Debt" : order.paymentMethod}
+                          {order.paymentMethod}
                         </div>
                       </div>
                       <div className="text-right col-span-1">
@@ -268,21 +254,12 @@ export function CustomerHistory({ customerId, onClose }: CustomerHistoryProps) {
                               </div>
                               <div className="pt-3 border-t border-outline-variant mt-4 flex justify-between font-display text-xl">
                                 <span className="uppercase tracking-tighter">
-                                  {order.remainingAmount > 0 ? "Outstanding" : "Balance"}
+                                  Total
                                 </span>
-                                <span className={order.remainingAmount > 0 ? "text-error" : "text-green-500"}>
-                                  {formatCurrency(order.remainingAmount)}
+                                <span className="text-primary">
+                                  {formatCurrency(order.total)}
                                 </span>
                               </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOrderToManagePayments(order);
-                                }}
-                                className="mt-4 w-full py-2 bg-surface-container-highest border border-outline rounded-xl font-black text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary hover:border-primary/50 transition-all active:scale-95 shadow-soft"
-                              >
-                                Manage Payments
-                              </button>
                             </div>
                           </div>
                         </motion.div>

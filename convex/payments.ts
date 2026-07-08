@@ -100,10 +100,7 @@ export const remove = mutation({
       paymentMethod: newMethod,
     });
 
-    // 6. Recalculate customer balance
-    await ctx.runMutation(internal.customers.recalculateBalance, {
-      customerId: order.customerId,
-    });
+
   },
 });
 
@@ -196,10 +193,6 @@ export const add = mutation({
       }
     }
 
-    // 4. Recalculate customer balance
-    await ctx.runMutation(internal.customers.recalculateBalance, {
-      customerId: order.customerId,
-    });
     
     return newPaymentId;
   },
@@ -321,9 +314,6 @@ export const update = mutation({
       paymentMethod: newMethod,
     });
 
-    // 5. Recalculate customer balance
-    await ctx.runMutation(internal.customers.recalculateBalance, {
-      customerId: order.customerId,
-    });
+
   },
 });

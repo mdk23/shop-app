@@ -21,11 +21,6 @@ interface DishCustomizationModalProps {
   }) => void;
 }
 
-const EGG_PREPARATIONS = [
-  { name: "Boiled Egg", price: 15 },
-  { name: "Simple Scrambled Egg", price: 50 },
-  { name: "Scrambled Egg with Onion & Tomato", price: 80 },
-];
 
 export function DishCustomizationModal({
   isOpen,
@@ -36,21 +31,12 @@ export function DishCustomizationModal({
 }: DishCustomizationModalProps) {
   const [quantity, setQuantity] = useState(1);
 
-  // Egg State
-  const [eggPrep, setEggPrep] = useState<string | null>(null);
 
   // Combo State
   const [selectedMains, setSelectedMains] = useState<any[]>([]);
   const [selectedSides, setSelectedSides] = useState<any[]>([]);
   const [selectedDrink, setSelectedDrink] = useState<any | null>(null);
 
-  // Determine dish type
-  const isEggDish =
-    dish &&
-    (dish.name.toLowerCase() === "egg" ||
-      dish.name.toLowerCase() === "eggs" ||
-      dish.name.toLowerCase().includes("egg option") ||
-      dish.category === "Brunch" && dish.name.toLowerCase().includes("egg"));
 
   const isComboDish =
     dish &&
@@ -86,7 +72,6 @@ export function DishCustomizationModal({
   useEffect(() => {
     if (isOpen && dish) {
       setQuantity(1);
-      setEggPrep(null);
       setSelectedMains([]);
       setSelectedSides([]);
       setSelectedDrink(null);
@@ -154,16 +139,7 @@ export function DishCustomizationModal({
   let modifiers: { name: string; price: number }[] = [];
   let comboSelections: { category: string; dishId?: any; name: string; extraCharge: number }[] = [];
 
-  if (isEggDish) {
-    const basePrice = dish.price || 25;
-    calculatedSinglePrice = basePrice;
-    if (eggPrep) {
-      const prepOption = EGG_PREPARATIONS.find((p) => p.name === eggPrep);
-      if (prepOption) {
-        modifiers.push({ name: prepOption.name, price: prepOption.price });
-      }
-    }
-  } else if (isComboDish) {
+  if (isComboDish) {
     calculatedSinglePrice = dish.price;
     selectedMains.forEach((m) => {
       comboSelections.push({ category: "Main Dish", dishId: m._id, name: m.name, extraCharge: 0 });
@@ -246,9 +222,8 @@ export function DishCustomizationModal({
         <div className="p-6 border-b border-outline-variant flex items-center justify-between bg-primary/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-on-primary shadow-soft">
-              {isEggDish && <Egg className="w-6 h-6" />}
               {isComboDish && <Layers className="w-6 h-6" />}
-              {!isEggDish && !isComboDish && <ShoppingBag className="w-6 h-6" />}
+              {!isComboDish && <ShoppingBag className="w-6 h-6" />}
             </div>
             <div>
               <h2 className="text-xl lg:text-2xl font-black text-on-surface leading-tight">
@@ -296,59 +271,6 @@ export function DishCustomizationModal({
             </div>
           </div>
 
-          {/* EGGS CUSTOMIZATION */}
-          {isEggDish && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-on-surface-variant uppercase tracking-widest">
-                  Egg Preparation Option (Choose One)
-                </h3>
-                {eggPrep && (
-                  <button
-                    onClick={() => setEggPrep(null)}
-                    className="text-xs font-bold text-primary hover:underline"
-                  >
-                    Clear Choice
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {EGG_PREPARATIONS.map((prep) => {
-                  const isSelected = eggPrep === prep.name;
-                  return (
-                    <button
-                      key={prep.name}
-                      type="button"
-                      onClick={() => setEggPrep(prep.name)}
-                      className={cn(
-                        "p-5 rounded-3xl border-2 text-left transition-all flex flex-col justify-between min-h-[120px] relative overflow-hidden group shadow-sm",
-                        isSelected
-                          ? "border-primary bg-primary/5 shadow-hard ring-1 ring-primary"
-                          : "border-outline-variant bg-surface-container-lowest hover:border-primary/50"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "font-black text-sm lg:text-base leading-tight mb-2",
-                          isSelected ? "text-primary" : "text-on-surface"
-                        )}
-                      >
-                        {prep.name}
-                      </span>
-                      <span className="font-bold text-primary text-sm mt-auto">
-                        +{formatCurrency(prep.price)}
-                      </span>
-                      {isSelected && (
-                        <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-soft">
-                          <Check className="w-4 h-4" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* COMBO CUSTOMIZATION */}
           {isComboDish && (

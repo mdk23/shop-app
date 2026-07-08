@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { X, CreditCard, Banknote, Smartphone, Bitcoin, ArrowRight, Save, Coins, AlertCircle, SplitSquareHorizontal, Trash2 } from "lucide-react";
+import { X, CreditCard, Banknote, Smartphone, ArrowRight, Trash2, AlertCircle, SplitSquareHorizontal } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -26,7 +26,6 @@ const PAYMENT_METHODS = [
   { id: "eMola", icon: Smartphone, color: "bg-orange-600", light: "bg-surface-container-high text-on-surface-variant" },
   { id: "BIM", icon: CreditCard, color: "bg-blue-800", light: "bg-surface-container-high text-on-surface-variant" },
   { id: "Moza", icon: CreditCard, color: "bg-zinc-700", light: "bg-surface-container-high text-on-surface-variant" },
-  { id: "Bitcoin", icon: Bitcoin, color: "bg-yellow-600", light: "bg-surface-container-high text-on-surface-variant" },
 ];
 
 export function PaymentModal({ isOpen, onClose, total, items, customerId, customerName, onSuccess }: PaymentModalProps) {
@@ -41,10 +40,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
 
   const createOrder = useMutation(api.orders.create);
   const { token, currentUser } = useAuth();
-  const customer = useQuery(api.customers.getById, 
-    (customerId && customerId !== "") ? { id: customerId as any } : "skip"
-  );
-
+  
   const deliveryFees = useQuery(api.deliveryFees.list, { activeOnly: true });
   const selectedFeeObj = deliveryFees?.find(f => f._id === selectedFeeId);
   const deliveryFeeAmount = orderType === "delivery" ? (selectedFeeObj?.fee ?? 0) : 0;
@@ -64,22 +60,15 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
     ? splitPayments.reduce((sum, p) => sum + p.amount, 0)
     : parseFloat(amountPaid) || 0;
   
-  const previousBalance = customer?.storeCreditBalance || 0;
-  const previousDebt = previousBalance < 0 ? Math.abs(previousBalance) : 0;
-  const totalDue = grandTotal + previousDebt;
-
-  const remainingTotalDue = Math.max(0, totalDue - numAmountPaid);
-  const change = numAmountPaid > totalDue ? numAmountPaid - totalDue : 0;
-  const debtSettled = Math.min(previousDebt, Math.max(0, numAmountPaid - grandTotal));
+  const remainingTotalDue = Math.max(0, grandTotal - numAmountPaid);
+  const change = numAmountPaid > grandTotal ? numAmountPaid - grandTotal : 0;
 
   // If not split, use the selectedMethod input.
   // If split, the user's typing in `amountPaid` is just the temporary amount to add.
   const tempAmountToAdd = parseFloat(amountPaid) || 0;
 
-  // Generic Client validation
-  const isGeneric = customer?.isGeneric;
   const canCheckout = !cashBlocked && 
-    (isGeneric ? numAmountPaid === grandTotal : numAmountPaid >= 0) &&
+    numAmountPaid >= grandTotal &&
     (orderType === "pickup" || !!selectedFeeObj);
 
   useEffect(() => {
@@ -106,7 +95,11 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
         toast.error("Please select a delivery zone/fee");
         return;
       }
-      toast.error(isGeneric ? "Generic Client must pay in full" : "Invalid amount");
+      if (numAmountPaid < grandTotal) {
+        toast.error("Full payment is required.");
+        return;
+      }
+      toast.error("Invalid amount or payment blocked.");
       return;
     }
 
@@ -126,7 +119,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
         amountPaid: numAmountPaid,
         splitPayments: isSplitPayment ? splitPayments : undefined,
         change,
-        saveChangeAsCredit: !isGeneric && change > 0,
         cashRegisterSessionId: (hasCashPayment && activeCaixaSession) ? activeCaixaSession._id : undefined,
         userId: currentUser?.userId,
         username: currentUser?.username,
@@ -165,7 +157,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
               <h2 className="text-2xl font-black text-on-surface">Complete Sale</h2>
               <p className="text-on-surface-variant font-medium flex items-center gap-2">
                 Customer: <span className="text-primary font-bold">{customerName}</span>
-                {isGeneric && <span className="bg-primary/10 text-primary text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-black">Generic</span>}
               </p>
             </div>
           </div>
@@ -182,7 +173,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
           <div className="flex-1 p-6 lg:p-8 overflow-y-auto space-y-8 border-r border-outline-variant">
             {/* Financial Summary */}
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="bg-surface-container-low p-5 rounded-3xl border border-outline-variant">
                   <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest mb-1">Current Sale</p>
                   <p className="text-2xl font-black text-on-surface">{formatCurrency(grandTotal)}</p>
@@ -192,20 +183,9 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                     </p>
                   )}
                 </div>
-                <div className={cn(
-                  "p-5 rounded-3xl border transition-all",
-                  previousDebt > 0 ? "bg-error/10 border-error/20 text-error" : "bg-green-700/10 border-green-700/20 text-green-700"
-                )}>
-                  <p className="text-[10px] font-black uppercase tracking-widest mb-1">
-                    {previousDebt > 0 ? "Previous Debt" : "Current Credit"}
-                  </p>
-                  <p className="text-2xl font-black">
-                    {formatCurrency(previousDebt > 0 ? previousDebt : Math.abs(previousBalance))}
-                  </p>
-                </div>
                 <div className="bg-primary/5 p-5 rounded-3xl border border-primary/20">
                   <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Total Due</p>
-                  <p className="text-2xl font-black text-primary">{formatCurrency(totalDue)}</p>
+                  <p className="text-2xl font-black text-primary">{formatCurrency(grandTotal)}</p>
                 </div>
               </div>
 
@@ -219,20 +199,12 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
               )}>
                 <div>
                   <p className="text-xs font-black uppercase tracking-widest opacity-70 mb-1">
-                    {remainingTotalDue > 0 
-                      ? "Remaining Total Due" 
-                      : (!isGeneric && change > 0 ? "Store Credit Added" : "Change to Return")}
+                    {remainingTotalDue > 0 ? "Remaining Total Due" : "Change to Return"}
                   </p>
                   <p className="text-3xl font-black">
                     {formatCurrency(Math.abs(remainingTotalDue > 0 ? remainingTotalDue : change))}
                   </p>
                 </div>
-                {debtSettled > 0 && (
-                  <div className="text-right">
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Debt Settling</p>
-                    <p className="text-xl font-black">{formatCurrency(debtSettled)}</p>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -364,25 +336,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                 ))}
               </div>
             </div>
-
-            {/* Advanced Change Handling */}
-            {change > 0 && !isGeneric && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="bg-green-700/10 border border-green-700/20 p-6 rounded-[2rem] flex items-center justify-between"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-green-700/10 flex items-center justify-center text-green-700 shadow-sm">
-                    <Save className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <p className="font-black text-green-700 text-lg">Change Saved to Credit</p>
-                    <p className="text-on-surface-variant text-sm font-medium">Customer has {formatCurrency(change)} excess which will be saved as store credit.</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
           </div>
 
           {/* Right: Input & Checkout */}
@@ -464,17 +417,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                   </div>
                 </div>
               )}
-
-              {previousDebt > 0 && numAmountPaid > 0 && !isSplitPayment && (
-                <div className="p-4 bg-primary/10 rounded-2xl border border-primary/20">
-                  <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Payment Strategy</p>
-                  <p className="text-sm font-bold text-on-surface-variant leading-tight">
-                    {numAmountPaid >= totalDue 
-                      ? `Covers full sale and settles ${formatCurrency(debtSettled)} of debt.` 
-                      : `Covers ${formatCurrency(numAmountPaid)} of current sale.`}
-                  </p>
-                </div>
-              )}
             </div>
 
             {/* Action Buttons */}
@@ -498,9 +440,9 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                   </>
                 )}
               </button>
-              {isGeneric && numAmountPaid !== grandTotal && (
+              {numAmountPaid < grandTotal && (
                 <p className="text-center text-error font-black text-xs uppercase tracking-wider">
-                  Exact payment required for Generic Client
+                  Full payment required
                 </p>
               )}
             </div>

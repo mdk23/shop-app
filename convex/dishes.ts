@@ -23,7 +23,6 @@ export const create = mutation({
     name: v.string(),
     price: v.number(),
     category: v.string(),
-    imageUrl: v.optional(v.string()),
     isActive: v.optional(v.boolean()),
     description: v.optional(v.string()),
     ingredients: v.array(
@@ -78,7 +77,6 @@ export const update = mutation({
     name: v.string(),
     price: v.number(),
     category: v.string(),
-    imageUrl: v.optional(v.string()),
     isActive: v.optional(v.boolean()),
     description: v.optional(v.string()),
     ingredients: v.array(

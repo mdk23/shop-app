@@ -18,7 +18,6 @@ import {
   CreditCard,
   Banknote,
   Smartphone,
-  Bitcoin,
   ChevronDown,
   ChevronUp,
   Download,
@@ -395,8 +394,7 @@ export default function SalesPage() {
         return <Banknote className="w-4 h-4 text-green-500" />;
       case "POS":
         return <CreditCard className="w-4 h-4 text-primary" />;
-      case "Bitcoin":
-        return <Bitcoin className="w-4 h-4 text-yellow-500" />;
+
       default:
         return <Smartphone className="w-4 h-4 text-blue-500" />;
     }
@@ -671,7 +669,7 @@ export default function SalesPage() {
                   <option value="eMola">EMOLA</option>
                   <option value="BIM">BIM</option>
                   <option value="Moza">MOZA</option>
-                  <option value="Bitcoin">BITCOIN</option>
+
                 </select>
               </div>
 

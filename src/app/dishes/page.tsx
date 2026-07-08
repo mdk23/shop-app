@@ -68,7 +68,7 @@ export default function DishesPage() {
 
         {/* Group dishes by category, sorted alphabetically within each group */}
         {(() => {
-          const CATEGORY_ORDER = ["Chicken", "Sides", "Pizza", "Combos", "Brunch", "Oly Bar", "Sweets", "Hot Drinks", "Cold Drinks", "Extras"];
+          const CATEGORY_ORDER = ["Chicken", "Sides", "Pizza", "Combos", "Cold Drinks", "Extras"];
           const grouped = (dishes ?? []).reduce((acc: Record<string, any[]>, dish) => {
             const cat = dish.category || "Other";
             if (!acc[cat]) acc[cat] = [];
@@ -107,30 +107,19 @@ export default function DishesPage() {
                   .slice()
                   .sort((a: any, b: any) => a.name.localeCompare(b.name))
                   .map((dish: any) => (
-                    <div key={dish._id} className="bg-surface-container-low border border-outline-variant rounded-2xl shadow-soft overflow-hidden flex h-[280px] group">
-                      <div className="w-[200px] h-full overflow-hidden bg-surface-dim border-r border-outline-variant relative">
-                        {dish.imageUrl ? (
-                          <img
-                            src={dish.imageUrl}
-                            alt={dish.name}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <UtensilsCrossed className="w-12 h-12 text-outline-variant" />
-                          </div>
-                        )}
-                        <div className="absolute top-4 left-4 bg-primary text-on-primary text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md shadow-soft">
+                    <div key={dish._id} className="bg-surface-container-low border border-outline-variant rounded-2xl shadow-soft overflow-hidden flex h-[280px] group relative">
+                      <div className="absolute top-4 left-4 flex gap-2 z-10">
+                        <div className="bg-primary text-on-primary text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md shadow-soft">
                           {dish.category}
                         </div>
                         {!dish.isActive && (
-                          <div className="absolute top-4 right-4 bg-error text-on-error text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md shadow-soft">
+                          <div className="bg-error text-on-error text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md shadow-soft">
                             Hidden
                           </div>
                         )}
                       </div>
 
-                      <div className="flex-1 p-8 flex flex-col">
+                      <div className="flex-1 p-8 pt-14 flex flex-col">
                         <div className="flex items-start justify-between mb-4">
                           <div>
                             <h3 className="text-2xl font-black text-on-surface group-hover:text-primary transition-colors">

@@ -159,8 +159,6 @@ export const runAnalyticsBackfill = mutation({
       let grossRevenue = 0;
       let cashCollected = 0;
       let outstandingDebt = 0;
-      let debtSettled = 0;
-      let storeCreditAdded = 0;
       let deliveryRevenue = 0;
       let orderCount = 0;
       let deliveryOrdersCount = 0;
@@ -180,8 +178,6 @@ export const runAnalyticsBackfill = mutation({
         grossRevenue += o.total;
         cashCollected += Math.max(0, o.total - o.remainingAmount);
         outstandingDebt += o.remainingAmount;
-        debtSettled += o.debtSettled || 0;
-        storeCreditAdded += o.storeCreditAdded || 0;
         deliveryRevenue += o.deliveryFeeAmount || 0;
         orderCount += 1;
         
@@ -250,8 +246,6 @@ export const runAnalyticsBackfill = mutation({
         grossRevenue,
         cashCollected,
         outstandingDebt,
-        debtSettled,
-        storeCreditAdded,
         deliveryRevenue,
         orderCount,
         cancelledOrderCount: 0,
@@ -276,8 +270,7 @@ export const runAnalyticsBackfill = mutation({
         await ctx.db.insert("counters", { key: "today_gross_revenue", value: grossRevenue, dateString, updatedAt: Date.now() });
         await ctx.db.insert("counters", { key: "today_cash_collected", value: cashCollected, dateString, updatedAt: Date.now() });
         await ctx.db.insert("counters", { key: "today_outstanding_debt", value: outstandingDebt, dateString, updatedAt: Date.now() });
-        await ctx.db.insert("counters", { key: "today_debt_settled", value: debtSettled, dateString, updatedAt: Date.now() });
-        await ctx.db.insert("counters", { key: "today_store_credit_added", value: storeCreditAdded, dateString, updatedAt: Date.now() });
+
         await ctx.db.insert("counters", { key: "today_delivery_revenue", value: deliveryRevenue, dateString, updatedAt: Date.now() });
         await ctx.db.insert("counters", { key: "today_order_count", value: orderCount, dateString, updatedAt: Date.now() });
         await ctx.db.insert("counters", { key: "today_delivery_orders_count", value: deliveryOrdersCount, dateString, updatedAt: Date.now() });
@@ -308,5 +301,34 @@ export const runAnalyticsBackfill = mutation({
       message: "Analytics backfill and counters seeding completed.",
       processedDaysCount,
     };
+  },
+});
+
+export const removeDebtFields = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Remove storeCreditBalance from all customers
+    const customers = await ctx.db.query("customers").collect();
+    for (const c of customers) {
+      if ((c as any).storeCreditBalance !== undefined) {
+        await ctx.db.patch(c._id, { storeCreditBalance: undefined } as any);
+      }
+    }
+
+    // Remove debtSettled and storeCreditAdded from dailyMetrics
+    const metrics = await ctx.db.query("dailyMetrics").collect();
+    for (const m of metrics) {
+      if ((m as any).debtSettled !== undefined || (m as any).storeCreditAdded !== undefined) {
+        await ctx.db.patch(m._id, { debtSettled: undefined, storeCreditAdded: undefined } as any);
+      }
+    }
+
+    // Remove previousDebt, debtSettled, storeCreditAdded from orders
+    const orders = await ctx.db.query("orders").collect();
+    for (const o of orders) {
+      if ((o as any).previousDebt !== undefined || (o as any).debtSettled !== undefined || (o as any).storeCreditAdded !== undefined) {
+        await ctx.db.patch(o._id, { previousDebt: undefined, debtSettled: undefined, storeCreditAdded: undefined } as any);
+      }
+    }
   },
 });

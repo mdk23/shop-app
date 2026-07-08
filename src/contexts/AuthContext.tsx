@@ -47,7 +47,7 @@ export type Permission =
   | "create_managers"
   | "create_pos_sellers"
   | "access_inventory"
-  | "access_factory"
+  | "access_kitchen"
   | "access_reports"
   | "access_analytics"
   | "access_caixa"
@@ -64,7 +64,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "create_managers",
     "create_pos_sellers",
     "access_inventory",
-    "access_factory",
+    "access_kitchen",
     "access_reports",
     "access_analytics",
     "access_caixa",
@@ -78,7 +78,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   manager: [
     "create_pos_sellers",
     "access_inventory",
-    "access_factory",
+    "access_kitchen",
     "access_reports",
     "access_caixa",
     "access_pos",

@@ -14,12 +14,13 @@ import {
   LogOut,
   ChevronLeft,
   ChevronDown,
-  Factory,
+  ChefHat,
   Landmark,
   Receipt,
   FileText,
   Activity,
   Shield,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -48,6 +49,7 @@ const topMenuItems: MenuItem[] = [
     allowedRoles: ["admin", "manager"],
   },
   { name: "POS", href: "/pos", icon: ShoppingCart },
+  { name: "Active Orders", href: "/active-orders", icon: Bell },
   { name: "Caixa", href: "/caixa", icon: Landmark },
 ];
 
@@ -89,9 +91,9 @@ const menuGroups: MenuGroup[] = [
         allowedRoles: ["admin", "manager"],
       },
       {
-        name: "Factory",
-        href: "/factory",
-        icon: Factory,
+        name: "Production",
+        href: "/kitchen",
+        icon: ChefHat,
         allowedRoles: ["admin", "manager"],
       },
     ],
@@ -213,20 +215,14 @@ export function Sidebar() {
       >
         <div className={cn("p-6 flex items-center justify-between", isCollapsed && "px-4")}>
           {!isCollapsed && (
-            <h1 className="text-xl font-display text-primary flex items-center gap-2 overflow-hidden whitespace-nowrap tracking-tighter">
-              <img
-                src="/logo2.png"
-                alt="Olympia Chicken Logo"
-                className="w-40 h-40 rounded-lg object-cover border-2 border-outline shadow-hard flex-shrink-0 bg-white"
-              />
+            <h1 className="text-2xl font-display text-primary tracking-tighter uppercase select-none">
+              Take Away
             </h1>
           )}
           {isCollapsed && (
-            <img
-              src="/logo2.png"
-              alt="Olympia Chicken Logo"
-              className="w-12 h-12 rounded-lg object-cover border-2 border-outline shadow-hard mx-auto bg-white"
-            />
+            <h1 className="text-xl font-display text-primary tracking-tighter uppercase mx-auto select-none">
+              TA
+            </h1>
           )}
 
           <button

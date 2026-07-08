@@ -6,7 +6,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/utils";
 import {
-  Factory,
+  ChefHat,
   Plus,
   Search,
   CheckCircle2,
@@ -130,7 +130,7 @@ function SearchableIngredientSelect({
   );
 }
 
-export default function FactoryPage() {
+export default function KitchenPage() {
   const recipes = useQuery(api.factory.listRecipes);
   const logs = useQuery(api.factory.listLogs);
   const ingredients = useQuery(api.ingredients.list);
@@ -169,8 +169,8 @@ export default function FactoryPage() {
   const [historySearch, setHistorySearch] = useState("");
 
   // Helpers
-  const factoryItems = (ingredients ?? []).filter((i) => i.category === "Factory");
-  const rawIngredients = (ingredients ?? []).filter((i) => i.category !== "Factory");
+  const factoryItems = (ingredients ?? []).filter((i) => i.category === "Kitchen");
+  const rawIngredients = (ingredients ?? []).filter((i) => i.category !== "Kitchen");
 
   const getStatus = (ing: any) => {
     if (ing.stockQuantity <= 0) {
@@ -361,9 +361,9 @@ export default function FactoryPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 lg:mb-12">
           <div>
-            <h1 className="text-3xl lg:text-5xl 2xl:text-7xl font-display text-on-surface leading-none mb-2 uppercase tracking-tighter">Factory</h1>
+            <h1 className="text-3xl lg:text-5xl 2xl:text-7xl font-display text-on-surface leading-none mb-2 uppercase tracking-tighter">Production</h1>
             <p className="text-on-surface-variant font-bold uppercase tracking-[0.2em] text-[10px] lg:text-xs opacity-60">
-              Operational kitchen prep & production
+              Operational batch production
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
@@ -466,14 +466,14 @@ export default function FactoryPage() {
             {/* Grid display of prep stock */}
             <div className="bg-surface border-2 border-outline rounded-lg shadow-hard p-6">
               <h3 className="text-xs font-black text-on-surface-variant uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" /> Current Factory Prepared Inventory
+                <Layers className="w-4 h-4 text-primary" /> Current Kitchen Prepared Inventory
               </h3>
 
               {factoryItems.length === 0 ? (
                 <div className="text-center py-16 text-on-surface-variant/40 font-bold uppercase tracking-widest">
-                  <Factory className="w-16 h-16 mx-auto mb-4 opacity-40" />
-                  No ingredients listed in "Factory" category.<br />
-                  <span className="text-[10px] font-medium lowercase italic">add ingredients with Category: Factory under Inventory page</span>
+                  <ChefHat className="w-16 h-16 mx-auto mb-4 opacity-40" />
+                  No ingredients listed in "Kitchen" category.<br />
+                  <span className="text-[10px] font-medium lowercase italic">add ingredients with Category: Kitchen under Inventory page</span>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -516,7 +516,7 @@ export default function FactoryPage() {
             {recipes && recipes.length === 0 ? (
               <div className="text-center py-20 text-on-surface-variant/40 font-bold uppercase tracking-widest">
                 <Layers className="w-16 h-16 mx-auto mb-4 opacity-40" />
-                No factory recipes defined yet.
+                No kitchen recipes defined yet.
               </div>
             ) : (
               <div className="divide-y-2 divide-black">
@@ -525,7 +525,7 @@ export default function FactoryPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-surface-container-high border border-black flex items-center justify-center text-primary shadow-hard-sm">
-                          <Factory className="w-5 h-5" />
+                          <ChefHat className="w-5 h-5" />
                         </div>
                         <div>
                           <h4 className="font-display text-xl text-on-surface uppercase tracking-wider">{recipe.producedIngredientName}</h4>
@@ -855,7 +855,7 @@ export default function FactoryPage() {
                     
                     {/* Target prep item */}
                     <div className="space-y-2">
-                      <label className="text-[11px] font-black text-on-surface-variant uppercase tracking-[0.2em]">Prepped Item to Produce (Factory Category) *</label>
+                      <label className="text-[11px] font-black text-on-surface-variant uppercase tracking-[0.2em]">Prepped Item to Produce (Kitchen Category) *</label>
                       <div className="relative">
                         <select
                           required
@@ -863,7 +863,7 @@ export default function FactoryPage() {
                           onChange={(e) => setRecipeProducedId(e.target.value)}
                           className="w-full bg-surface border-2 border-black rounded-xl px-4 py-4 text-on-surface font-black uppercase tracking-wider text-xs focus:border-primary outline-none appearance-none cursor-pointer"
                         >
-                          <option value="" disabled>Choose factory item...</option>
+                          <option value="" disabled>Choose kitchen item...</option>
                           {factoryItems.map((item: any) => (
                             <option key={item._id} value={item._id}>
                               {item.name} ({item.unit})

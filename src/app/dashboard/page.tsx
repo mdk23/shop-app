@@ -23,7 +23,6 @@ import {
   CreditCard,
   Banknote,
   Smartphone,
-  Bitcoin,
   ChevronDown,
   ChevronUp,
   Download,
@@ -246,8 +245,7 @@ export default function DashboardPage() {
         return <Banknote className="w-4 h-4 text-green-500" />;
       case "POS":
         return <CreditCard className="w-4 h-4 text-primary" />;
-      case "Bitcoin":
-        return <Bitcoin className="w-4 h-4 text-yellow-500" />;
+
       default:
         return <Smartphone className="w-4 h-4 text-blue-500" />;
     }
