@@ -13,8 +13,6 @@ export default defineSchema({
     isActive: v.optional(v.boolean()),
     description: v.optional(v.string()),
     options: v.optional(v.any()), // JSON for flexible options
-    comboRules: v.optional(v.any()), // JSON for combo config (legacy)
-    promoRules: v.optional(v.any()), // JSON for promos
     // New Combo Architecture
     isCombo: v.optional(v.boolean()),
     selectableInCombo: v.optional(v.boolean()),
@@ -27,11 +25,6 @@ export default defineSchema({
       sidesLimit: v.number(),
       drinksLimit: v.number(),
     })),
-    // Packaging Configuration (Legacy Phase-out)
-    standalonePackagingIngredientId: v.optional(v.id("ingredients")),
-    standalonePackagingQuantity: v.optional(v.number()),
-    comboPackagingIngredientId: v.optional(v.id("ingredients")),
-    comboPackagingQuantity: v.optional(v.number()),
     // New Multiple Packaging Configuration
     standalonePackaging: v.optional(v.array(v.object({
       ingredientId: v.id("ingredients"),
@@ -316,6 +309,49 @@ export default defineSchema({
     updatedAt: v.number(),            // Timestamp of the last write
   }).index("by_key", ["key"]),
 
+  suppliers: defineTable({
+    name: v.string(),
+    contactName: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    address: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+    paymentTerms: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_status", ["status"]),
+
+  purchaseOrders: defineTable({
+    supplierId: v.id("suppliers"),
+    orderCode: v.string(),
+    orderDate: v.number(),
+    expectedDeliveryDate: v.optional(v.number()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("sent"),
+      v.literal("partially_received"),
+      v.literal("completed"),
+      v.literal("cancelled")
+    ),
+    paymentStatus: v.union(
+      v.literal("unpaid"),
+      v.literal("partially_paid"),
+      v.literal("paid")
+    ),
+    totalAmount: v.number(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_supplier", ["supplierId"])
+    .index("by_status", ["status"]),
+
+  purchaseOrderItems: defineTable({
+    purchaseOrderId: v.id("purchaseOrders"),
+    ingredientId: v.id("ingredients"),
+    quantityOrdered: v.number(),
+    quantityReceived: v.number(),
+    unitCost: v.number(),
+    totalCost: v.number(),
+  }).index("by_purchase_order", ["purchaseOrderId"]),
+
   // ─────────────────────────────────────────────
   // ANALYTICS
   // ─────────────────────────────────────────────
@@ -351,8 +387,8 @@ export default defineSchema({
     customerIds: v.array(v.string()), // Used to count unique customers served
     
     // Complex Breakdown Objects
-    paymentMethods: v.any(), // e.g. { "Cash": { amount: 150, count: 2 }, "M-Pesa": ... }
-    productSales: v.any(),   // e.g. { "Frango Inteiro": 5, "Batata Frita": 10 }
-    categorySales: v.any(),  // e.g. { "Chicken": 5, "Sides": 10 }
+    paymentMethods: v.optional(v.record(v.string(), v.object({ amount: v.number(), count: v.number() }))), 
+    productSales: v.optional(v.record(v.string(), v.number())),
+    categorySales: v.optional(v.record(v.string(), v.number())),
   }).index("by_date", ["dateString"]),
 });

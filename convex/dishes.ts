@@ -42,10 +42,7 @@ export const create = mutation({
       sidesLimit: v.number(),
       drinksLimit: v.number(),
     })),
-    standalonePackagingIngredientId: v.optional(v.id("ingredients")),
-    standalonePackagingQuantity: v.optional(v.number()),
-    comboPackagingIngredientId: v.optional(v.id("ingredients")),
-    comboPackagingQuantity: v.optional(v.number()),
+
     standalonePackaging: v.optional(v.array(v.object({
       ingredientId: v.id("ingredients"),
       quantity: v.number(),
@@ -96,10 +93,7 @@ export const update = mutation({
       sidesLimit: v.number(),
       drinksLimit: v.number(),
     })),
-    standalonePackagingIngredientId: v.optional(v.id("ingredients")),
-    standalonePackagingQuantity: v.optional(v.number()),
-    comboPackagingIngredientId: v.optional(v.id("ingredients")),
-    comboPackagingQuantity: v.optional(v.number()),
+
     standalonePackaging: v.optional(v.array(v.object({
       ingredientId: v.id("ingredients"),
       quantity: v.number(),

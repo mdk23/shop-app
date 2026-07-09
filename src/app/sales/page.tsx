@@ -573,8 +573,7 @@ export default function SalesPage() {
           </motion.div>
         </div>
 
-        {/* Delivery Analytics KPI Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           <div className="bg-surface border-2 border-outline p-5 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
             <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest opacity-80">Total Delivery Revenue</span>
             <p className="text-xl font-display text-primary mt-1">{formatCurrency(metrics.deliveryRevenue)}</p>

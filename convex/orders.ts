@@ -136,8 +136,6 @@ export const create = mutation({
           for (const pack of dish.comboPackaging) {
             addUsage(pack.ingredientId, pack.quantity * item.quantity);
           }
-        } else if (dish.comboPackagingIngredientId && dish.comboPackagingQuantity) {
-          addUsage(dish.comboPackagingIngredientId, dish.comboPackagingQuantity * item.quantity);
         }
       } else {
         // Standalone dish uses its own packaging (Array first, fallback to legacy)
@@ -145,8 +143,6 @@ export const create = mutation({
           for (const pack of dish.standalonePackaging) {
             addUsage(pack.ingredientId, pack.quantity * item.quantity);
           }
-        } else if (dish.standalonePackagingIngredientId && dish.standalonePackagingQuantity) {
-          addUsage(dish.standalonePackagingIngredientId, dish.standalonePackagingQuantity * item.quantity);
         }
       }
 
@@ -477,9 +473,6 @@ export const remove = mutation({
             const current = ingredientsToRestore.get(pack.ingredientId) || 0;
             ingredientsToRestore.set(pack.ingredientId, current + (pack.quantity * item.quantity));
           }
-        } else if (dish.comboPackagingIngredientId && dish.comboPackagingQuantity) {
-          const current = ingredientsToRestore.get(dish.comboPackagingIngredientId) || 0;
-          ingredientsToRestore.set(dish.comboPackagingIngredientId, current + (dish.comboPackagingQuantity * item.quantity));
         }
       } else {
         if (dish.standalonePackaging && dish.standalonePackaging.length > 0) {
@@ -487,9 +480,6 @@ export const remove = mutation({
             const current = ingredientsToRestore.get(pack.ingredientId) || 0;
             ingredientsToRestore.set(pack.ingredientId, current + (pack.quantity * item.quantity));
           }
-        } else if (dish.standalonePackagingIngredientId && dish.standalonePackagingQuantity) {
-          const current = ingredientsToRestore.get(dish.standalonePackagingIngredientId) || 0;
-          ingredientsToRestore.set(dish.standalonePackagingIngredientId, current + (dish.standalonePackagingQuantity * item.quantity));
         }
       }
 
@@ -707,16 +697,12 @@ export const updatePrepStatus = mutation({
             for (const pack of dish.comboPackaging) {
               addUsage(pack.ingredientId, pack.quantity * item.quantity);
             }
-          } else if (dish.comboPackagingIngredientId && dish.comboPackagingQuantity) {
-            addUsage(dish.comboPackagingIngredientId, dish.comboPackagingQuantity * item.quantity);
           }
         } else {
           if (dish.standalonePackaging && dish.standalonePackaging.length > 0) {
             for (const pack of dish.standalonePackaging) {
               addUsage(pack.ingredientId, pack.quantity * item.quantity);
             }
-          } else if (dish.standalonePackagingIngredientId && dish.standalonePackagingQuantity) {
-            addUsage(dish.standalonePackagingIngredientId, dish.standalonePackagingQuantity * item.quantity);
           }
         }
 

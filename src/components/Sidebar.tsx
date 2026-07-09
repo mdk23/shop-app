@@ -21,6 +21,7 @@ import {
   Activity,
   Shield,
   Bell,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -113,6 +114,18 @@ const menuGroups: MenuGroup[] = [
         name: "Stock Overview",
         href: "/stock-overview",
         icon: Activity,
+        allowedRoles: ["admin", "manager"],
+      },
+      {
+        name: "Suppliers",
+        href: "/suppliers",
+        icon: Truck,
+        allowedRoles: ["admin", "manager"],
+      },
+      {
+        name: "Purchase Orders",
+        href: "/purchase-orders",
+        icon: FileText,
         allowedRoles: ["admin", "manager"],
       },
     ],

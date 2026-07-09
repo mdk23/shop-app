@@ -73,16 +73,12 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
       // Load packaging (migrate to array if legacy exists)
       if (initialData.standalonePackaging?.length > 0) {
         setStandalonePackaging(initialData.standalonePackaging);
-      } else if (initialData.standalonePackagingIngredientId) {
-        setStandalonePackaging([{ ingredientId: initialData.standalonePackagingIngredientId, quantity: initialData.standalonePackagingQuantity || 1 }]);
       } else {
         setStandalonePackaging([]);
       }
 
       if (initialData.comboPackaging?.length > 0) {
         setComboPackaging(initialData.comboPackaging);
-      } else if (initialData.comboPackagingIngredientId) {
-        setComboPackaging([{ ingredientId: initialData.comboPackagingIngredientId, quantity: initialData.comboPackagingQuantity || 1 }]);
       } else {
         setComboPackaging([]);
       }
@@ -146,10 +142,6 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
       } : undefined,
       standalonePackaging: standalonePackaging.length > 0 ? standalonePackaging : undefined,
       comboPackaging: comboPackaging.length > 0 ? comboPackaging : undefined,
-      standalonePackagingIngredientId: undefined, // Clear legacy
-      standalonePackagingQuantity: undefined, // Clear legacy
-      comboPackagingIngredientId: undefined, // Clear legacy
-      comboPackagingQuantity: undefined, // Clear legacy
     };
 
     try {

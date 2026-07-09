@@ -344,7 +344,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Sub-cards Row */}
-              <div className="grid grid-cols-2 gap-4 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
 
                 {/* Cash Collected */}
                 <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between">
@@ -386,7 +386,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Delivery KPI Row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Delivery Revenue */}
                 <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
                   <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
@@ -423,7 +423,7 @@ export default function DashboardPage() {
           <div className="space-y-3 flex flex-col h-full">
             <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em] opacity-80">Payment Collections</h3>
             <div className="bg-surface border-2 border-outline rounded-2xl shadow-hard p-4 flex-1">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {Object.entries(metrics.paymentMethodsBreakdown)
                   .filter(([method]) => method.toLowerCase() !== "store credit" && method.toLowerCase() !== "credit")
                   .map(([method, data]: [string, any]) => {
@@ -569,7 +569,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Sub-cards Row */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                 {/* Cash Session Status */}
                 <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between">
