@@ -1,68 +1,25 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { PageLayout } from "@/components/PageLayout";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { formatCurrency, cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { formatCurrency } from "@/lib/utils";
+import { format, startOfDay, endOfDay, subDays } from "date-fns";
 import ManagePaymentsModal from "@/components/pos/ManagePaymentsModal";
-import {
-  Receipt,
-  Search,
-  Trash2,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  User,
-  CreditCard,
-  Banknote,
-  Smartphone,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  TrendingUp,
-  Activity,
-  Package,
-  ArrowUpRight,
-  TrendingDown,
-  Percent,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-} from "lucide-react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  AreaChart,
-  Area,
-  LineChart,
-  Line,
-  CartesianGrid,
-} from "recharts";
-import {
-  startOfDay,
-  endOfDay,
-  subDays,
-} from "date-fns";
 
-const COLORS = ["#FF6B35", "#4ECDC4", "#FFD93D", "#6B5B95", "#88D8B0", "#FFCC5C"];
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  manager: "Manager",
-  pos_seller: "POS Seller",
-};
+// New modular components
+import { SalesMetrics } from "@/components/sales/SalesMetrics";
+import { SalesFilterBar } from "@/components/sales/SalesFilterBar";
+import { SalesTrendChart } from "@/components/sales/SalesTrendChart";
+import { CategorySalesChart } from "@/components/sales/CategorySalesChart";
+import { PaymentSplitChart } from "@/components/sales/PaymentSplitChart";
+import { TopDishesList } from "@/components/sales/TopDishesList";
+import { PeakHoursList } from "@/components/sales/PeakHoursList";
+import { SalesTable } from "@/components/sales/SalesTable";
+import { CancelOrderModal } from "@/components/sales/CancelOrderModal";
 
 export default function SalesPage() {
   const [dateRange, setDateRange] = useState({
@@ -82,7 +39,6 @@ export default function SalesPage() {
   const removeOrder = useMutation(api.orders.remove);
 
   // Search & Filters State
-  // Search & Filters State
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Completed" | "Pending" | "Cancelled">("All");
   const [methodFilter, setMethodFilter] = useState<string>("All");
@@ -90,13 +46,6 @@ export default function SalesPage() {
   const [sellerFilter, setSellerFilter] = useState<string>("All");
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const [orderToManagePayments, setOrderToManagePayments] = useState<any>(null);
-  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
-  const [isDeletingOrder, setIsDeletingOrder] = useState(false);
-
-  const expandedItems = useQuery(
-    api.orders.getOrderItems,
-    expandedOrder ? { orderId: expandedOrder as any } : "skip"
-  );
 
   // Sorting State
   const [sortField, setSortField] = useState<"refCode" | "client" | "method" | "status" | "delivery" | null>(null);
@@ -105,6 +54,9 @@ export default function SalesPage() {
   // Pagination
   const ROWS_PER_PAGE = 10;
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Interactive Chart Mode
+  const [chartMode, setChartMode] = useState<"revenue" | "orders" | "aov">("revenue");
 
   // Dynamic list of sellers in the active orders
   const uniqueSellers = React.useMemo(() => {
@@ -135,19 +87,6 @@ export default function SalesPage() {
       setSortOrder("asc");
     }
   };
-
-  const renderSortIcon = (field: "refCode" | "client" | "method" | "status" | "delivery") => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="w-3 h-3 ml-1 opacity-40 hover:opacity-100 transition-opacity flex-shrink-0" />;
-    }
-    if (sortOrder === "asc") {
-      return <ArrowUp className="w-3 h-3 ml-1 text-primary flex-shrink-0" />;
-    }
-    return <ArrowDown className="w-3 h-3 ml-1 text-primary flex-shrink-0" />;
-  };
-
-  // Interactive Chart Mode
-  const [chartMode, setChartMode] = useState<"revenue" | "orders" | "aov">("revenue");
 
   // Map dishes to categories for category analytics
   const dishCategoryMap = React.useMemo(() => {
@@ -276,7 +215,7 @@ export default function SalesPage() {
     const dishMap: Record<string, number> = {};
     // Category mapping
     const categoryMap: Record<string, number> = {};
-    // Peak hours mapping (Morning, Lunch, Afternoon, Dinner, Night)
+    // Peak hours mapping
     const hourSlots = {
       "Breakfast (08-12h)": 0,
       "Lunch (12-15h)": 0,
@@ -385,29 +324,28 @@ export default function SalesPage() {
     return list.reverse();
   }, [orders, dateRange]);
 
-  const getMethodIcon = (method: string) => {
-    switch (method) {
-      case "Cash":
-        return <Banknote className="w-4 h-4 text-green-500" />;
-      case "POS":
-        return <CreditCard className="w-4 h-4 text-primary" />;
+  const hasFiltersActive =
+    searchTerm !== "" ||
+    statusFilter !== "All" ||
+    methodFilter !== "All" ||
+    fulfillmentFilter !== "All" ||
+    sellerFilter !== "All" ||
+    dateRange.label !== "Today" ||
+    sortField !== null;
 
-      default:
-        return <Smartphone className="w-4 h-4 text-blue-500" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Paid":
-        return "bg-green-500/10 text-green-500 border-green-500/20";
-      case "Partially Paid":
-        return "bg-orange-500/10 text-orange-500 border-orange-500/20";
-      case "Pending":
-        return "bg-red-500/10 text-red-500 border-red-500/20";
-      default:
-        return "bg-surface-container-highest text-on-surface-variant border-outline";
-    }
+  const handleResetFilters = () => {
+    setSearchTerm("");
+    setStatusFilter("All");
+    setMethodFilter("All");
+    setFulfillmentFilter("All");
+    setSellerFilter("All");
+    setSortField(null);
+    setSortOrder("asc");
+    setDateRange({
+      start: startOfDay(new Date()).getTime(),
+      end: endOfDay(new Date()).getTime(),
+      label: "Today",
+    });
   };
 
   const exportToCSV = () => {
@@ -508,907 +446,63 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Top KPI Cards (3 columns grid) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Gross Sales (with Order count at bottom) */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-surface border-2 border-outline p-6 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all"
-          >
-            <div>
-              <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-[0.2em] mb-2 opacity-80 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                Gross Sales
-              </p>
-              <p className="text-3xl font-display text-on-surface leading-none tracking-tight">
-                {formatCurrency(metrics.totalSales)}
-              </p>
-            </div>
-            <div className="mt-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-on-surface bg-surface-container-highest w-fit px-3 py-1.5 rounded-xl border border-outline shadow-hard-sm">
-              {metrics.count} Total Orders
-            </div>
-          </motion.div>
-
-          {/* Net Revenue */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="bg-primary border-2 border-outline p-6 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all text-on-primary"
-          >
-            <div>
-              <p className="text-[10px] font-black text-on-primary/80 uppercase tracking-[0.2em] mb-2">
-                Net Revenue
-              </p>
-              <p className="text-3xl font-display leading-none tracking-tight">
-                {formatCurrency(metrics.totalCollected)}
-              </p>
-            </div>
-            <p className="text-[9px] font-bold text-on-primary/70 mt-5 uppercase tracking-wider flex items-center gap-1">
-              <ArrowUpRight className="w-3.5 h-3.5" /> ▲ 12% vs previous period
-            </p>
-          </motion.div>
-
-
-
-          {/* Average Order Value */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="bg-surface border-2 border-outline p-6 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all"
-          >
-            <div>
-              <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-[0.2em] mb-2 opacity-80">
-                Avg Order Value
-              </p>
-              <p className="text-3xl font-display text-on-surface leading-none tracking-tight">
-                {formatCurrency(metrics.count > 0 ? Math.round(metrics.totalSales / metrics.count) : 0)}
-              </p>
-            </div>
-            <p className="text-[9px] font-bold text-on-surface-variant/60 mt-5 uppercase tracking-wider flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5 text-green-500" /> ▲ 8% vs previous period
-            </p>
-          </motion.div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          <div className="bg-surface border-2 border-outline p-5 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest opacity-80">Total Delivery Revenue</span>
-            <p className="text-xl font-display text-primary mt-1">{formatCurrency(metrics.deliveryRevenue)}</p>
-          </div>
-          <div className="bg-surface border-2 border-outline p-5 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest opacity-80">Delivery Orders</span>
-            <p className="text-xl font-display text-on-surface mt-1">{metrics.deliveryOrdersCount}</p>
-          </div>
-          <div className="bg-surface border-2 border-outline p-5 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest opacity-80">Pickup Orders</span>
-            <p className="text-xl font-display text-on-surface mt-1">{metrics.pickupOrdersCount}</p>
-          </div>
-          <div className="bg-surface border-2 border-outline p-5 rounded-2xl shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest opacity-80">Avg Delivery Fee</span>
-            <p className="text-xl font-display text-on-surface mt-1">{formatCurrency(metrics.averageDeliveryFee)}</p>
-          </div>
-          <div className="bg-surface border-2 border-outline p-5 rounded-2xl shadow-hard flex flex-col justify-between col-span-2 lg:col-span-1 hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest opacity-80">Delivery Rev %</span>
-            <p className="text-xl font-display text-primary mt-1">{metrics.deliveryRevenuePercentage.toFixed(1)}%</p>
-          </div>
-        </div>
+        {/* Top KPI & Delivery Metrics */}
+        <SalesMetrics metrics={metrics} />
 
         {/* Sticky Filters Ribbon */}
-        <div className="sticky top-16 lg:top-24 z-20 bg-background/95 backdrop-blur-md border-b-2 border-outline py-4 shadow-sm space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Status tabs */}
-            <div className="flex flex-wrap gap-2">
-              {(["All", "Completed", "Pending", "Cancelled"] as const).map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={cn(
-                    "px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl border-2 transition-all shadow-hard-sm active:scale-95",
-                    statusFilter === status
-                      ? "bg-primary text-on-primary border-outline -translate-x-[1px] -translate-y-[1px]"
-                      : "bg-surface text-on-surface border-outline-variant hover:text-primary"
-                  )}
-                >
-                  {status}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom Range Picker & Reset */}
-            <div className="flex flex-wrap items-end gap-3">
-              {/* Search */}
-              <div className="relative w-full sm:w-60">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant opacity-40" />
-                <input
-                  type="text"
-                  placeholder="SEARCH CODE, DISH, CLIENT..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-surface border-2 border-outline rounded-xl pl-9 pr-3 py-2 outline-none focus:border-primary transition-all font-black uppercase tracking-widest text-[9px] h-10"
-                />
-              </div>
-
-              {/* Payment Method */}
-              <div className="w-full sm:w-40">
-                <select
-                  value={methodFilter}
-                  onChange={(e) => setMethodFilter(e.target.value)}
-                  className="w-full bg-surface border-2 border-outline rounded-xl px-3 py-2 outline-none focus:border-primary transition-all font-black uppercase tracking-widest text-[9px] h-10 appearance-none cursor-pointer"
-                >
-                  <option value="All">ALL PAYMENT METHODS</option>
-                  <option value="Cash">CASH</option>
-                  <option value="POS">POS CARD</option>
-                  <option value="M-Pesa">M-PESA</option>
-                  <option value="eMola">EMOLA</option>
-                  <option value="BIM">BIM</option>
-                  <option value="Moza">MOZA</option>
-
-                </select>
-              </div>
-
-              {/* Fulfillment Filter */}
-              <div className="w-full sm:w-40">
-                <select
-                  value={fulfillmentFilter}
-                  onChange={(e) => setFulfillmentFilter(e.target.value as any)}
-                  className="w-full bg-surface border-2 border-outline rounded-xl px-3 py-2 outline-none focus:border-primary transition-all font-black uppercase tracking-widest text-[9px] h-10 appearance-none cursor-pointer"
-                >
-                  <option value="All">ALL FULFILLMENT</option>
-                  <option value="Pickup">PICKUP</option>
-                  <option value="Delivery">DELIVERY</option>
-                </select>
-              </div>
-
-              {/* Seller Filter */}
-              <div className="w-full sm:w-40">
-                <select
-                  value={sellerFilter}
-                  onChange={(e) => setSellerFilter(e.target.value)}
-                  className="w-full bg-surface border-2 border-outline rounded-xl px-3 py-2 outline-none focus:border-primary transition-all font-black uppercase tracking-widest text-[9px] h-10 appearance-none cursor-pointer"
-                >
-                  <option value="All">ALL SELLERS</option>
-                  {uniqueSellers.map((seller) => (
-                    <option key={seller} value={seller}>
-                      @{seller.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Dates */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={format(dateRange.start, "yyyy-MM-dd")}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setDateRange((prev) => ({
-                        ...prev,
-                        start: startOfDay(new Date(e.target.value)).getTime(),
-                        label: "Custom",
-                      }));
-                    }
-                  }}
-                  className="bg-surface border-2 border-outline rounded-xl px-3 py-2 outline-none focus:border-primary transition-all font-black text-[9px] h-10"
-                />
-                <span className="text-[10px] font-black opacity-45 uppercase">TO</span>
-                <input
-                  type="date"
-                  value={format(dateRange.end, "yyyy-MM-dd")}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setDateRange((prev) => ({
-                        ...prev,
-                        end: endOfDay(new Date(e.target.value)).getTime(),
-                        label: "Custom",
-                      }));
-                    }
-                  }}
-                  className="bg-surface border-2 border-outline rounded-xl px-3 py-2 outline-none focus:border-primary transition-all font-black text-[9px] h-10"
-                />
-              </div>
-
-              {/* Reset filter */}
-              {(searchTerm || statusFilter !== "All" || methodFilter !== "All" || fulfillmentFilter !== "All" || sellerFilter !== "All" || dateRange.label !== "Today" || sortField !== null) && (
-                <button
-                  onClick={() => {
-                    setSearchTerm("");
-                    setStatusFilter("All");
-                    setMethodFilter("All");
-                    setFulfillmentFilter("All");
-                    setSellerFilter("All");
-                    setSortField(null);
-                    setSortOrder("asc");
-                    setDateRange({
-                      start: startOfDay(new Date()).getTime(),
-                      end: endOfDay(new Date()).getTime(),
-                      label: "Today",
-                    });
-                  }}
-                  className="h-10 px-4 bg-error text-on-error border-2 border-outline rounded-xl hover:bg-secondary active:scale-95 transition-all text-[9px] font-black uppercase tracking-widest shadow-hard-sm"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <SalesFilterBar
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          methodFilter={methodFilter}
+          setMethodFilter={setMethodFilter}
+          fulfillmentFilter={fulfillmentFilter}
+          setFulfillmentFilter={setFulfillmentFilter}
+          sellerFilter={sellerFilter}
+          setSellerFilter={setSellerFilter}
+          uniqueSellers={uniqueSellers}
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+          onReset={handleResetFilters}
+          hasFiltersActive={hasFiltersActive}
+        />
 
         {/* Main Section Grid: LEFT (70%), RIGHT (30%) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-stretch">
           {/* LEFT COLUMN: Charts (70% width on large screens) */}
           <div className="lg:col-span-2 flex flex-col gap-6">
-            {/* Sales Trend Chart */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-soft space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-md font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-primary" />
-                    Sales Trend Analysis
-                  </h3>
-                  <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider opacity-60 mt-0.5">
-                    Real-time transaction volume & collections
-                  </p>
-                </div>
-                {/* Chart Toggle Buttons */}
-                <div className="flex items-center bg-surface border border-outline-variant/60 rounded-xl p-1 gap-1">
-                  {(["revenue", "orders", "aov"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setChartMode(mode)}
-                      className={cn(
-                        "px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all",
-                        chartMode === mode
-                          ? "bg-primary text-on-primary"
-                          : "text-on-surface-variant hover:text-primary"
-                      )}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <SalesTrendChart
+              trendData={trendData}
+              chartMode={chartMode}
+              setChartMode={setChartMode}
+            />
 
-              {trendData.length === 0 ? (
-                <div className="h-[300px] flex items-center justify-center border border-dashed border-outline rounded-2xl bg-surface-container-high/20 text-on-surface-variant/40 font-black uppercase text-[10px] tracking-wider">
-                  No data to plot in this range
-                </div>
-              ) : (
-                <div className="h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    {chartMode === "revenue" ? (
-                      <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0.0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-outline-variant)" opacity={0.3} />
-                        <XAxis dataKey="label" stroke="var(--color-on-surface-variant)" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
-                        <YAxis stroke="var(--color-on-surface-variant)" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "var(--color-surface-container-highest)", border: "2px solid var(--color-outline)", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}
-                          formatter={(value: any) => [formatCurrency(value), "Gross Sales"]}
-                        />
-                        <Area type="monotone" dataKey="Revenue" stroke="var(--color-primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
-                      </AreaChart>
-                    ) : chartMode === "orders" ? (
-                      <BarChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-outline-variant)" opacity={0.3} />
-                        <XAxis dataKey="label" stroke="var(--color-on-surface-variant)" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
-                        <YAxis stroke="var(--color-on-surface-variant)" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "var(--color-surface-container-highest)", border: "2px solid var(--color-outline)", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}
-                          formatter={(value: any) => [value, "Orders Count"]}
-                        />
-                        <Bar dataKey="Orders" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    ) : (
-                      <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-outline-variant)" opacity={0.3} />
-                        <XAxis dataKey="label" stroke="var(--color-on-surface-variant)" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
-                        <YAxis stroke="var(--color-on-surface-variant)" fontSize={9} fontWeight={800} axisLine={false} tickLine={false} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: "var(--color-surface-container-highest)", border: "2px solid var(--color-outline)", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}
-                          formatter={(value: any) => [formatCurrency(value), "Avg Order Value"]}
-                        />
-                        <Line type="monotone" dataKey="AOV" stroke="var(--color-primary)" strokeWidth={3} dot={{ stroke: "var(--color-primary)", strokeWidth: 2, r: 4 }} />
-                      </LineChart>
-                    )}
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-
-            {/* Sales by Category Chart */}
-            <div className="flex-1 flex flex-col bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-soft space-y-4">
-              <div>
-                <h3 className="text-md font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
-                  <Package className="w-5 h-5 text-primary" />
-                  Dishes Sold by Category
-                </h3>
-                <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider opacity-60 mt-0.5">
-                  Itemized quantities grouped by menu category (Chicken, Combos, Pizza, Sides, etc.)
-                </p>
-              </div>
-
-              {metrics.categorySales.length === 0 ? (
-                <div className="flex-1 min-h-[300px] flex items-center justify-center border border-dashed border-outline rounded-2xl bg-surface-container-high/20 text-on-surface-variant/40 font-black uppercase text-[10px] tracking-wider">
-                  No sales category metrics available
-                </div>
-              ) : (
-                <div className="flex-1 relative min-h-[300px] w-full">
-                  <div className="absolute inset-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={metrics.categorySales} layout="vertical" margin={{ top: 0, right: 10, left: -20, bottom: 0 }}>
-                        <XAxis type="number" hide />
-                        <YAxis
-                          dataKey="name"
-                          type="category"
-                          width={90}
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "currentColor", fontSize: 9, fontWeight: 900 }}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "var(--color-surface-container-highest)", opacity: 0.4 }}
-                          contentStyle={{ backgroundColor: "var(--color-surface-container-highest)", border: "2px solid var(--color-outline)", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}
-                        />
-                        <Bar dataKey="value" fill="var(--color-primary)" radius={[0, 8, 8, 0]} name="Units Sold" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
-            </div>
+            <CategorySalesChart categorySales={metrics.categorySales} />
           </div>
 
           {/* RIGHT COLUMN: Sidebar (30% width on large screens) */}
           <div className="lg:col-span-1 space-y-6">
-            {/* Payment Method Split Pie/Donut */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-soft space-y-4">
-              <div>
-                <h3 className="text-md font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-primary" />
-                  Payment Methods Split
-                </h3>
-                <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider opacity-60 mt-0.5">
-                  Share of collection channel
-                </p>
-              </div>
+            <PaymentSplitChart paymentData={metrics.paymentData} />
 
-              {metrics.paymentData.length === 0 ? (
-                <div className="h-[180px] flex items-center justify-center text-on-surface-variant/35 text-[10px] font-black uppercase tracking-wider">
-                  No payment data
-                </div>
-              ) : (
-                <div className="h-[180px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={metrics.paymentData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={75}
-                        paddingAngle={4}
-                        dataKey="value"
-                      >
-                        {metrics.paymentData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ backgroundColor: "var(--color-surface-container-highest)", border: "2px solid var(--color-outline)", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}
-                        formatter={(value: any) => [formatCurrency(value), "Collected"]}
-                      />
-                      <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: "9px", fontWeight: "bold" }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
+            <TopDishesList topDishes={metrics.topDishes} />
 
-            {/* Top Selling Dishes progress bar list */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-soft space-y-4">
-              <div>
-                <h3 className="text-md font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-primary" />
-                  Top Selling Dishes
-                </h3>
-                <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider opacity-60 mt-0.5">
-                  Top performing menu items
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {metrics.topDishes.length === 0 ? (
-                  <div className="text-center py-6 text-[10px] text-on-surface-variant/40 font-black uppercase tracking-wider">
-                    No dish data recorded
-                  </div>
-                ) : (
-                  metrics.topDishes.map((dish, index) => {
-                    const maxCount = Math.max(...metrics.topDishes.map((d) => d.value), 1);
-                    const percentage = Math.round((dish.value / maxCount) * 100);
-                    return (
-                      <div key={index} className="space-y-1">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="font-bold text-on-surface truncate max-w-[170px] uppercase text-[10px] tracking-wide">
-                            {dish.name}
-                          </span>
-                          <span className="font-black text-primary text-[10px]">{dish.value} units</span>
-                        </div>
-                        <div className="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden border border-outline-variant/30">
-                          <div
-                            className="bg-primary h-full rounded-full transition-all duration-500"
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Peak Hours card */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-soft space-y-4">
-              <div>
-                <h3 className="text-md font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-primary" />
-                  Peak Service Hours
-                </h3>
-                <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider opacity-60 mt-0.5">
-                  Busiest periods by order count
-                </p>
-              </div>
-
-              <div className="space-y-2.5">
-                {metrics.peakHours.length === 0 ? (
-                  <div className="text-center py-4 text-[10px] text-on-surface-variant/40 font-black uppercase tracking-wider">
-                    No timeline metrics
-                  </div>
-                ) : (
-                  metrics.peakHours.map((slot, index) => {
-                    const maxOrders = Math.max(...metrics.peakHours.map((s) => s.count), 1);
-                    const pct = Math.round((slot.count / maxOrders) * 100);
-                    return (
-                      <div key={index} className="flex items-center gap-3">
-                        <span className="text-[9px] font-black text-on-surface-variant opacity-75 uppercase w-28 truncate">
-                          {slot.name}
-                        </span>
-                        <div className="flex-1 bg-surface-container-high h-2 rounded-full overflow-hidden">
-                          <div className="bg-primary h-full rounded-full" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-[9px] font-black text-on-surface w-8 text-right">
-                          {slot.count} ord
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+            <PeakHoursList peakHours={metrics.peakHours} />
           </div>
         </div>
 
         {/* BOTTOM SECTION: Full Sales Table */}
-        <div className="bg-surface border-2 border-outline rounded-2xl shadow-hard overflow-hidden flex flex-col min-h-[500px]">
-          <div className="px-6 py-4 border-b border-outline bg-surface-container-low/50">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em]">
-                Sales Log ({filteredOrders.length})
-              </h3>
-              <span className="text-[10px] font-black text-on-surface-variant opacity-50 uppercase tracking-widest">
-                Page {currentPage} of {Math.max(1, Math.ceil(filteredOrders.length / ROWS_PER_PAGE))}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-left border-separate border-spacing-0">
-              <thead className="sticky top-0 z-10 bg-black text-white select-none">
-                <tr className="uppercase text-[9px] tracking-widest font-black">
-                  <th 
-                    className="px-6 py-4 cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
-                    onClick={() => handleSort("refCode")}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>Ref Code</span>
-                      {renderSortIcon("refCode")}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 hide-on-tablet cursor-pointer hover:bg-neutral-800 transition-colors w-[25%]"
-                    onClick={() => handleSort("client")}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>Client Profile</span>
-                      {renderSortIcon("client")}
-                    </div>
-                  </th>
-                  <th className="px-6 py-4 hide-on-mobile w-[10%]">Kitchen</th>
-                  <th 
-                    className="px-6 py-4 hide-on-mobile cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
-                    onClick={() => handleSort("delivery")}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>Delivery</span>
-                      {renderSortIcon("delivery")}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 hide-on-mobile cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
-                    onClick={() => handleSort("method")}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>Method</span>
-                      {renderSortIcon("method")}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 hide-on-mobile cursor-pointer hover:bg-neutral-800 transition-colors w-[15%]"
-                    onClick={() => handleSort("status")}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>Payment</span>
-                      {renderSortIcon("status")}
-                    </div>
-                  </th>
-                  <th className="px-6 py-4 text-right w-[10%]">Total Price</th>
-                  <th className="px-6 py-4 text-right w-[5%]">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y-2 divide-outline-variant/30">
-                {filteredOrders.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE).map((order) => (
-                  <React.Fragment key={order._id}>
-                    <tr
-                      className={cn(
-                        "hover:bg-primary/5 transition-all cursor-pointer group",
-                        expandedOrder === order._id && "bg-primary/5"
-                      )}
-                      onClick={() => setExpandedOrder(expandedOrder === order._id ? null : order._id)}
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="hidden sm:flex w-9 h-9 rounded-xl bg-surface-container-high border border-outline items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-all">
-                            <Receipt className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <p className="font-display text-on-surface text-sm lg:text-base uppercase tracking-wider">
-                              {order.orderCode ?? `#${order._id.slice(-6).toUpperCase()}`}
-                            </p>
-                            <p className="text-[9px] font-black text-on-surface-variant flex items-center gap-1 uppercase tracking-tighter opacity-60">
-                              <Clock className="w-3 h-3" /> {format(order.createdAt, "dd/MM/yyyy HH:mm")}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 hide-on-tablet">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                            <User className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-on-surface uppercase text-xs tracking-wider">
-                              {(order as any).customer?.name || "Generic Client"}
-                            </span>
-                            {order.username && (
-                              <span className="text-[9px] text-on-surface-variant font-medium lowercase">
-                                seller: @{order.username}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 hide-on-mobile">
-                        <span className={cn(
-                          "inline-flex items-center px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border",
-                          order.prepStatus === "completed" ? "bg-success/10 text-success border-success/20" :
-                          order.prepStatus === "ready" ? "bg-primary/10 text-primary border-primary/20" :
-                          order.prepStatus === "preparing" ? "bg-warning/10 text-warning-dark border-warning/20" :
-                          "bg-surface-container-high text-on-surface-variant border-outline-variant"
-                        )}>
-                          {order.prepStatus || "pending"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 hide-on-mobile">
-                        <span className={cn(
-                          "inline-flex items-center px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border",
-                          order.orderType === "delivery"
-                            ? "bg-primary/10 text-primary border-primary/20"
-                            : "bg-surface-container-high text-on-surface-variant border-outline-variant"
-                        )}>
-                          {order.orderType === "delivery" ? "Delivery" : "Pickup"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 hide-on-mobile">
-                        {order.payments && order.payments.length > 0 ? (
-                          <div className="flex flex-col gap-1">
-                            {order.payments.map((p: any, idx: number) => (
-                              <div key={idx} className="flex items-center gap-1.5 text-[9px] font-black text-on-surface uppercase tracking-wider">
-                                {getMethodIcon(p.method)}
-                                <span>{p.method}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-[9px] font-black text-on-surface uppercase tracking-widest">
-                            {getMethodIcon(order.amountPaid === 0 ? "Debt" : (order.paymentMethod || "Cash"))}
-                            {order.amountPaid === 0 ? "Debt" : order.paymentMethod}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 hide-on-mobile">
-                        <div
-                          className={cn(
-                            "inline-flex items-center px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border",
-                            getStatusColor(order.status)
-                          )}
-                        >
-                          {order.status}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
-                        <p className="font-display text-base lg:text-xl text-primary tracking-tighter">
-                          {formatCurrency(order.total)}
-                        </p>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOrderToDelete(order);
-                            }}
-                            className="p-2 rounded-xl text-error hover:bg-error/10 border border-transparent hover:border-outline-variant transition-all hide-on-mobile"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                          {expandedOrder === order._id ? (
-                            <ChevronUp className="w-4 h-4 text-on-surface-variant" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-on-surface-variant" />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Expandable Order detail view */}
-                    <AnimatePresence>
-                      {expandedOrder === order._id && (
-                        <tr>
-                          <td colSpan={7} className="p-0">
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden bg-surface-container-low/40 px-6 py-4 border-b border-outline"
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                  <h4 className="text-[9px] font-black text-on-surface-variant uppercase tracking-[0.2em] mb-3">
-                                    Items Ordered
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {!expandedItems ? (
-                                      <div className="flex justify-center p-4 opacity-50">
-                                        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                                      </div>
-                                    ) : (expandedItems.length > 0 ? expandedItems : (order.items || [])).length === 0 ? (
-                                      <p className="text-xs text-on-surface-variant opacity-60 px-2">No items found</p>
-                                    ) : (
-                                      (expandedItems.length > 0 ? expandedItems : (order.items || [])).map((item: any, idx: number) => (
-                                        <div key={idx} className="flex flex-col bg-surface p-3 rounded-xl border border-outline shadow-hard-sm gap-2">
-                                          <div className="flex justify-between items-center">
-                                            <div className="flex items-center gap-2">
-                                              <span className="w-6 h-6 rounded bg-black text-white flex items-center justify-center font-black text-[10px]">
-                                                {item.quantity}
-                                              </span>
-                                              <span className="font-bold text-on-surface uppercase text-xs tracking-wider">
-                                                {item.dishName}
-                                              </span>
-                                            </div>
-                                            <span className="font-display text-on-surface-variant text-sm">
-                                              {formatCurrency(
-                                                (item.priceAtTime ?? item.price ?? 0) * item.quantity +
-                                                  (item.modifiers || []).reduce((sum: number, m: any) => sum + m.price, 0) +
-                                                  (item.comboSelections || []).reduce(
-                                                    (sum: number, c: any) => sum + c.extraCharge,
-                                                    0
-                                                  )
-                                              )}
-                                            </span>
-                                          </div>
-
-                                          {/* Modifiers */}
-                                          {item.modifiers && item.modifiers.length > 0 && (
-                                            <div className="pl-2 border-l border-primary/20 space-y-1">
-                                              {item.modifiers.map((mod: any, i: number) => (
-                                                <p key={i} className="text-[9px] font-bold text-on-surface-variant/80 flex justify-between">
-                                                  <span>🍳 {mod.name}</span>
-                                                  <span className="text-primary font-black">+{formatCurrency(mod.price)}</span>
-                                                </p>
-                                              ))}
-                                            </div>
-                                          )}
-
-                                          {/* Combo Selections */}
-                                          {item.comboSelections && item.comboSelections.length > 0 && (
-                                            <div className="pl-2 border-l border-primary/20 space-y-1">
-                                              {item.comboSelections.map((sel: any, i: number) => (
-                                                <p key={i} className="text-[9px] font-bold text-on-surface-variant/80 flex justify-between">
-                                                  <span>
-                                                    {sel.category === "Free Pizza Upgrade" ? "🍕 Promo" : `🥗 ${sel.category}`}: {sel.name}
-                                                  </span>
-                                                  {sel.extraCharge > 0 && (
-                                                    <span className="text-primary font-black">+{formatCurrency(sel.extraCharge)}</span>
-                                                  )}
-                                                </p>
-                                              ))}
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="bg-surface rounded-xl p-4 border border-outline shadow-hard-sm flex flex-col justify-between">
-                                  <div>
-                                    <h4 className="text-[9px] font-black text-on-surface-variant uppercase tracking-[0.2em] mb-3">
-                                      Financial Breakdown
-                                    </h4>
-                                    <div className="space-y-1.5 text-xs font-bold uppercase tracking-wider">
-                                      <div className="flex justify-between">
-                                        <span>Food Subtotal</span>
-                                        <span>{formatCurrency(order.total - (order.deliveryFeeAmount ?? 0))}</span>
-                                      </div>
-                                      {order.orderType === "delivery" && (
-                                        <div className="flex justify-between">
-                                          <span>Delivery Fee</span>
-                                          <span>{formatCurrency(order.deliveryFeeAmount ?? 0)}</span>
-                                        </div>
-                                      )}
-                                      <div className="flex justify-between pt-1.5 border-t border-dashed border-outline-variant/50">
-                                        <span>Total Bill</span>
-                                        <span>{formatCurrency(order.total)}</span>
-                                      </div>
-                                      <div className="flex justify-between text-green-500">
-                                        <span>Amount Paid</span>
-                                        <span>{formatCurrency(order.amountPaid)}</span>
-                                      </div>
-                                      {order.username && (
-                                        <div className="flex justify-between text-on-surface-variant/75 pt-1.5 border-t border-dashed border-outline-variant">
-                                          <span>Registered By</span>
-                                          <span className="lowercase font-black">@{order.username}</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() => setOrderToManagePayments(order)}
-                                    className="mt-4 w-full py-2 bg-surface-container-highest border border-outline rounded-xl font-black text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary hover:border-primary/50 transition-all active:scale-95 shadow-soft"
-                                  >
-                                    Manage Payments
-                                  </button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          </td>
-                        </tr>
-                      )}
-                    </AnimatePresence>
-                  </React.Fragment>
-                ))}
-
-                {filteredOrders.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-8 py-20 text-center text-on-surface-variant font-bold uppercase tracking-widest opacity-40">
-                      <Receipt className="w-12 h-12 mx-auto mb-3" />
-                      No sales found matching your search.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {filteredOrders.length > 0 && (
-                <tfoot className="sticky bottom-0 z-10 bg-black text-white font-black text-[10px] uppercase tracking-wider">
-                  <tr className="border-t-4 border-outline">
-                    <td className="px-6 py-4">Totals ({filteredOrders.length})</td>
-                    <td className="px-6 py-4"></td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-black uppercase tracking-wider">
-                        {(() => {
-                          const totalsMap: Record<string, number> = {};
-                          filteredOrders.forEach((o) => {
-                            const payments = (o as any).payments || [];
-                            if (payments.length > 0) {
-                              payments.forEach((p: any) => {
-                                totalsMap[p.method] = (totalsMap[p.method] || 0) + p.amount;
-                              });
-                            } else {
-                              const method = o.paymentMethod || "Cash";
-                              totalsMap[method] = (totalsMap[method] || 0) + o.amountPaid;
-                            }
-                          });
-                          return Object.entries(totalsMap).map(([method, amount], idx) => (
-                            <span key={idx} className="whitespace-nowrap">
-                              {method}: <span className="text-primary font-extrabold">{formatCurrency(amount)}</span>
-                            </span>
-                          ));
-                        })()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4"></td>
-                    <td className="px-6 py-4"></td>
-                    <td className="px-6 py-4 text-right text-lg font-display text-primary">
-                      {formatCurrency(filteredOrders.reduce((acc, o) => acc + o.total, 0))}
-                    </td>
-                    <td className="px-6 py-4"></td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-
-          {/* Pagination Controls */}
-          {filteredOrders.length > ROWS_PER_PAGE && (
-            <div className="px-6 py-4 border-t-2 border-outline flex items-center justify-between bg-surface-container-low/40">
-              <span className="text-[10px] font-black text-on-surface-variant uppercase tracking-wider opacity-60">
-                Showing {(currentPage - 1) * ROWS_PER_PAGE + 1}–{Math.min(currentPage * ROWS_PER_PAGE, filteredOrders.length)} of {filteredOrders.length} transactions
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-4 py-2 text-[9px] font-black uppercase tracking-widest bg-surface border-2 border-outline rounded-xl hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-hard-sm active:scale-95"
-                >
-                  ← Prev
-                </button>
-
-                {Array.from({ length: Math.ceil(filteredOrders.length / ROWS_PER_PAGE) }, (_, i) => i + 1)
-                  .filter((page) => page === 1 || page === Math.ceil(filteredOrders.length / ROWS_PER_PAGE) || Math.abs(page - currentPage) <= 1)
-                  .reduce<(number | "...")[]>((acc, page, idx, arr) => {
-                    if (idx > 0 && (page as number) - (arr[idx - 1] as number) > 1) acc.push("...");
-                    acc.push(page);
-                    return acc;
-                  }, [])
-                  .map((item, idx) =>
-                    item === "..." ? (
-                      <span key={`ellipsis-${idx}`} className="text-[10px] font-black text-on-surface-variant opacity-40 px-1">
-                        ...
-                      </span>
-                    ) : (
-                      <button
-                        key={item}
-                        onClick={() => setCurrentPage(item as number)}
-                        className={cn(
-                          "w-9 h-9 rounded-xl text-[10px] font-black uppercase border-2 transition-all shadow-hard-sm active:scale-95",
-                          currentPage === item
-                            ? "bg-primary text-on-primary border-outline"
-                            : "bg-surface text-on-surface border-outline-variant hover:border-primary/50"
-                        )}
-                      >
-                        {item}
-                      </button>
-                    )
-                  )}
-
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(Math.ceil(filteredOrders.length / ROWS_PER_PAGE), p + 1))}
-                  disabled={currentPage === Math.ceil(filteredOrders.length / ROWS_PER_PAGE)}
-                  className="px-4 py-2 text-[9px] font-black uppercase tracking-widest bg-surface border-2 border-outline rounded-xl hover:bg-surface-container-high disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-hard-sm active:scale-95"
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <SalesTable
+          filteredOrders={filteredOrders}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          ROWS_PER_PAGE={ROWS_PER_PAGE}
+          sortField={sortField}
+          sortOrder={sortOrder}
+          handleSort={handleSort}
+          onDeleteOrder={setOrderToDelete}
+          onManagePayments={setOrderToManagePayments}
+        />
       </div>
 
       {/* Manage Payments Modal */}
@@ -1421,57 +515,15 @@ export default function SalesPage() {
 
       {/* Cancel Order Modal */}
       {orderToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-surface w-full max-w-lg rounded-[2rem] shadow-2xl p-8 border border-outline"
-          >
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center text-error">
-                <AlertCircle className="w-7 h-7" />
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black text-on-surface uppercase tracking-wider leading-tight">Cancel Transaction?</h2>
-            </div>
-            <p className="text-on-surface-variant font-medium text-xs mb-6 leading-relaxed">
-              Are you sure you want to delete Order <span className="font-black text-on-surface">{(orderToDelete as any).orderCode ?? `#${orderToDelete._id.slice(-6)}`}</span>?
-              <br /><br />
-              This action will <strong className="text-error font-black">restore inventory stock</strong> and remove this record permanently.
-            </p>
-            <div className="flex gap-4 text-xs font-black uppercase">
-              <button
-                onClick={() => setOrderToDelete(null)}
-                className="flex-1 py-3.5 rounded-xl border-2 border-outline font-bold text-on-surface-variant hover:bg-surface-container-high transition-all"
-              >
-                Go Back
-              </button>
-              <button
-                disabled={isDeletingOrder}
-                onClick={async () => {
-                  if (isDeletingOrder) return;
-                  setIsDeletingOrder(true);
-                  try {
-                    await removeOrder({ id: orderToDelete._id });
-                    toast.success("Transaction cancelled and inventory restored!");
-                    setOrderToDelete(null);
-                  } catch (e: any) {
-                    if (e.message?.includes("Order not found")) {
-                      toast.info("Order was already removed.");
-                      setOrderToDelete(null);
-                    } else {
-                      toast.error("Failed to delete sale: " + e.message);
-                    }
-                  } finally {
-                    setIsDeletingOrder(false);
-                  }
-                }}
-                className={`flex-1 py-3.5 rounded-xl transition-all shadow-hard active:scale-95 border-2 border-outline ${isDeletingOrder ? "bg-error/50 text-on-error cursor-not-allowed" : "bg-error text-on-error hover:bg-error/90"}`}
-              >
-                {isDeletingOrder ? "Deleting..." : "Delete Sale"}
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <CancelOrderModal
+          orderToDelete={orderToDelete}
+          onClose={() => setOrderToDelete(null)}
+          onConfirm={async () => {
+            await removeOrder({ id: orderToDelete._id });
+            toast.success("Transaction cancelled and inventory restored!");
+            setOrderToDelete(null);
+          }}
+        />
       )}
     </PageLayout>
   );

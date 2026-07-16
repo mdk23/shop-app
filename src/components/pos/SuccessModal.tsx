@@ -85,15 +85,6 @@ export function SuccessModal({ isOpen, orderId, onNewSale, onViewDetails }: Succ
 
 
 
-              {order.change > 0 && (
-                <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
-                  <span className="text-on-surface-variant flex items-center gap-2">
-                    <Coins className="w-4 h-4 text-blue-600" /> Change Returned
-                  </span>
-                  <span className="text-blue-600">{formatCurrency(order.change)}</span>
-                </div>
-              )}
-
             </div>
           </div>
 

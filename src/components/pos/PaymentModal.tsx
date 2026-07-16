@@ -118,7 +118,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
         paymentMethod: isSplitPayment ? "Multiple" : selectedMethod,
         amountPaid: numAmountPaid,
         splitPayments: isSplitPayment ? splitPayments : undefined,
-        change,
+
         cashRegisterSessionId: (hasCashPayment && activeCaixaSession) ? activeCaixaSession._id : undefined,
         userId: currentUser?.userId,
         username: currentUser?.username,
