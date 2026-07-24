@@ -13,7 +13,7 @@ export function DateRangeRibbon({
   setDateRangeType,
 }: DateRangeRibbonProps) {
   return (
-    <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-md border-b-2 border-outline py-4 px-2 -mx-2 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none">
+    <div className="sticky -top-2 lg:-top-4 z-20 bg-background/95 backdrop-blur-md border-b-2 border-outline py-4 px-4 -mx-2 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none shadow-sm">
       <div>
         <h2 className="text-xl lg:text-xl font-black text-on-surface uppercase tracking-tight">
           Dashboard

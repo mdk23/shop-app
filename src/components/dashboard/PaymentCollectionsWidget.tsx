@@ -30,7 +30,7 @@ export function PaymentCollectionsWidget({
                   key={method}
                   className="bg-surface-container-low border border-outline/50 rounded-xl p-3 flex items-center gap-3 hover:bg-surface-container-high transition-all duration-200"
                 >
-                  <div className="w-9 h-9 rounded-lg bg-surface-container-high border border-outline flex items-center justify-center flex-shrink-0">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                     {getMethodIcon(method)}
                   </div>
                   <div className="flex-1 min-w-0">

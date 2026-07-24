@@ -4,6 +4,7 @@ import "./globals.css";
 import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 import { SonnerProvider } from "@/components/SonnerProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import { RouteGuard } from "@/components/RouteGuard";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -22,18 +23,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="sage">
       <body className={`${plusJakartaSans.variable} antialiased`}>
         <ConvexClientProvider>
-          <AuthProvider>
-            <SonnerProvider />
-            <RouteGuard>
-              {children}
-            </RouteGuard>
-          </AuthProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <SonnerProvider />
+              <RouteGuard>
+                {children}
+              </RouteGuard>
+            </AuthProvider>
+          </ThemeProvider>
         </ConvexClientProvider>
       </body>
     </html>
   );
 }
-

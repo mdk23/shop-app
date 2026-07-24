@@ -74,10 +74,10 @@ export function RecentActivityTable({
 
       <div className="flex-1 overflow-auto">
         <table className="w-full text-left border-separate border-spacing-0">
-          <thead className="sticky top-0 z-10 bg-black text-white select-none">
+          <thead className="sticky top-0 z-10 bg-surface-container-high text-on-surface border-b-2 border-outline select-none">
             <tr className="uppercase text-[9px] tracking-widest font-black">
               <th
-                className="px-6 py-3 cursor-pointer hover:bg-neutral-800 transition-colors"
+                className="px-6 py-3 cursor-pointer hover:bg-surface-container transition-colors"
                 onClick={() => handleSort("refCode")}
               >
                 <div className="flex items-center gap-1">
@@ -87,7 +87,7 @@ export function RecentActivityTable({
               </th>
               <th className="px-6 py-3">Time</th>
               <th
-                className="px-6 py-3 cursor-pointer hover:bg-neutral-800 transition-colors"
+                className="px-6 py-3 cursor-pointer hover:bg-surface-container transition-colors"
                 onClick={() => handleSort("client")}
               >
                 <div className="flex items-center gap-1">
@@ -97,7 +97,7 @@ export function RecentActivityTable({
               </th>
               <th className="px-6 py-3">Items</th>
               <th
-                className="px-6 py-3 text-right cursor-pointer hover:bg-neutral-800 transition-colors"
+                className="px-6 py-3 text-right cursor-pointer hover:bg-surface-container transition-colors"
                 onClick={() => handleSort("total")}
               >
                 <div className="flex items-center justify-end gap-1">
@@ -107,7 +107,7 @@ export function RecentActivityTable({
               </th>
               <th className="px-6 py-3 text-right">Amount Paid</th>
               <th
-                className="px-6 py-3 cursor-pointer hover:bg-neutral-800 transition-colors"
+                className="px-6 py-3 cursor-pointer hover:bg-surface-container transition-colors"
                 onClick={() => handleSort("method")}
               >
                 <div className="flex items-center gap-1">
@@ -116,7 +116,7 @@ export function RecentActivityTable({
                 </div>
               </th>
               <th
-                className="px-6 py-3 cursor-pointer hover:bg-neutral-800 transition-colors"
+                className="px-6 py-3 cursor-pointer hover:bg-surface-container transition-colors"
                 onClick={() => handleSort("status")}
               >
                 <div className="flex items-center gap-1">
@@ -159,7 +159,7 @@ export function RecentActivityTable({
                     <td className="px-6 py-3.5 text-right font-display text-[14px]">
                       {formatCurrency(order.total)}
                     </td>
-                    <td className="px-6 py-3.5 text-right text-green-600 font-black">
+                    <td className="px-6 py-3.5 text-right text-primary font-black">
                       {formatCurrency(order.amountPaid)}
                     </td>
                     <td className="px-6 py-3.5 uppercase text-[10px] tracking-wider">
@@ -176,8 +176,8 @@ export function RecentActivityTable({
                       <span className={cn(
                         "px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border",
                         order.status === "Paid"
-                          ? "bg-green-500/10 text-green-600 border-green-500/20"
-                          : "bg-red-500/10 text-red-600 border-red-500/20"
+                          ? "bg-primary/10 text-primary border-primary/20"
+                          : "bg-error/10 text-error border-error/20"
                       )}>
                         {order.status === "Paid" ? "Paid" : "Cancelled"}
                       </span>

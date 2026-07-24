@@ -36,22 +36,22 @@ interface SalesTableProps {
 const getMethodIcon = (method: string) => {
   switch (method) {
     case "Cash":
-      return <Banknote className="w-4 h-4 text-green-500" />;
+      return <Banknote className="w-4 h-4 text-primary" />;
     case "POS":
-      return <CreditCard className="w-4 h-4 text-primary" />;
+      return <CreditCard className="w-4 h-4 text-secondary" />;
     default:
-      return <Smartphone className="w-4 h-4 text-blue-500" />;
+      return <Smartphone className="w-4 h-4 text-primary" />;
   }
 };
 
 const getStatusColor = (status: string) => {
   switch (status) {
     case "Paid":
-      return "bg-green-500/10 text-green-500 border-green-500/20";
+      return "bg-primary/10 text-primary border-primary/20";
     case "Partially Paid":
-      return "bg-orange-500/10 text-orange-500 border-orange-500/20";
+      return "bg-secondary/10 text-secondary border-secondary/20";
     case "Pending":
-      return "bg-red-500/10 text-red-500 border-red-500/20";
+      return "bg-error/10 text-error border-error/20";
     default:
       return "bg-surface-container-highest text-on-surface-variant border-outline";
   }

@@ -35,46 +35,120 @@
   --color-on-success: var(--on-success);
 
   /* Border Radii */
-  --radius-sm: 0.25rem;
+  --radius-sm: 0.375rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
   --radius-xl: 1.5rem;
 }
 
-:root {
-  /* GustoFlow Light Theme - Vibrant Orange & Soft Blue Neutrals */
-  --primary: #9d4300;
-  --on-primary: #ffffff;
-  --primary-container: #f97316;
-  --on-primary-container: #582200;
+/* ==========================================
+   THEME 1: Soft Sage (#ACC8A2) & Deep Olive (#1A2517) [DEFAULT]
+   ========================================== */
+:root,
+[data-theme="sage"] {
+  --primary: #ACC8A2;
+  --on-primary: #1A2517;
+  --primary-container: #DDEBD7;
+  --on-primary-container: #1A2517;
 
-  --secondary: #565e74;
-  --secondary-container: #dae2fd;
+  --secondary: #1A2517;
+  --secondary-container: #E2EFE0;
 
-  --background: #f8f9ff;
-  --foreground: #0b1c30;
-  --surface: #ffffff;
-  --on-surface: #0b1c30;
-  --on-surface-variant: #584237;
+  --background: #F5F8F4;
+  --foreground: #1A2517;
+  --surface: #FFFFFF;
+  --on-surface: #1A2517;
+  --on-surface-variant: #42523F;
   
-  --outline: #8c7164;
-  --outline-variant: #e0c0b1;
+  --outline: #A2BF98;
+  --outline-variant: #D4E3CE;
 
-  --surface-container-lowest: #ffffff;
-  --surface-container-low: #eff4ff;
-  --surface-container: #e5eeff;
-  --surface-container-high: #dce9ff;
-  --surface-container-highest: #d3e4fe;
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-low: #F0F5EE;
+  --surface-container: #E5EFE2;
+  --surface-container-high: #D8E7D4;
+  --surface-container-highest: #CCDEC7;
 
-  --error: #ba1a1a;
-  --on-error: #ffffff;
-  --success: #006c49;
-  --on-success: #ffffff;
+  --error: #BA1A1A;
+  --on-error: #FFFFFF;
+  --success: #2D6A4F;
+  --on-success: #FFFFFF;
   
-  --shadow-color: rgba(157, 67, 0, 0.08); /* Soft orange brand shadow */
+  --shadow-color: rgba(26, 37, 23, 0.08);
   color-scheme: light;
 }
 
+/* ==========================================
+   THEME 2: Cashmere (#F4EDE3) & Royal Garnet (#90353D)
+   ========================================== */
+[data-theme="cashmere"] {
+  --primary: #90353D;
+  --on-primary: #FFFFFF;
+  --primary-container: #F4EDE3;
+  --on-primary-container: #4E1B20;
+
+  --secondary: #4E1B20;
+  --secondary-container: #F6ECEB;
+
+  --background: #F7F2EA;
+  --foreground: #2C1719;
+  --surface: #FFFFFF;
+  --on-surface: #2C1719;
+  --on-surface-variant: #6E484C;
+  
+  --outline: #D8C9B7;
+  --outline-variant: #EADFD2;
+
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-low: #FAF6F0;
+  --surface-container: #F2E9DE;
+  --surface-container-high: #EADCD0;
+  --surface-container-highest: #E0CFC1;
+
+  --error: #BA1A1A;
+  --on-error: #FFFFFF;
+  --success: #2B6E4E;
+  --on-success: #FFFFFF;
+  
+  --shadow-color: rgba(144, 53, 61, 0.09);
+  color-scheme: light;
+}
+
+/* ==========================================
+   THEME 3: Ash Black (#3B3C36) & Copper Glow (#D99058)
+   ========================================== */
+[data-theme="copper"] {
+  --primary: #D99058;
+  --on-primary: #FFFFFF;
+  --primary-container: #F7E7DA;
+  --on-primary-container: #3B3C36;
+
+  --secondary: #3B3C36;
+  --secondary-container: #EBEBE8;
+
+  --background: #F8F8F7;
+  --foreground: #3B3C36;
+  --surface: #FFFFFF;
+  --on-surface: #3B3C36;
+  --on-surface-variant: #616259;
+  
+  --outline: #C5C6BD;
+  --outline-variant: #E3E4DC;
+
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-low: #F3F3F1;
+  --surface-container: #E9E9E5;
+  --surface-container-high: #DEDED9;
+  --surface-container-highest: #D2D3CD;
+
+  --error: #C0392B;
+  --on-error: #FFFFFF;
+  --success: #27AE60;
+  --on-success: #FFFFFF;
+  
+  --shadow-color: rgba(59, 60, 54, 0.09);
+  color-scheme: light;
+}
 
 body {
   background-color: var(--background);
@@ -153,13 +227,12 @@ h3 { font-size: 18px; }
 }
 
 @utility glass {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--outline);
 }
 
 .label-sm {
-  font-family: var(--font-be-vietnam);
   font-size: clamp(10px, 1.5vw, 12px);
   font-weight: 800;
   letter-spacing: 0.1em;

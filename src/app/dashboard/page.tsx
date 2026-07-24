@@ -219,11 +219,11 @@ export default function DashboardPage() {
   const getMethodIcon = (method: string) => {
     switch (method) {
       case "Cash":
-        return <Banknote className="w-4 h-4 text-green-500" />;
+        return <Banknote className="w-4 h-4 text-primary" />;
       case "POS":
-        return <CreditCard className="w-4 h-4 text-primary" />;
+        return <CreditCard className="w-4 h-4 text-secondary" />;
       default:
-        return <Smartphone className="w-4 h-4 text-blue-500" />;
+        return <Smartphone className="w-4 h-4 text-primary" />;
     }
   };
 

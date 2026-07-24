@@ -27,8 +27,8 @@ export function MetricCardGrid({ orders, metrics }: MetricCardGridProps) {
             <span className={cn(
               "text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded border shadow-hard-sm",
               metrics.revenueGrowth >= 0
-                ? "bg-green-500/10 text-green-600 border-green-500/20"
-                : "bg-red-500/10 text-red-600 border-red-500/20"
+                ? "bg-primary/10 text-primary border-primary/20"
+                : "bg-error/10 text-error border-error/20"
             )}>
               {metrics.revenueGrowth >= 0 ? `▲ +${metrics.revenueGrowth.toFixed(1)}%` : `▼ ${metrics.revenueGrowth.toFixed(1)}%`}
             </span>
@@ -48,7 +48,7 @@ export function MetricCardGrid({ orders, metrics }: MetricCardGridProps) {
           <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                <span className="w-1.5 h-1.5 rounded-full bg-primary" />
                 Collected
               </span>
             </div>
