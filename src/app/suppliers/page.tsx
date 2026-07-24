@@ -29,6 +29,7 @@ export default function SuppliersPage() {
   
   // Queries & Mutations
   const suppliers = useQuery(api.suppliers.list, {});
+  const ingredients = useQuery(api.ingredients.list);
   const createSupplier = useMutation(api.suppliers.create);
   const updateSupplier = useMutation(api.suppliers.update);
   const removeSupplier = useMutation(api.suppliers.remove);
@@ -49,6 +50,7 @@ export default function SuppliersPage() {
   const [address, setAddress] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [status, setStatus] = useState<"active" | "inactive">("active");
+  const [suppliedIngredients, setSuppliedIngredients] = useState<string[]>([]);
 
   const openAddModal = () => {
     setEditingSupplier(null);
@@ -59,6 +61,7 @@ export default function SuppliersPage() {
     setAddress("");
     setPaymentTerms("");
     setStatus("active");
+    setSuppliedIngredients([]);
     setIsModalOpen(true);
   };
 
@@ -71,6 +74,7 @@ export default function SuppliersPage() {
     setAddress(supplier.address || "");
     setPaymentTerms(supplier.paymentTerms || "");
     setStatus(supplier.status);
+    setSuppliedIngredients(supplier.suppliedIngredients || []);
     setIsModalOpen(true);
   };
 
@@ -97,6 +101,7 @@ export default function SuppliersPage() {
           address: address || undefined,
           paymentTerms: paymentTerms || undefined,
           status,
+          suppliedIngredients: suppliedIngredients.map(id => id as any),
         });
         toast.success("Supplier updated successfully");
       } else {
@@ -109,6 +114,7 @@ export default function SuppliersPage() {
           address: address || undefined,
           paymentTerms: paymentTerms || undefined,
           status,
+          suppliedIngredients: suppliedIngredients.map(id => id as any),
         });
         toast.success("Supplier added successfully");
       }
@@ -277,6 +283,20 @@ export default function SuppliersPage() {
                             <span>Terms: <strong className="text-on-surface uppercase">{supplier.paymentTerms}</strong></span>
                           </div>
                         )}
+                        {supplier.suppliedIngredients && supplier.suppliedIngredients.length > 0 && (
+                          <div className="flex items-start gap-2.5 pt-1">
+                            <Truck className="w-4 h-4 text-on-surface-variant/60 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[10px] text-on-surface-variant/60 block uppercase">Supplies</span>
+                              <p className="text-on-surface uppercase text-[10px] tracking-wide truncate">
+                                {supplier.suppliedIngredients.map((id: string) => {
+                                  const ing = (ingredients || []).find((i) => i._id === id);
+                                  return ing ? ing.name : "";
+                                }).filter(Boolean).join(", ")}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -428,6 +448,41 @@ export default function SuppliersPage() {
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Supplied Ingredients Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest block">
+                  Supplied Ingredients
+                </label>
+                <div className="bg-surface-container-low border-2 border-outline rounded-lg p-4 max-h-[150px] overflow-y-auto space-y-2 shadow-hard-sm">
+                  {ingredients === undefined ? (
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant/50">Loading ingredients...</p>
+                  ) : ingredients.length === 0 ? (
+                    <p className="text-[10px] uppercase font-bold text-on-surface-variant/50">No ingredients configured.</p>
+                  ) : (
+                    ingredients.map((ing) => {
+                      const isChecked = suppliedIngredients.includes(ing._id);
+                      return (
+                        <label key={ing._id} className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              if (isChecked) {
+                                setSuppliedIngredients(suppliedIngredients.filter((id) => id !== ing._id));
+                              } else {
+                                setSuppliedIngredients([...suppliedIngredients, ing._id]);
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-2 border-outline text-primary focus:ring-primary cursor-pointer"
+                          />
+                          <span>{ing.name} ({ing.unit})</span>
+                        </label>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 

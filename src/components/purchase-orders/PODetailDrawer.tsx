@@ -142,7 +142,7 @@ export function PODetailDrawer({
         {/* Footer actions */}
         <div className="p-6 border-t-4 border-black bg-surface-container-low flex justify-between">
           <div>
-            {poDetails.status === "draft" && (
+            {(poDetails.status === "draft" || poDetails.status === "cancelled") && (
               <button
                 onClick={() => onDeletePO(poDetails)}
                 className="px-4 py-2 bg-error/10 text-error border-2 border-black rounded font-display text-sm uppercase tracking-tighter hover:bg-error hover:text-white transition-all shadow-hard-sm"
@@ -176,12 +176,14 @@ export function PODetailDrawer({
                 >
                   <CheckCircle className="w-4 h-4" /> Receive Stock
                 </button>
-                <button
-                  onClick={() => onCancelPO(poDetails._id)}
-                  className="px-4 py-2 bg-error/10 text-error border-2 border-black rounded font-display text-sm uppercase tracking-tighter hover:bg-error hover:text-white transition-all shadow-hard-sm"
-                >
-                  <XCircle className="w-4 h-4 inline mr-1.5" /> Cancel PO
-                </button>
+                {poDetails.status === "sent" && (
+                  <button
+                    onClick={() => onCancelPO(poDetails._id)}
+                    className="px-4 py-2 bg-error/10 text-error border-2 border-black rounded font-display text-sm uppercase tracking-tighter hover:bg-error hover:text-white transition-all shadow-hard-sm"
+                  >
+                    <XCircle className="w-4 h-4 inline mr-1.5" /> Cancel PO
+                  </button>
+                )}
               </>
             )}
             <button

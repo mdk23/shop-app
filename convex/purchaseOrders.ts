@@ -271,7 +271,9 @@ export const remove = mutation({
 
     const po = await ctx.db.get(args.id);
     if (!po) throw new Error("Purchase order not found");
-    if (po.status !== "draft") throw new Error("Can only delete draft purchase orders");
+    if (po.status !== "draft" && po.status !== "cancelled") {
+      throw new Error("Can only delete draft or cancelled purchase orders");
+    }
 
     // Remove PO Items first
     const items = await ctx.db

@@ -12,6 +12,7 @@ interface PurchaseOrderTableProps {
   onEditDraft: (po: any) => void;
   onDeleteDraft: (po: any) => void;
   onSendDraft: (poId: string) => void;
+  onCancelPO: (poId: string) => void;
 }
 
 export function PurchaseOrderTable({
@@ -21,6 +22,7 @@ export function PurchaseOrderTable({
   onEditDraft,
   onDeleteDraft,
   onSendDraft,
+  onCancelPO,
 }: PurchaseOrderTableProps) {
   return (
     <div className="flex-1 overflow-auto">
@@ -108,10 +110,19 @@ export function PurchaseOrderTable({
                     )}
                     {po.status === "sent" && (
                       <button
-                        onClick={() => onSendDraft(po._id)} // triggers cancel state in parent
+                        onClick={() => onCancelPO(po._id)}
                         className="px-3 py-1.5 bg-error/10 text-error border border-black rounded font-display text-[10px] uppercase tracking-wider hover:bg-error hover:text-white transition-all shadow-hard-sm"
                       >
                         Cancel PO
+                      </button>
+                    )}
+                    {po.status === "cancelled" && (
+                      <button
+                        onClick={() => onDeleteDraft(po)}
+                        className="p-2 bg-error/10 text-error border border-black rounded hover:bg-error hover:text-white transition-all shadow-hard-sm"
+                        title="Delete Cancelled PO"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>

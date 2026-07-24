@@ -317,6 +317,7 @@ export default defineSchema({
     address: v.optional(v.string()),
     status: v.union(v.literal("active"), v.literal("inactive")),
     paymentTerms: v.optional(v.string()),
+    suppliedIngredients: v.optional(v.array(v.id("ingredients"))),
     createdAt: v.number(),
   }).index("by_status", ["status"]),
 

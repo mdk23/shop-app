@@ -26,6 +26,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 type MenuItem = {
   name: string;
@@ -159,6 +161,22 @@ export function Sidebar() {
   // Track which groups are expanded/collapsed (initially all collapsed)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
+  // Active Orders subscription & shake notification state
+  const activeOrders = useQuery(api.orders.listActiveOrders);
+  const [isBellShaking, setIsBellShaking] = useState(false);
+  const [prevActiveCount, setPrevActiveCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activeOrders === undefined) return;
+    const currentCount = activeOrders.length;
+    if (prevActiveCount !== null && currentCount > prevActiveCount) {
+      setIsBellShaking(true);
+      const timer = setTimeout(() => setIsBellShaking(false), 600);
+      return () => clearTimeout(timer);
+    }
+    setPrevActiveCount(currentCount);
+  }, [activeOrders, prevActiveCount]);
+
   // Auto-expand the group containing the active page when pathname changes
   useEffect(() => {
     const activeGroup = menuGroups.find((group) =>
@@ -272,13 +290,29 @@ export function Sidebar() {
                 <item.icon
                   className={cn(
                     "w-5 h-5 flex-shrink-0",
-                    isActive ? "text-on-primary" : "text-on-surface-variant group-hover:text-primary"
+                    isActive ? "text-on-primary" : "text-on-surface-variant group-hover:text-primary",
+                    item.name === "Active Orders" && isBellShaking && "animate-shake"
                   )}
                 />
                 {!isCollapsed && (
                   <span className="whitespace-nowrap font-black uppercase tracking-wider text-[10px]">
                     {item.name}
                   </span>
+                )}
+
+                {item.name === "Active Orders" && activeOrders && activeOrders.length > 0 && !isCollapsed && (
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded text-[8px] font-black tracking-tighter uppercase border ml-2 transition-all",
+                    isActive 
+                      ? "bg-surface text-on-surface border-outline" 
+                      : "bg-primary/10 text-primary border-primary/20"
+                  )}>
+                    {activeOrders.length}
+                  </span>
+                )}
+
+                {isCollapsed && item.name === "Active Orders" && activeOrders && activeOrders.length > 0 && (
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-error rounded-full border border-surface shadow-hard-sm" />
                 )}
 
                 {isActive && !isCollapsed && (

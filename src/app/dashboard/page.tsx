@@ -33,6 +33,7 @@ import { ProductSalesPerformance } from "@/components/dashboard/ProductSalesPerf
 import { CashControlWidget } from "@/components/dashboard/CashControlWidget";
 import { LowStockWidget } from "@/components/dashboard/LowStockWidget";
 import { RecentActivityTable } from "@/components/dashboard/RecentActivityTable";
+import { ActiveOrdersWidget } from "@/components/dashboard/ActiveOrdersWidget";
 
 export default function DashboardPage() {
   // Sticky Top Date Ribbon
@@ -258,6 +259,9 @@ export default function DashboardPage() {
           <MetricCardGrid orders={orders} metrics={metrics} />
           <PaymentCollectionsWidget metrics={metrics} getMethodIcon={getMethodIcon} />
         </div>
+
+        {/* Live Active Orders Stages Queue */}
+        <ActiveOrdersWidget />
 
         {/* Product Sales Performance */}
         <ProductSalesPerformance metrics={metrics} />

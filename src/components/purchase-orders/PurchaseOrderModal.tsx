@@ -45,6 +45,15 @@ export function PurchaseOrderModal({
   const [builderQty, setBuilderQty] = useState("");
   const [builderCost, setBuilderCost] = useState("");
 
+  // Filter ingredients based on selected supplier's suppliedIngredients array
+  const selectedSupplier = suppliers?.find((s) => s._id === selectedSupplierId);
+  const suppliedIngredientIds = selectedSupplier?.suppliedIngredients || [];
+
+  const filteredIngredientsList = (ingredients || []).filter((i) => {
+    if (!suppliedIngredientIds || suppliedIngredientIds.length === 0) return true;
+    return suppliedIngredientIds.includes(i._id);
+  });
+
   useEffect(() => {
     if (isOpen) {
       if (editingPO) {
@@ -211,7 +220,7 @@ export function PurchaseOrderModal({
                     className="w-full bg-surface-container-low border-2 border-outline rounded px-3 py-2 text-on-surface font-bold uppercase tracking-wider text-[10px] focus:border-primary outline-none transition-all shadow-hard-sm h-[38px]"
                   >
                     <option value="">Choose item...</option>
-                    {(ingredients || []).map((i) => (
+                    {(filteredIngredientsList || []).map((i) => (
                       <option key={i._id} value={i._id}>
                         {i.name} ({i.unit})
                       </option>

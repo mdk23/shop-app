@@ -313,6 +313,7 @@ export default function PurchaseOrdersPage() {
             onEditDraft={openEditPO}
             onDeleteDraft={handleDeletePO}
             onSendDraft={(id) => handleTransitionStatus(id, "sent")}
+            onCancelPO={(id) => handleTransitionStatus(id, "cancelled")}
           />
         </div>
       </div>

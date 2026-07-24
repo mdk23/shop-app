@@ -30,6 +30,7 @@ export const create = mutation({
     address: v.optional(v.string()),
     status: v.union(v.literal("active"), v.literal("inactive")),
     paymentTerms: v.optional(v.string()),
+    suppliedIngredients: v.optional(v.array(v.id("ingredients"))),
   },
   handler: async (ctx, args) => {
     const { token, ...data } = args;
@@ -55,6 +56,7 @@ export const update = mutation({
     address: v.optional(v.string()),
     status: v.union(v.literal("active"), v.literal("inactive")),
     paymentTerms: v.optional(v.string()),
+    suppliedIngredients: v.optional(v.array(v.id("ingredients"))),
   },
   handler: async (ctx, args) => {
     const { token, id, ...data } = args;

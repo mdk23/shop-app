@@ -81,38 +81,6 @@ export function MetricCardGrid({ orders, metrics }: MetricCardGridProps) {
             </div>
           </div>
         </div>
-
-        {/* Delivery KPI Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Delivery Revenue */}
-          <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
-              <Truck className="w-3.5 h-3.5 text-primary" /> Delivery Rev
-            </span>
-            <p className="text-xl font-display text-primary mt-2">{formatCurrency(metrics.deliveryRevenue)}</p>
-          </div>
-          {/* Delivery Orders */}
-          <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">
-              Delivery Orders
-            </span>
-            <p className="text-xl font-display text-on-surface mt-2">{metrics.deliveryOrdersCount}</p>
-          </div>
-          {/* Pickup Orders */}
-          <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">
-              Pickup Orders
-            </span>
-            <p className="text-xl font-display text-on-surface mt-2">{metrics.pickupOrdersCount}</p>
-          </div>
-          {/* Avg Delivery Fee */}
-          <div className="bg-surface border-2 border-outline rounded-2xl p-4 shadow-hard flex flex-col justify-between hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">
-              Avg Del Fee
-            </span>
-            <p className="text-xl font-display text-on-surface mt-2">{formatCurrency(metrics.avgDeliveryFee)}</p>
-          </div>
-        </div>
       </div>
     </div>
   );
