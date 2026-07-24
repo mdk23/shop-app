@@ -5,6 +5,7 @@ import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 import { SonnerProvider } from "@/components/SonnerProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { BranchProvider } from "@/contexts/BranchContext";
 import { RouteGuard } from "@/components/RouteGuard";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -27,12 +28,14 @@ export default function RootLayout({
       <body className={`${plusJakartaSans.variable} antialiased`}>
         <ConvexClientProvider>
           <ThemeProvider>
-            <AuthProvider>
-              <SonnerProvider />
-              <RouteGuard>
-                {children}
-              </RouteGuard>
-            </AuthProvider>
+            <BranchProvider>
+              <AuthProvider>
+                <SonnerProvider />
+                <RouteGuard>
+                  {children}
+                </RouteGuard>
+              </AuthProvider>
+            </BranchProvider>
           </ThemeProvider>
         </ConvexClientProvider>
       </body>

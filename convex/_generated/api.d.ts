@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as authActions from "../authActions.js";
 import type * as backfill from "../backfill.js";
 import type * as backfillLegacyPackaging from "../backfillLegacyPackaging.js";
+import type * as branches from "../branches.js";
 import type * as caixa from "../caixa.js";
 import type * as customers from "../customers.js";
 import type * as debugSessions from "../debugSessions.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   authActions: typeof authActions;
   backfill: typeof backfill;
   backfillLegacyPackaging: typeof backfillLegacyPackaging;
+  branches: typeof branches;
   caixa: typeof caixa;
   customers: typeof customers;
   debugSessions: typeof debugSessions;

@@ -8,6 +8,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBranch } from "@/contexts/BranchContext";
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
 
   const createOrder = useMutation(api.orders.create);
   const { token, currentUser } = useAuth();
+  const { selectedBranchId, activeBranches } = useBranch();
   
   const deliveryFees = useQuery(api.deliveryFees.list, { activeOnly: true });
   const selectedFeeObj = deliveryFees?.find(f => f._id === selectedFeeId);
@@ -105,6 +107,14 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
 
     setIsProcessing(true);
     try {
+      let targetBranchId: string | undefined = undefined;
+      if (selectedBranchId && selectedBranchId !== "all") {
+        targetBranchId = selectedBranchId;
+      } else if (activeBranches && activeBranches.length > 0) {
+        const defaultBranch = activeBranches.find((b: any) => b.isDefault) || activeBranches[0];
+        targetBranchId = defaultBranch?._id;
+      }
+
       const orderId = await createOrder({
         items: items.map(i => ({ 
           dishId: i.dishId, 
@@ -126,6 +136,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
         deliveryFeeId: orderType === "delivery" ? (selectedFeeObj?._id as any) : undefined,
         deliveryFeeName: orderType === "delivery" ? selectedFeeObj?.name : undefined,
         deliveryFeeAmount: orderType === "delivery" ? selectedFeeObj?.fee : undefined,
+        branchId: targetBranchId as any,
       });
 
       // Pass the new orderId to trigger success modal

@@ -5,6 +5,7 @@ import { Clock } from "./Clock";
 import { SidebarProvider, useSidebar } from "./SidebarContext";
 import { Menu, ChevronDown, LogOut, User } from "lucide-react";
 
+import { BranchSelector } from "./BranchSelector";
 import { ThemeSelector } from "./ThemeSelector";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -129,6 +130,7 @@ function LayoutContent({
                 {headerActions}
               </div>
             )}
+            <BranchSelector />
             <ThemeSelector />
             <div className="hidden sm:block">
               <Clock />

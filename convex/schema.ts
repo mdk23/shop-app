@@ -6,6 +6,17 @@ export default defineSchema({
   // EXISTING TABLES
   // ─────────────────────────────────────────────
 
+  branches: defineTable({
+    name: v.string(),
+    code: v.string(),
+    address: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+    isDefault: v.optional(v.boolean()),
+    createdAt: v.number(),
+  }).index("by_status", ["status"])
+    .index("by_code", ["code"]),
+
   dishes: defineTable({
     name: v.string(),
     price: v.number(),
@@ -92,10 +103,12 @@ export default defineSchema({
       dishName: v.string(),
       quantity: v.number(),
     }))),
+    branchId: v.optional(v.id("branches")),
   }).index("by_status", ["status"])
     .index("by_customer", ["customerId"])
     .index("by_delivery_fee", ["deliveryFeeId"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("by_branch", ["branchId"]),
 
   orderItems: defineTable({
     orderId: v.id("orders"),
@@ -174,10 +187,12 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("disabled")),
     lastLogin: v.optional(v.number()),
     createdAt: v.number(),
+    branchId: v.optional(v.id("branches")),
   })
     .index("by_username", ["username"])
     .index("by_role", ["role"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_branch", ["branchId"]),
 
   userSessions: defineTable({
     userId: v.id("users"),
@@ -225,10 +240,12 @@ export default defineSchema({
     cashOutTotal: v.optional(v.number()),
     expectedCash: v.optional(v.number()),
     salesByUser: v.optional(v.array(v.object({ username: v.string(), amount: v.number() }))),
+    branchId: v.optional(v.id("branches")),
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
-    .index("by_user_and_status", ["userId", "status"]),
+    .index("by_user_and_status", ["userId", "status"])
+    .index("by_branch", ["branchId"]),
 
   cashRegisterMovements: defineTable({
     sessionId: v.id("cashRegisterSessions"),
@@ -277,11 +294,13 @@ export default defineSchema({
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
     createdAt: v.number(),
+    branchId: v.optional(v.id("branches")),
   })
     .index("by_item", ["itemId"])
     .index("by_date", ["movementDate"])
     .index("by_type", ["movementType"])
-    .index("by_ref", ["referenceType", "referenceId"]),
+    .index("by_ref", ["referenceType", "referenceId"])
+    .index("by_branch", ["branchId"]),
 
   wasteLogs: defineTable({
     itemId: v.id("ingredients"),
@@ -295,9 +314,11 @@ export default defineSchema({
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
     createdAt: v.number(),
+    branchId: v.optional(v.id("branches")),
   })
     .index("by_item", ["itemId"])
-    .index("by_created", ["createdAt"]),
+    .index("by_created", ["createdAt"])
+    .index("by_branch", ["branchId"]),
 
   // ─────────────────────────────────────────────
   // COUNTERS (For O(1) Sequences)
@@ -341,8 +362,10 @@ export default defineSchema({
     totalAmount: v.number(),
     notes: v.optional(v.string()),
     createdAt: v.number(),
+    branchId: v.optional(v.id("branches")),
   }).index("by_supplier", ["supplierId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_branch", ["branchId"]),
 
   purchaseOrderItems: defineTable({
     purchaseOrderId: v.id("purchaseOrders"),

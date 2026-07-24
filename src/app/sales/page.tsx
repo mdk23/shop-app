@@ -21,7 +21,10 @@ import { PeakHoursList } from "@/components/sales/PeakHoursList";
 import { SalesTable } from "@/components/sales/SalesTable";
 import { CancelOrderModal } from "@/components/sales/CancelOrderModal";
 
+import { useBranch } from "@/contexts/BranchContext";
+
 export default function SalesPage() {
+  const { selectedBranchId } = useBranch();
   const [dateRange, setDateRange] = useState({
     start: startOfDay(new Date()).getTime(),
     end: endOfDay(new Date()).getTime(),
@@ -32,6 +35,7 @@ export default function SalesPage() {
   const orders = useQuery(api.orders.listByRange, {
     start: dateRange.start,
     end: dateRange.end,
+    branchId: selectedBranchId,
   });
   const dishes = useQuery(api.dishes.list);
 

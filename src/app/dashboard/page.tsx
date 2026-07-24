@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { PageLayout } from "@/components/PageLayout";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { useBranch } from "@/contexts/BranchContext";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp,
@@ -70,15 +71,19 @@ export default function DashboardPage() {
     };
   }, [dateRangeType]);
 
+  const { selectedBranchId } = useBranch();
+
   // Queries
   const metricsQuery = useQuery(api.analytics.getDashboardMetrics, {
     start: dateRange.start,
     end: dateRange.end,
+    branchId: selectedBranchId,
   });
 
   const orders = useQuery(api.orders.listByRange, {
     start: dateRange.start,
     end: dateRange.end,
+    branchId: selectedBranchId,
   });
   const ingredients = useQuery(api.ingredients.list);
   const sessions = useQuery(api.caixa.listSessions, { limit: 20 });

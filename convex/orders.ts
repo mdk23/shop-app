@@ -38,6 +38,8 @@ export const create = mutation({
     deliveryFeeName: v.optional(v.string()),
     deliveryFeeAmount: v.optional(v.number()),
 
+    // Branch scoping
+    branchId: v.optional(v.id("branches")),
     // Split Payments
     splitPayments: v.optional(v.array(v.object({
       method: v.string(),
@@ -274,6 +276,7 @@ export const create = mutation({
       splitPayments: args.splitPayments,
       customerName: customer.name,
       itemSummary: itemSummary,
+      branchId: args.branchId,
     });
     
     // Note: Stock deduction is deferred to the updatePrepStatus mutation when KDS marks the order as "completed"
@@ -601,15 +604,20 @@ export const getById = query({
 export const listByRange = query({
   args: { 
     start: v.number(), 
-    end: v.number() 
+    end: v.number(),
+    branchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const orders = await ctx.db
+    let orders = await ctx.db
       .query("orders")
       .withIndex("by_created_at", (q) => q.gte("createdAt", args.start).lte("createdAt", args.end))
       .order("desc")
       .collect();
       
+    if (args.branchId && args.branchId !== "all") {
+      orders = orders.filter((o) => o.branchId === args.branchId);
+    }
+
     return orders.map((order) => ({
       ...order,
       items: order.itemSummary || [],

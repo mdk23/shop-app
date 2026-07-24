@@ -1,36 +1,48 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { getLocalDateString } from "./metrics";
+import { Id } from "./_generated/dataModel";
 
 export const getDashboardMetrics = query({
   args: {
     start: v.number(),
     end: v.number(),
+    branchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { start, end } = args;
+    const { start, end, branchId } = args;
     const rangeLength = end - start;
     const startForQuery = start - rangeLength;
 
-    const startDateString = getLocalDateString(start);
-    const endDateString = getLocalDateString(end);
-    const prevStartDateString = getLocalDateString(startForQuery);
-
-    // Fetch all daily metrics for the entire range (current + previous period)
-    const metrics = await ctx.db
-      .query("dailyMetrics")
-      .withIndex("by_date", (q) =>
-        q.gte("dateString", prevStartDateString).lte("dateString", endDateString)
-      )
+    // Fetch current period orders
+    let currentOrders = await ctx.db
+      .query("orders")
+      .withIndex("by_created_at", (q) => q.gte("createdAt", start).lte("createdAt", end))
       .collect();
 
-    // Split metrics into current and previous periods
-    const currentMetrics = metrics.filter(
-      (m) => m.dateString >= startDateString && m.dateString <= endDateString
-    );
-    const previousMetrics = metrics.filter(
-      (m) => m.dateString >= prevStartDateString && m.dateString < startDateString
-    );
+    // Fetch previous period orders for revenue growth calculation
+    let previousOrders = await ctx.db
+      .query("orders")
+      .withIndex("by_created_at", (q) => q.gte("createdAt", startForQuery).lt("createdAt", start))
+      .collect();
+
+    // Filter by branch if specified and not "all"
+    if (branchId && branchId !== "all") {
+      const targetBranch = await ctx.db.get(branchId as Id<"branches">);
+      const isDefaultBranch = targetBranch?.isDefault ?? false;
+
+      currentOrders = currentOrders.filter((o) => {
+        if (o.branchId === branchId) return true;
+        if (!o.branchId && isDefaultBranch) return true;
+        return false;
+      });
+
+      previousOrders = previousOrders.filter((o) => {
+        if (o.branchId === branchId) return true;
+        if (!o.branchId && isDefaultBranch) return true;
+        return false;
+      });
+    }
 
     // 1. Current Period Aggregations
     let grossRevenue = 0;
@@ -38,7 +50,7 @@ export const getDashboardMetrics = query({
     let outstandingDebt = 0;
 
     let deliveryRevenue = 0;
-    let orderCount = 0;
+    let orderCount = currentOrders.length;
     let deliveryOrdersCount = 0;
     let pickupOrdersCount = 0;
     let profileSalesCount = 0;
@@ -61,59 +73,69 @@ export const getDashboardMetrics = query({
     const productSalesMap: Record<string, number> = {};
     const categorySalesMap: Record<string, number> = {};
 
-    for (const m of currentMetrics) {
-      grossRevenue += m.grossRevenue;
-      cashCollected += m.cashCollected;
-      outstandingDebt += m.outstandingDebt;
+    for (const order of currentOrders) {
+      if (order.status === "Cancelled") continue;
 
-      deliveryRevenue += m.deliveryRevenue;
-      orderCount += m.orderCount;
-      deliveryOrdersCount += m.deliveryOrdersCount;
-      pickupOrdersCount += m.pickupOrdersCount;
-      profileSalesCount += m.profileSalesCount;
-      genericSalesCount += m.genericSalesCount;
-      totalItemsSold += m.totalItemsSold;
-      fullyPaidCount += m.fullyPaidCount;
-      partiallyPaidCount += m.partiallyPaidCount;
-      pendingCount += m.pendingCount;
+      grossRevenue += order.total;
+      cashCollected += order.amountPaid;
+      const debt = Math.max(0, order.total - order.amountPaid);
+      outstandingDebt += debt;
 
-      if (m.customerIds) {
-        m.customerIds.forEach((cid) => customerIdsSet.add(cid));
+      if (order.orderType === "delivery") {
+        deliveryOrdersCount++;
+        deliveryRevenue += order.deliveryFeeAmount || 0;
+      } else {
+        pickupOrdersCount++;
       }
 
-      if (m.paymentMethods) {
-        for (const [method, info] of Object.entries(m.paymentMethods)) {
-          if (method.toLowerCase() === "store credit" || method.toLowerCase() === "credit") continue;
-          
-          if (methodsBreakdown[method]) {
-            methodsBreakdown[method].amount += (info as any).amount;
-            methodsBreakdown[method].count += (info as any).count;
-          } else {
-            methodsBreakdown[method] = {
-              amount: (info as any).amount,
-              count: (info as any).count,
-            };
+      if (order.customerId) {
+        customerIdsSet.add(order.customerId.toString());
+        profileSalesCount++;
+      } else {
+        genericSalesCount++;
+      }
+
+      if (order.status === "Paid") {
+        fullyPaidCount++;
+      } else if (order.status === "Partially Paid") {
+        partiallyPaidCount++;
+      } else {
+        pendingCount++;
+      }
+
+      // Process payment methods
+      if (order.splitPayments && order.splitPayments.length > 0) {
+        for (const p of order.splitPayments) {
+          if (!methodsBreakdown[p.method]) {
+            methodsBreakdown[p.method] = { amount: 0, count: 0 };
           }
+          methodsBreakdown[p.method].amount += p.amount;
+          methodsBreakdown[p.method].count += 1;
         }
+      } else if (order.paymentMethod) {
+        const pm = order.paymentMethod;
+        if (!methodsBreakdown[pm]) {
+          methodsBreakdown[pm] = { amount: 0, count: 0 };
+        }
+        methodsBreakdown[pm].amount += order.amountPaid;
+        methodsBreakdown[pm].count += 1;
       }
 
-      if (m.productSales) {
-        for (const [prod, qty] of Object.entries(m.productSales)) {
-          productSalesMap[prod] = (productSalesMap[prod] || 0) + (qty as number);
-        }
-      }
-
-      if (m.categorySales) {
-        for (const [cat, qty] of Object.entries(m.categorySales)) {
-          categorySalesMap[cat] = (categorySalesMap[cat] || 0) + (qty as number);
+      // Process item summary
+      if (order.itemSummary) {
+        for (const item of order.itemSummary) {
+          totalItemsSold += item.quantity;
+          productSalesMap[item.dishName] = (productSalesMap[item.dishName] || 0) + item.quantity;
         }
       }
     }
 
     // 2. Previous Period Aggregations
     let prevGrossRevenue = 0;
-    for (const m of previousMetrics) {
-      prevGrossRevenue += m.grossRevenue;
+    for (const order of previousOrders) {
+      if (order.status !== "Cancelled") {
+        prevGrossRevenue += order.total;
+      }
     }
 
     // 3. Derived Metrics
@@ -149,7 +171,6 @@ export const getDashboardMetrics = query({
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    // Keep response signature identical to original so frontend dashboard works unchanged
     return {
       grossRevenue,
       orderCount,
@@ -169,11 +190,11 @@ export const getDashboardMetrics = query({
       genericSalesCount,
 
       fullyPaidCount,
-      fullyPaidValue: 0, // not used in UI, kept for signature compatibility
+      fullyPaidValue: 0,
       pendingCount,
-      pendingBalance: outstandingDebt, // maps to pendingBalance
-      creditCount: pendingCount, // pending count maps to creditCount
-      creditDebtValue: outstandingDebt, // maps to creditDebtValue
+      pendingBalance: outstandingDebt,
+      creditCount: pendingCount,
+      creditDebtValue: outstandingDebt,
 
       paymentMethodsBreakdown: methodsBreakdown,
       topProducts,
