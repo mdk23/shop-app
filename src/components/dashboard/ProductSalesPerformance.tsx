@@ -11,7 +11,7 @@ export function ProductSalesPerformance({ metrics }: ProductSalesPerformanceProp
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Top Selling Products */}
-      <div className="bg-surface border-2 border-outline rounded-2xl p-6 shadow-hard space-y-4">
+      <div className="bg-surface border border-outline/30 rounded-2xl p-6 shadow-sm space-y-4">
         <div>
           <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em] opacity-80 flex items-center gap-2">
             <Receipt className="w-4 h-4 text-primary" />
@@ -49,7 +49,7 @@ export function ProductSalesPerformance({ metrics }: ProductSalesPerformanceProp
       </div>
 
       {/* Category Performance */}
-      <div className="bg-surface border-2 border-outline rounded-2xl p-6 shadow-hard space-y-4">
+      <div className="bg-surface border border-outline/30 rounded-2xl p-6 shadow-sm space-y-4">
         <div>
           <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em] opacity-80 flex items-center gap-2">
             <Package className="w-4 h-4 text-primary" />

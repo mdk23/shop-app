@@ -13,27 +13,27 @@ export function DateRangeRibbon({
   setDateRangeType,
 }: DateRangeRibbonProps) {
   return (
-    <div className="sticky -top-2 lg:-top-4 z-20 bg-background/95 backdrop-blur-md border-b-2 border-outline py-4 px-4 -mx-2 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none shadow-sm">
+    <div className="sticky -top-2 lg:-top-4 z-20 bg-background/90 backdrop-blur-md border-b border-outline/30 py-4 px-4 -mx-2 flex flex-col md:flex-row md:items-center justify-between gap-4 select-none shadow-sm">
       <div>
         <h2 className="text-xl lg:text-xl font-black text-on-surface uppercase tracking-tight">
           Dashboard
         </h2>
-        <p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest opacity-60">
+        <p className="text-xs text-on-surface-variant font-medium uppercase tracking-widest opacity-70">
           Enterprise Overview & Operations Overview
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {/* Range Toggle Buttons */}
-        <div className="flex bg-surface border-2 border-outline rounded-xl p-1 shadow-hard-sm animate-fadeIn">
+        <div className="flex bg-surface border border-outline/30 rounded-2xl p-1.5 shadow-sm">
           {(["Today", "Yesterday", "This Week"] as const).map((type) => (
             <button
               key={type}
               onClick={() => setDateRangeType(type)}
               className={cn(
-                "px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all",
+                "px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer",
                 dateRangeType === type
-                  ? "bg-primary text-on-primary"
-                  : "text-on-surface-variant hover:text-primary"
+                  ? "bg-primary text-on-primary shadow-sm"
+                  : "text-on-surface-variant hover:text-primary hover:bg-surface-container/50"
               )}
             >
               {type}

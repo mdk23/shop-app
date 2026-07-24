@@ -15,7 +15,7 @@ export function PaymentCollectionsWidget({
   return (
     <div className="space-y-3 flex flex-col h-full">
       <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em] opacity-80">Payment Collections</h3>
-      <div className="bg-surface border-2 border-outline rounded-2xl shadow-hard p-4 flex-1">
+      <div className="bg-surface border border-outline/30 rounded-2xl shadow-sm p-4 flex-1">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {Object.entries(metrics.paymentMethodsBreakdown || {})
             .filter(([method]) => method.toLowerCase() !== "store credit" && method.toLowerCase() !== "credit")

@@ -55,7 +55,7 @@ function UserProfileMenu() {
             {ROLE_LABELS[currentUser.role] ?? currentUser.role}
           </p>
         </div>
-        <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-lg bg-primary border-2 border-outline shadow-hard flex items-center justify-center text-on-primary font-display text-lg lg:text-xl select-none">
+        <div className="w-10 h-10 lg:w-11 lg:h-11 rounded-2xl bg-primary border border-outline/30 shadow-md flex items-center justify-center text-on-primary font-display text-base lg:text-lg select-none">
           {initials}
         </div>
         <ChevronDown
@@ -67,8 +67,8 @@ function UserProfileMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-52 bg-surface border-2 border-outline rounded-2xl shadow-hard-lg z-50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-outline bg-surface-container-low">
+        <div className="absolute right-0 top-full mt-2 w-52 bg-surface border border-outline/40 rounded-2xl shadow-xl z-50 overflow-hidden">
+          <div className="px-4 py-3 border-b border-outline/30 bg-surface-container-low">
             <p className="text-xs font-black text-on-surface truncate">{currentUser.name}</p>
             <p className="text-[10px] font-bold text-on-surface-variant opacity-60 truncate">
               @{currentUser.username}
@@ -110,11 +110,11 @@ function LayoutContent({
     <div className="flex h-screen bg-background overflow-hidden relative">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 h-full relative">
-        <header className="h-16 lg:h-24 bg-surface border-b-4 border-outline px-4 lg:px-8 flex items-center justify-between z-50 sticky top-0">
+        <header className="h-16 lg:h-20 bg-surface/90 backdrop-blur-md border-b border-outline/30 px-4 lg:px-8 flex items-center justify-between z-50 sticky top-0 shadow-sm">
           <div className="flex items-center gap-4">
             <button
               onClick={toggleOpen}
-              className="lg:hidden p-2 rounded-lg bg-surface-container-highest text-on-surface hover:bg-primary hover:text-on-primary transition-all border-2 border-outline shadow-hard"
+              className="lg:hidden p-2 rounded-xl bg-surface-container-low text-on-surface hover:bg-primary hover:text-on-primary transition-all border border-outline/40 shadow-sm"
             >
               <Menu className="w-6 h-6" />
             </button>

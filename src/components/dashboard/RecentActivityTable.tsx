@@ -39,7 +39,7 @@ export function RecentActivityTable({
   ROWS_PER_PAGE,
 }: RecentActivityTableProps) {
   return (
-    <div className="bg-surface border-2 border-outline rounded-2xl shadow-hard overflow-hidden flex flex-col min-h-[450px]">
+    <div className="bg-surface border border-outline/30 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[450px]">
       <div className="px-6 py-4 border-b border-outline bg-surface-container-low/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none">
         <h3 className="text-xs font-black text-on-surface uppercase tracking-[0.2em]">
           Recent Sales Log ({filteredOrders.length})
@@ -54,7 +54,7 @@ export function RecentActivityTable({
               placeholder="SEARCH ORDER, CLIENT, ITEM..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-surface border-2 border-outline rounded-xl pl-9 pr-3 py-1.5 outline-none focus:border-primary transition-all font-black uppercase tracking-widest text-[9px] h-9"
+              className="w-full bg-surface border border-outline/30 rounded-xl pl-9 pr-3 py-1.5 outline-none focus:border-primary transition-all font-bold uppercase tracking-wider text-[9px] h-9 shadow-sm"
             />
           </div>
 
@@ -62,7 +62,7 @@ export function RecentActivityTable({
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="bg-surface border-2 border-outline rounded-xl px-3 py-1.5 outline-none focus:border-primary transition-all font-black uppercase tracking-widest text-[9px] h-9 cursor-pointer"
+            className="bg-surface border border-outline/30 rounded-xl px-3 py-1.5 outline-none focus:border-primary transition-all font-bold uppercase tracking-wider text-[9px] h-9 cursor-pointer shadow-sm"
           >
             <option value="All">ALL STATUS</option>
             <option value="Paid">FULLY PAID</option>
