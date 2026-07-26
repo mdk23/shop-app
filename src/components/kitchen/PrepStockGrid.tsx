@@ -1,8 +1,9 @@
-"use client";
-
-import React from "react";
-import { AlertCircle, Layers, ChefHat } from "lucide-react";
+import React, { useState } from "react";
+import { AlertCircle, Layers, ChefHat, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { toast } from "sonner";
 
 interface PrepStockGridProps {
   factoryItems: any[];
@@ -10,7 +11,21 @@ interface PrepStockGridProps {
 }
 
 export function PrepStockGrid({ factoryItems, getStatus }: PrepStockGridProps) {
+  const seedMenu = useMutation(api.seed.seed);
+  const [isSeeding, setIsSeeding] = useState(false);
   const hasLowStockAlerts = factoryItems.some((i) => i.stockQuantity <= i.lowStockThreshold);
+
+  const handleSeed = async () => {
+    setIsSeeding(true);
+    try {
+      await seedMenu();
+      toast.success("Sample Kitchen ingredients & menu loaded successfully!");
+    } catch (err: any) {
+      toast.error("Failed to load sample data: " + err.message);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -44,10 +59,22 @@ export function PrepStockGrid({ factoryItems, getStatus }: PrepStockGridProps) {
         </h3>
 
         {factoryItems.length === 0 ? (
-          <div className="text-center py-16 text-on-surface-variant/40 font-bold uppercase tracking-widest">
-            <ChefHat className="w-16 h-16 mx-auto mb-4 opacity-40" />
-            No ingredients listed in "Kitchen" category.<br />
-            <span className="text-[10px] font-medium lowercase italic">add ingredients with Category: Kitchen under Inventory page</span>
+          <div className="text-center py-12 text-on-surface-variant/70 font-bold uppercase tracking-widest space-y-4">
+            <ChefHat className="w-16 h-16 mx-auto opacity-40 text-primary" />
+            <div>
+              <p className="text-sm font-black text-on-surface">No ingredients listed in "Kitchen" category.</p>
+              <p className="text-[10px] font-medium lowercase italic text-on-surface-variant mt-1">
+                Add ingredients with Category: "Kitchen" under Inventory Management, or click below to populate sample items.
+              </p>
+            </div>
+            <button
+              onClick={handleSeed}
+              disabled={isSeeding}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-xs uppercase tracking-wider hover:bg-secondary transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSeeding ? "animate-spin" : ""}`} />
+              <span>{isSeeding ? "Loading Sample Data..." : "Load Sample Kitchen Items & Menu"}</span>
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

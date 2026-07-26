@@ -215,15 +215,40 @@ export const create = mutation({
     const localTimeMs = now + 7200000;
     const dateString = new Date(localTimeMs).toISOString().split("T")[0];
 
+    // Resolve branchId for per-location counter scoping
+    let branchId = args.branchId;
+    if (!branchId && cashRegisterSessionId) {
+      const sessionObj = await ctx.db.get(cashRegisterSessionId);
+      if (sessionObj?.branchId) {
+        branchId = sessionObj.branchId;
+      }
+    }
+    if (!branchId) {
+      const defaultBranch = await ctx.db
+        .query("branches")
+        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .filter((q) => q.eq(q.field("isDefault"), true))
+        .first();
+      if (defaultBranch) {
+        branchId = defaultBranch._id;
+      } else {
+        const firstBranch = await ctx.db.query("branches").first();
+        if (firstBranch) {
+          branchId = firstBranch._id;
+        }
+      }
+    }
+
     let sequenceNumber = 1;
+    const counterKey = branchId ? `daily_order_sequence_${branchId}` : "daily_order_sequence";
     const counter = await ctx.db
       .query("counters")
-      .withIndex("by_key", (q) => q.eq("key", "daily_order_sequence"))
+      .withIndex("by_key", (q) => q.eq("key", counterKey))
       .first();
 
     if (!counter) {
       await ctx.db.insert("counters", {
-        key: "daily_order_sequence",
+        key: counterKey,
         value: 1,
         dateString,
         updatedAt: now,
@@ -276,7 +301,7 @@ export const create = mutation({
       splitPayments: args.splitPayments,
       customerName: customer.name,
       itemSummary: itemSummary,
-      branchId: args.branchId,
+      branchId: branchId,
     });
     
     // Note: Stock deduction is deferred to the updatePrepStatus mutation when KDS marks the order as "completed"

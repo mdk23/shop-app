@@ -54,8 +54,8 @@ export default function KitchenPage() {
   const [historySearch, setHistorySearch] = useState("");
 
   // Helpers
-  const factoryItems = (ingredients ?? []).filter((i) => i.category === "Kitchen");
-  const rawIngredients = (ingredients ?? []).filter((i) => i.category !== "Kitchen");
+  const factoryItems = (ingredients ?? []).filter((i) => i.category?.toLowerCase() === "kitchen");
+  const rawIngredients = (ingredients ?? []).filter((i) => i.category?.toLowerCase() !== "kitchen");
 
   const getStatus = (ing: any) => {
     if (ing.stockQuantity <= 0) {

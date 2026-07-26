@@ -18,15 +18,8 @@ const STORAGE_KEY = "takeaway_app_selected_branch";
 export function BranchProvider({ children }: { children: React.ReactNode }) {
   const [selectedBranchId, setSelectedBranchIdState] = useState<string>("all");
 
-  // Query global settings to check if Multi-Branch mode is active
-  const multiBranchSetting = useQuery(api.settings.getAll);
   const activeBranches = useQuery(api.branches.listActive);
-
-  const isMultiBranchEnabled = React.useMemo(() => {
-    if (!multiBranchSetting) return false;
-    const settingObj = multiBranchSetting.find((s: any) => s.key === "enableMultiBranch");
-    return settingObj ? settingObj.isActive : false;
-  }, [multiBranchSetting]);
+  const isMultiBranchEnabled = true;
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -43,7 +36,7 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
   return (
     <BranchContext.Provider
       value={{
-        selectedBranchId: isMultiBranchEnabled ? selectedBranchId : "all",
+        selectedBranchId,
         setSelectedBranchId,
         isMultiBranchEnabled,
         activeBranches,

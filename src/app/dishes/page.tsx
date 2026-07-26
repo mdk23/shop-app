@@ -13,18 +13,35 @@ import {
   Edit2,
   Trash2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RefreshCw
 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function DishesPage() {
   const dishes = useQuery(api.dishes.list);
   const ingredients = useQuery(api.ingredients.list);
   const removeDish = useMutation(api.dishes.remove);
+  const seedMenu = useMutation(api.seed.seed);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingDish, setEditingDish] = useState<any>(null);
   const [dishToDelete, setDishToDelete] = useState<any>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [isSeeding, setIsSeeding] = useState(false);
+
+  const handleSeedMenu = async () => {
+    if (!confirm("Are you sure you want to seed/reset sample menu dishes and inventory ingredients?")) return;
+    setIsSeeding(true);
+    try {
+      await seedMenu();
+      toast.success("Sample menu and recipe ingredients seeded successfully!");
+    } catch (err: any) {
+      toast.error("Failed to seed menu: " + err.message);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   const toggleCategory = (cat: string) => {
     setCollapsedCategories((prev) => {
@@ -52,18 +69,29 @@ export default function DishesPage() {
   return (
     <PageLayout isFullWidth>
       <div className="space-y-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black text-on-surface">Menu & Recipes</h1>
             <p className="text-on-surface-variant font-medium">Manage your dishes and their ingredient compositions</p>
           </div>
-          <button
-            onClick={handleCreate}
-            className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-terracotta transition-all shadow-soft active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-            Create New Dish
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSeedMenu}
+              disabled={isSeeding}
+              className="bg-surface-container-high border border-outline/30 text-on-surface px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-surface-container-highest transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Populate complete sample menu and ingredient recipes"
+            >
+              <RefreshCw className={`w-4 h-4 text-primary ${isSeeding ? "animate-spin" : ""}`} />
+              <span>{isSeeding ? "Seeding..." : "Load Sample Menu"}</span>
+            </button>
+            <button
+              onClick={handleCreate}
+              className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-terracotta transition-all shadow-soft active:scale-95 cursor-pointer"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Create New Dish</span>
+            </button>
+          </div>
         </div>
 
         {/* Group dishes by category, sorted alphabetically within each group */}

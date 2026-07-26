@@ -33,34 +33,6 @@ export default function SettingsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [branchToEdit, setBranchToEdit] = useState<any | null>(null);
 
-  const multiBranchSetting = React.useMemo(() => {
-    if (!settings) return null;
-    return settings.find((s: any) => s.key === "enableMultiBranch");
-  }, [settings]);
-
-  const isMultiBranchActive = multiBranchSetting?.isActive ?? false;
-
-  const handleToggleMultiBranch = async () => {
-    const nextState = !isMultiBranchActive;
-    try {
-      if (nextState) {
-        await ensureDefaultBranch();
-      }
-      await upsertSetting({
-        key: "enableMultiBranch",
-        isActive: nextState,
-        label: "Multi-Location Store Branches",
-      });
-      toast.success(
-        nextState
-          ? "Multi-Location Mode enabled! Store branches activated."
-          : "Multi-Location Mode disabled. System returned to single-store mode."
-      );
-    } catch (err: any) {
-      toast.error("Failed to update multi-location setting.");
-    }
-  };
-
   return (
     <PageLayout>
       <div className="max-w-5xl mx-auto space-y-8 pb-12">
@@ -74,7 +46,7 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Multi-Location / Store Branches Configuration Card */}
+        {/* Store Locations / Branches Configuration Card */}
         <div className="bg-surface border border-outline/30 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline/20 pb-6">
             <div className="flex items-center gap-3">
@@ -82,147 +54,112 @@ export default function SettingsPage() {
                 <Store className="w-6 h-6" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-black text-on-surface leading-tight">
-                    Multi-Location Store Branches
-                  </h2>
-                  <span
-                    className={cn(
-                      "px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border shadow-sm",
-                      isMultiBranchActive
-                        ? "bg-primary/10 text-primary border-primary/20"
-                        : "bg-surface-container-high text-on-surface-variant/70 border-outline/30"
-                    )}
-                  >
-                    {isMultiBranchActive ? "ACTIVE" : "INACTIVE"}
-                  </span>
-                </div>
+                <h2 className="text-2xl font-black text-on-surface leading-tight">
+                  Store Locations & Branches
+                </h2>
                 <p className="text-xs font-medium text-on-surface-variant/70 mt-1">
-                  Manage inventory, staff, and sales across multiple store branches from one master admin panel.
+                  Manage inventory, staff, and sales across store branches from one master admin panel.
                 </p>
               </div>
             </div>
 
             <button
-              onClick={handleToggleMultiBranch}
-              className={cn(
-                "px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-sm border",
-                isMultiBranchActive
-                  ? "bg-primary text-on-primary border-primary/40 hover:bg-secondary"
-                  : "bg-surface-container-low text-on-surface border-outline/30 hover:bg-surface-container"
-              )}
+              onClick={() => {
+                setBranchToEdit(null);
+                setModalOpen(true);
+              }}
+              className="px-5 py-3 rounded-2xl bg-primary text-on-primary font-bold text-xs uppercase tracking-wider hover:bg-secondary transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-primary/40"
             >
-              {isMultiBranchActive ? (
-                <>
-                  <ToggleRight className="w-5 h-5" />
-                  <span>Disable Multi-Branch</span>
-                </>
-              ) : (
-                <>
-                  <ToggleLeft className="w-5 h-5 text-on-surface-variant" />
-                  <span>Enable Multi-Branch Mode</span>
-                </>
-              )}
+              <Plus className="w-4 h-4" />
+              <span>Add Branch</span>
             </button>
           </div>
 
-          {/* Branch List and Actions (Shown when Multi-Branch is Active) */}
-          {isMultiBranchActive && (
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">
-                    Store Locations List ({branches?.length || 0})
-                  </h3>
-                  <p className="text-[11px] text-on-surface-variant font-medium">
-                    Manage active store branches and default headquarters
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setBranchToEdit(null);
-                    setModalOpen(true);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-xs uppercase tracking-wider hover:bg-secondary transition-all shadow-sm flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Branch</span>
-                </button>
+          {/* Branch List */}
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">
+                  Store Locations List ({branches?.length || 0})
+                </h3>
+                <p className="text-[11px] text-on-surface-variant font-medium">
+                  Manage active store branches and default headquarters
+                </p>
               </div>
-
-              {branches === undefined ? (
-                <div className="flex justify-center p-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                </div>
-              ) : branches.length === 0 ? (
-                <div className="text-center py-8 border border-dashed border-outline/30 rounded-2xl p-6 text-xs text-on-surface-variant font-bold uppercase tracking-wider">
-                  No store branches configured yet. Click "Add Branch" to get started.
-                </div>
-              ) : (
-                <div className="border border-outline/30 rounded-2xl overflow-hidden shadow-sm">
-                  <table className="w-full text-left border-separate border-spacing-0">
-                    <thead className="bg-surface-container-low text-on-surface text-[10px] uppercase tracking-widest font-black border-b border-outline/20">
-                      <tr>
-                        <th className="px-4 py-3">Code</th>
-                        <th className="px-4 py-3">Store Name</th>
-                        <th className="px-4 py-3">Address</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-outline/20 text-xs font-bold text-on-surface bg-surface">
-                      {branches.map((b: any) => (
-                        <tr key={b._id} className="hover:bg-surface-container/40 transition-colors">
-                          <td className="px-4 py-3">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-surface-container-high border border-outline/30">
-                              {b.code}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold">{b.name}</span>
-                              {b.isDefault && (
-                                <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-widest">
-                                  Default
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-on-surface-variant font-medium text-[11px]">
-                            {b.address || "---"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={cn(
-                                "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border",
-                                b.status === "active"
-                                  ? "bg-primary/10 text-primary border-primary/20"
-                                  : "bg-surface-container-high text-on-surface-variant border-outline/30"
-                              )}
-                            >
-                              {b.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => {
-                                setBranchToEdit(b);
-                                setModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg border border-outline/30 hover:bg-surface-container text-on-surface-variant hover:text-primary transition-all cursor-pointer"
-                              title="Edit Branch"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </div>
-          )}
+
+            {branches === undefined ? (
+              <div className="flex justify-center p-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : branches.length === 0 ? (
+              <div className="text-center py-8 border border-dashed border-outline/30 rounded-2xl p-6 text-xs text-on-surface-variant font-bold uppercase tracking-wider">
+                No store branches configured yet. Click "Add Branch" to get started.
+              </div>
+            ) : (
+              <div className="border border-outline/30 rounded-2xl overflow-hidden shadow-sm">
+                <table className="w-full text-left border-separate border-spacing-0">
+                  <thead className="bg-surface-container-low text-on-surface text-[10px] uppercase tracking-widest font-black border-b border-outline/20">
+                    <tr>
+                      <th className="px-4 py-3">Code</th>
+                      <th className="px-4 py-3">Store Name</th>
+                      <th className="px-4 py-3">Address</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline/20 text-xs font-bold text-on-surface bg-surface">
+                    {branches.map((b: any) => (
+                      <tr key={b._id} className="hover:bg-surface-container/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-surface-container-high border border-outline/30">
+                            {b.code}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold">{b.name}</span>
+                            {b.isDefault && (
+                              <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-widest">
+                                Default
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant font-medium text-[11px]">
+                          {b.address || "---"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border",
+                              b.status === "active"
+                                ? "bg-primary/10 text-primary border-primary/20"
+                                : "bg-surface-container-high text-on-surface-variant border-outline/30"
+                            )}
+                          >
+                            {b.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => {
+                              setBranchToEdit(b);
+                              setModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg border border-outline/30 hover:bg-surface-container text-on-surface-variant hover:text-primary transition-all cursor-pointer"
+                            title="Edit Branch"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Theme Customization Section */}

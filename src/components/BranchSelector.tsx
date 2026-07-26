@@ -25,7 +25,7 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (!isMultiBranchEnabled) return null;
+  if (!isMultiBranchEnabled || (activeBranches && activeBranches.length <= 1)) return null;
 
   const currentBranch =
     selectedBranchId === "all"
