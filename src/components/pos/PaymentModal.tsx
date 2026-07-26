@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { X, CreditCard, Banknote, Smartphone, ArrowRight, Trash2, AlertCircle, SplitSquareHorizontal } from "lucide-react";
+import { X, CreditCard, Banknote, Smartphone, ArrowRight, Trash2, AlertCircle, Plus } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -35,9 +35,8 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
   const [selectedFeeId, setSelectedFeeId] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Split payment state
-  const [isSplitPayment, setIsSplitPayment] = useState(false);
-  const [splitPayments, setSplitPayments] = useState<{method: string, amount: number}[]>([]);
+  // Added payment entries (for multi-method payments)
+  const [splitPayments, setSplitPayments] = useState<{ method: string; amount: number }[]>([]);
 
   const createOrder = useMutation(api.orders.create);
   const { token, currentUser } = useAuth();
@@ -50,24 +49,31 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
 
   const [amountPaid, setAmountPaid] = useState<string>(grandTotal.toString());
 
-  // Check for active caixa session when Cash is selected
-  const activeCaixaSession = useQuery(api.caixa.getActiveSession, { token });
-  const hasCaixaOpen = !!activeCaixaSession;
-  const hasCashPayment = isSplitPayment 
-    ? splitPayments.some(p => p.method === "Cash")
-    : selectedMethod === "Cash";
-  const cashBlocked = hasCashPayment && !hasCaixaOpen;
+  const sumAddedPayments = splitPayments.reduce((sum, p) => sum + p.amount, 0);
+  const inputAmountNum = parseFloat(amountPaid) || 0;
 
-  const numAmountPaid = isSplitPayment 
-    ? splitPayments.reduce((sum, p) => sum + p.amount, 0)
-    : parseFloat(amountPaid) || 0;
-  
-  const remainingTotalDue = Math.max(0, grandTotal - numAmountPaid);
+  // Build effective payment list
+  let finalPayments: { method: string; amount: number }[] = [...splitPayments];
+  if (splitPayments.length === 0) {
+    finalPayments = [{ method: selectedMethod, amount: inputAmountNum }];
+  } else if (inputAmountNum > 0 && sumAddedPayments < grandTotal) {
+    finalPayments.push({ method: selectedMethod, amount: inputAmountNum });
+  }
+
+  const isSplitPayment = finalPayments.length > 1;
+
+  const numAmountPaid = splitPayments.length > 0
+    ? sumAddedPayments + (inputAmountNum > 0 && sumAddedPayments < grandTotal ? inputAmountNum : 0)
+    : inputAmountNum;
+
+  const remainingTotalDue = Math.max(0, grandTotal - sumAddedPayments);
   const change = numAmountPaid > grandTotal ? numAmountPaid - grandTotal : 0;
 
-  // If not split, use the selectedMethod input.
-  // If split, the user's typing in `amountPaid` is just the temporary amount to add.
-  const tempAmountToAdd = parseFloat(amountPaid) || 0;
+  // Check for active caixa session
+  const activeCaixaSession = useQuery(api.caixa.getActiveSession, { token });
+  const hasCaixaOpen = !!activeCaixaSession;
+  const hasCashPayment = finalPayments.some(p => p.method === "Cash");
+  const cashBlocked = hasCashPayment && !hasCaixaOpen;
 
   const canCheckout = !cashBlocked && 
     numAmountPaid >= grandTotal &&
@@ -78,18 +84,25 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
       setOrderType("pickup");
       setSelectedFeeId("");
       setIsProcessing(false);
-      setIsSplitPayment(false);
       setSplitPayments([]);
+      setSelectedMethod("Cash");
     }
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && !isSplitPayment) {
-      setAmountPaid(grandTotal.toString());
-    } else if (isOpen && isSplitPayment) {
-      setAmountPaid(remainingTotalDue > 0 ? remainingTotalDue.toString() : "0");
+    if (isOpen) {
+      const remaining = grandTotal - sumAddedPayments;
+      setAmountPaid(remaining > 0 ? remaining.toString() : "0");
     }
-  }, [isOpen, grandTotal, isSplitPayment, splitPayments.length]);
+  }, [isOpen, grandTotal, sumAddedPayments]);
+
+  const handleAddPartialPayment = () => {
+    if (inputAmountNum <= 0) return;
+    setSplitPayments(prev => [...prev, { method: selectedMethod, amount: inputAmountNum }]);
+    const newSum = sumAddedPayments + inputAmountNum;
+    const newRemaining = Math.max(0, grandTotal - newSum);
+    setAmountPaid(newRemaining > 0 ? newRemaining.toString() : "0");
+  };
 
   const handleCheckout = async () => {
     if (!canCheckout) {
@@ -125,9 +138,9 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
         })),
         total: grandTotal,
         customerId: customerId as any,
-        paymentMethod: isSplitPayment ? "Multiple" : selectedMethod,
+        paymentMethod: isSplitPayment ? "Multiple" : finalPayments[0].method,
         amountPaid: numAmountPaid,
-        splitPayments: isSplitPayment ? splitPayments : undefined,
+        splitPayments: isSplitPayment ? finalPayments : undefined,
 
         cashRegisterSessionId: (hasCashPayment && activeCaixaSession) ? activeCaixaSession._id : undefined,
         userId: currentUser?.userId,
@@ -139,7 +152,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
         branchId: targetBranchId as any,
       });
 
-      // Pass the new orderId to trigger success modal
       onSuccess(orderId as string);
     } catch (error: any) {
       toast.error(error.message || "Checkout failed");
@@ -296,22 +308,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                 <label className="text-xs font-black text-on-surface-variant uppercase tracking-widest">
                   Select Payment Method
                 </label>
-                <button
-                  onClick={() => {
-                    setIsSplitPayment(!isSplitPayment);
-                    setSplitPayments([]);
-                    setAmountPaid(grandTotal.toString());
-                  }}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 text-[10px] font-black uppercase tracking-wider transition-all",
-                    isSplitPayment 
-                      ? "bg-primary text-white border-primary" 
-                      : "bg-surface text-on-surface-variant border-outline hover:border-primary/50"
-                  )}
-                >
-                  <SplitSquareHorizontal className="w-3.5 h-3.5" />
-                  Split Payment
-                </button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {PAYMENT_METHODS.map((m) => (
@@ -319,7 +315,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                     key={m.id}
                     onClick={() => setSelectedMethod(m.id)}
                     className={cn(
-                      "flex flex-col items-center justify-center gap-3 p-4 rounded-2xl border-2 transition-all relative overflow-hidden group",
+                      "flex flex-col items-center justify-center gap-3 p-4 rounded-2xl border-2 transition-all relative overflow-hidden group cursor-pointer",
                       selectedMethod === m.id
                         ? "border-primary bg-primary/5 shadow-hard ring-1 ring-primary"
                         : "border-outline-variant bg-surface-container-lowest hover:border-primary/50"
@@ -351,10 +347,10 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
 
           {/* Right: Input & Checkout */}
           <div className="w-[380px] bg-surface-container-low p-6 lg:p-8 flex flex-col overflow-y-auto">
-            <div className="mb-auto space-y-8">
+            <div className="mb-auto space-y-6">
               <div>
                 <label className="block text-xs font-black text-on-surface-variant uppercase tracking-widest mb-2">
-                  {isSplitPayment ? `Add ${selectedMethod} Amount` : "Amount Received"}
+                  {splitPayments.length > 0 ? `Amount for ${selectedMethod}` : "Amount Received"}
                 </label>
                 <div className="relative">
                   <span className="absolute left-4 lg:left-6 top-1/2 -translate-y-1/2 text-xl lg:text-2xl font-black text-on-surface-variant opacity-30 pointer-events-none">MT</span>
@@ -367,33 +363,45 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                     onChange={(e) => setAmountPaid(e.target.value)}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && isSplitPayment && tempAmountToAdd > 0) {
-                        setSplitPayments(prev => [...prev, { method: selectedMethod, amount: tempAmountToAdd }]);
-                        setAmountPaid("0");
+                      if (e.key === "Enter") {
+                        if (remainingTotalDue > 0 && inputAmountNum > 0 && inputAmountNum < remainingTotalDue) {
+                          handleAddPartialPayment();
+                        } else if (canCheckout) {
+                          handleCheckout();
+                        }
                       }
                     }}
                     className="w-full bg-surface-container-lowest border-2 border-primary rounded-3xl p-4 lg:p-6 pl-16 lg:pl-20 text-right text-4xl lg:text-5xl font-black text-primary tracking-tight outline-none focus:ring-4 focus:ring-primary/20 transition-all shadow-inner"
                     placeholder="0.00"
                   />
                 </div>
-                {isSplitPayment && (
+
+                {/* Button to add another payment method portion if splitting across methods */}
+                {inputAmountNum > 0 && inputAmountNum < remainingTotalDue && (
                   <button
-                    disabled={tempAmountToAdd <= 0}
-                    onClick={() => {
-                      setSplitPayments(prev => [...prev, { method: selectedMethod, amount: tempAmountToAdd }]);
-                      setAmountPaid("0");
-                    }}
-                    className="w-full mt-3 py-4 rounded-2xl font-black text-sm uppercase tracking-widest bg-surface-container-highest border-2 border-outline hover:border-primary hover:text-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={handleAddPartialPayment}
+                    className="w-full mt-3 py-3 rounded-2xl font-black text-xs uppercase tracking-wider bg-surface-container-highest border-2 border-outline hover:border-primary hover:text-primary transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                   >
-                    Add {selectedMethod} Payment
+                    <Plus className="w-4 h-4 text-primary" />
+                    Add {selectedMethod} ({formatCurrency(inputAmountNum)}) & Choose Another Method
                   </button>
                 )}
               </div>
               
-              {isSplitPayment && splitPayments.length > 0 && (
+              {splitPayments.length > 0 && (
                 <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Added Payments</label>
-                  <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Added Payments ({splitPayments.length})</label>
+                    <button
+                      type="button"
+                      onClick={() => setSplitPayments([])}
+                      className="text-[9px] font-bold text-error hover:underline uppercase tracking-wider"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     <AnimatePresence>
                       {splitPayments.map((p, idx) => {
                         const mInfo = PAYMENT_METHODS.find(m => m.id === p.method);
@@ -407,18 +415,20 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                             className="flex items-center justify-between p-3 rounded-xl bg-surface border border-outline-variant shadow-sm"
                           >
                             <div className="flex items-center gap-3">
-                              <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-white", mInfo?.color || "bg-primary")}>
-                                <Icon className="w-4 h-4" />
+                              <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-white", mInfo?.color || "bg-primary")}>
+                                <Icon className="w-3.5 h-3.5" />
                               </div>
-                              <span className="font-bold text-sm">{p.method}</span>
+                              <span className="font-bold text-xs">{p.method}</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="font-black text-lg">{formatCurrency(p.amount)}</span>
+                              <span className="font-black text-sm text-primary">{formatCurrency(p.amount)}</span>
                               <button
+                                type="button"
                                 onClick={() => setSplitPayments(prev => prev.filter((_, i) => i !== idx))}
-                                className="w-8 h-8 rounded-lg text-error hover:bg-error/10 flex items-center justify-center transition-colors"
+                                className="w-7 h-7 rounded-lg text-error hover:bg-error/10 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Remove payment"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </motion.div>
@@ -431,14 +441,14 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-4">
+            <div className="space-y-4 pt-4">
               <button
                 disabled={!canCheckout || isProcessing}
                 onClick={handleCheckout}
                 className={cn(
-                  "w-full py-6 rounded-[1.5rem] font-black text-2xl shadow-prominent flex items-center justify-center gap-4 transition-all",
+                  "w-full py-6 rounded-[1.5rem] font-black text-2xl shadow-prominent flex items-center justify-center gap-4 transition-all cursor-pointer",
                   !canCheckout || isProcessing
-                    ? "bg-surface-dim text-on-surface-variant cursor-not-allowed"
+                    ? "bg-surface-dim text-on-surface-variant cursor-not-allowed opacity-60"
                     : "bg-primary text-on-primary hover:bg-secondary hover:scale-[1.02] active:scale-[0.98]"
                 )}
               >
@@ -453,7 +463,7 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
               </button>
               {numAmountPaid < grandTotal && (
                 <p className="text-center text-error font-black text-xs uppercase tracking-wider">
-                  Full payment required
+                  Full payment required ({formatCurrency(remainingTotalDue)} remaining)
                 </p>
               )}
             </div>
