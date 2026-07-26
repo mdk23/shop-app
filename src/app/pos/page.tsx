@@ -455,7 +455,7 @@ export default function POSPage() {
                 )}
               >
                 <div className="flex items-center gap-3 relative z-10">
-                  <span className="uppercase tracking-[0.2em] text-sm">Send to Kitchen</span>
+                  <span className="uppercase tracking-[0.2em] text-sm">Complete Order</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </div>
                 {cart.length > 0 && (
