@@ -84,7 +84,7 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: "production_menu",
-    name: "Production & Menu",
+    name: "Dishes & Kitchen",
     emoji: "🍳",
     items: [
       {
@@ -94,7 +94,7 @@ const menuGroups: MenuGroup[] = [
         allowedRoles: ["admin", "manager"],
       },
       {
-        name: "Production",
+        name: "Kitchen",
         href: "/kitchen",
         icon: ChefHat,
         allowedRoles: ["admin", "manager"],
