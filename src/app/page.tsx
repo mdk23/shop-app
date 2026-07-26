@@ -11,7 +11,7 @@ export default function RootPage() {
   useEffect(() => {
     if (isLoading) return;
     if (currentUser) {
-      router.replace("/pos");
+      router.replace("/dashboard");
     } else {
       router.replace("/login");
     }

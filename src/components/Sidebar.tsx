@@ -51,7 +51,7 @@ const topMenuItems: MenuItem[] = [
     icon: LayoutDashboard,
     allowedRoles: ["admin", "manager"],
   },
-  { name: "POS", href: "/pos", icon: ShoppingCart },
+  { name: "New Order", href: "/pos", icon: ShoppingCart },
   { name: "Active Orders", href: "/active-orders", icon: Bell },
   { name: "Caixa", href: "/caixa", icon: Landmark },
 ];

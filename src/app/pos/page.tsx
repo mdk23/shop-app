@@ -190,6 +190,7 @@ export default function POSPage() {
 
   return (
     <PageLayout
+      title="Menu"
       isFullWidth
       headerActions={
         <button
