@@ -5,7 +5,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { formatCurrency, cn } from "@/lib/utils";
-import { ShoppingCart, Plus, Minus, Trash2, ArrowRight, X, Pizza as PizzaIcon, Sparkles, History, Receipt } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, ArrowRight, X, Pizza as PizzaIcon, Sparkles, History, Receipt, Users, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { CustomerSelect } from "@/components/pos/CustomerSelect";
@@ -36,6 +36,13 @@ export default function POSPage() {
   const recentOrders = useQuery(api.orders.listRecent, { limit: 20 });
   const router = useRouter();
 
+
+  const [orderType, setOrderType] = useState<"pickup" | "delivery">("pickup");
+  const [selectedFeeId, setSelectedFeeId] = useState<string>("");
+
+  const deliveryFees = useQuery(api.deliveryFees.list, { activeOnly: true });
+  const selectedFeeObj = deliveryFees?.find((f) => f._id === selectedFeeId);
+  const deliveryFeeAmount = orderType === "delivery" ? (selectedFeeObj?.fee ?? 0) : 0;
 
   const [selectedCategory, setSelectedCategory] = useState("Chicken");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -174,6 +181,10 @@ export default function POSPage() {
 
   const handleCheckoutClick = () => {
     if (cart.length === 0) return;
+    if (orderType === "delivery" && !selectedFeeObj) {
+      toast.error("Please select a delivery zone & fee");
+      return;
+    }
     setIsPaymentModalOpen(true);
   };
 
@@ -186,6 +197,8 @@ export default function POSPage() {
     setCart([]);
     setCompletedOrderId(null);
     setSelectedCustomerId(null);
+    setOrderType("pickup");
+    setSelectedFeeId("");
   };
 
   return (
@@ -203,18 +216,127 @@ export default function POSPage() {
         </button>
       }
     >
-      <div className="flex flex-col lg:flex-row h-full gap-4 lg:gap-6">
-        {/* LEFT PANEL: Menu */}
-        <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex flex-col lg:flex-row h-full gap-4 lg:gap-5 min-h-[calc(100vh-120px)]">
+        {/* =================================================================== */}
+        {/* SECTION 1: CLIENT & DELIVERY (Left Vertical Section) */}
+        {/* =================================================================== */}
+        <div className="w-full lg:w-72 xl:w-80 shrink-0 flex flex-col gap-4">
+          {/* Card 1: Client Selection */}
+          <div className="bg-surface-container-lowest border-2 border-outline-variant rounded-2xl p-4 shadow-soft flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-outline-variant/40 pb-2">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-primary" />
+                <h2 className="text-xs font-black text-on-surface uppercase tracking-wider">1. Client & Delivery</h2>
+              </div>
+              <span className="text-[9px] font-black text-on-surface-variant/60 uppercase tracking-widest">Client</span>
+            </div>
 
+            <CustomerSelect
+              selectedCustomerId={selectedCustomerId}
+              onSelect={setSelectedCustomerId}
+            />
 
-          <div className="flex overflow-x-auto scrollbar-hide gap-2 mb-4 lg:mb-6 border-b border-outline-variant/30 pb-4 -mx-2 px-2 lg:mx-0 lg:px-0 lg:grid lg:grid-cols-4 xl:grid-cols-8 lg:gap-2">
+            {/* Selected Customer Card Details */}
+            {selectedCustomer && (
+              <div className="bg-surface-container-low border border-outline-variant/60 rounded-xl p-3 space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-on-surface-variant uppercase tracking-wider">Selected Client</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider",
+                    selectedCustomer.isGeneric
+                      ? "bg-surface-container-high text-on-surface-variant"
+                      : "bg-primary/10 text-primary"
+                  )}>
+                    {selectedCustomer.isGeneric ? "Walk-in" : "Registered"}
+                  </span>
+                </div>
+                <p className="font-black text-sm text-on-surface truncate">{selectedCustomer.name}</p>
+                {selectedCustomer.phone1 && (
+                  <p className="text-xs font-bold text-on-surface-variant flex items-center gap-1">
+                    📞 <span>{selectedCustomer.phone1}</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Card 2: Order Fulfillment (Pickup vs Delivery) */}
+          <div className="bg-surface-container-lowest border-2 border-outline-variant rounded-2xl p-4 shadow-soft space-y-4">
+            <label className="block text-xs font-black text-on-surface-variant uppercase tracking-widest">
+              Order Fulfillment
+            </label>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setOrderType("pickup")}
+                className={cn(
+                  "flex-1 py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider border-2 transition-all flex items-center justify-center gap-2 cursor-pointer",
+                  orderType === "pickup"
+                    ? "bg-primary text-on-primary border-primary shadow-hard"
+                    : "bg-surface-container-lowest border-outline-variant hover:border-outline text-on-surface-variant"
+                )}
+              >
+                Pickup
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderType("delivery")}
+                className={cn(
+                  "flex-1 py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider border-2 transition-all flex items-center justify-center gap-2 cursor-pointer",
+                  orderType === "delivery"
+                    ? "bg-primary text-on-primary border-primary shadow-hard"
+                    : "bg-surface-container-lowest border-outline-variant hover:border-outline text-on-surface-variant"
+                )}
+              >
+                Delivery
+              </button>
+            </div>
+
+            {orderType === "delivery" && (
+              <div className="space-y-2 animate-fadeIn pt-1">
+                <label className="block text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
+                  Select Delivery Zone & Fee
+                </label>
+                <select
+                  value={selectedFeeId}
+                  onChange={(e) => setSelectedFeeId(e.target.value)}
+                  className="w-full bg-surface-container-low border-2 border-outline focus:border-primary rounded-xl p-3 font-black uppercase tracking-wider text-xs outline-none transition-all cursor-pointer text-on-surface"
+                >
+                  <option value="">-- CHOOSE A DELIVERY ZONE --</option>
+                  {deliveryFees?.map((f) => (
+                    <option key={f._id} value={f._id}>
+                      {f.name} ({formatCurrency(f.fee)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* =================================================================== */}
+        {/* SECTION 2: DISH SELECTION (Middle Vertical Section) */}
+        {/* =================================================================== */}
+        <div className="flex-1 flex flex-col min-w-0 bg-surface-container-lowest border-2 border-outline-variant rounded-2xl p-4 shadow-soft">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-outline-variant/40">
+            <h2 className="text-xs font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
+              <UtensilsCrossed className="w-4 h-4 text-primary" /> 2. Dish Selection
+            </h2>
+            <span className="text-[9px] font-black text-on-surface-variant/60 uppercase tracking-widest">
+              {filteredDishes?.length || 0} Dishes
+            </span>
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex overflow-x-auto scrollbar-hide gap-2 mb-4 pb-2 border-b border-outline-variant/30">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={cn(
-                  "px-4 py-3 lg:px-2 rounded-xl font-black transition-all duration-200 text-[10px] uppercase tracking-widest flex-shrink-0 border-2 whitespace-nowrap",
+                  "px-3.5 py-2 rounded-xl font-black transition-all duration-200 text-[10px] uppercase tracking-widest flex-shrink-0 border-2 whitespace-nowrap cursor-pointer",
                   selectedCategory === cat
                     ? "bg-primary border-primary text-on-primary shadow-hard scale-105"
                     : "bg-surface-container-high border-outline-variant/50 text-on-surface-variant hover:border-outline"
@@ -225,249 +347,193 @@ export default function POSPage() {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-3 lg:gap-4 pb-24 lg:pb-0">
-            <AnimatePresence mode="popLayout">
-              {filteredDishes?.map((dish) => (
-                <motion.button
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  key={dish._id}
-                  onClick={() => addToCart(dish)}
-                  className="group bg-surface border-2 border-outline rounded-2xl overflow-hidden hover:shadow-hard hover:-translate-y-1 transition-all text-left flex flex-col relative"
-                >
-
-                  <div className="p-3 flex-1 flex flex-col min-h-[90px]">
-                    <h3 className="text-sm lg:text-base font-black text-on-surface mb-1 group-hover:text-primary transition-colors leading-[0.9] break-words">
-                      {dish.name}
-                    </h3>
-                    <p className="text-[10px] font-black text-on-surface-variant/40 uppercase tracking-widest mb-3">{dish.category}</p>
-                    <div className="mt-auto flex items-end justify-between">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-black text-primary tracking-tighter">
+          {/* Dishes Grid */}
+          <div className="flex-1 overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+              <AnimatePresence mode="popLayout">
+                {filteredDishes?.map((dish) => (
+                  <motion.button
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    key={dish._id}
+                    onClick={() => addToCart(dish)}
+                    className="group bg-surface border-2 border-outline rounded-2xl overflow-hidden hover:shadow-hard hover:-translate-y-1 transition-all text-left flex flex-col relative cursor-pointer"
+                  >
+                    <div className="p-3 flex-1 flex flex-col min-h-[95px]">
+                      <h3 className="text-xs lg:text-sm font-black text-on-surface mb-1 group-hover:text-primary transition-colors leading-[1.1] break-words">
+                        {dish.name}
+                      </h3>
+                      <p className="text-[9px] font-black text-on-surface-variant/40 uppercase tracking-widest mb-2">{dish.category}</p>
+                      <div className="mt-auto flex items-end justify-between">
+                        <span className="text-xs lg:text-sm font-black text-primary tracking-tighter">
                           {formatCurrency(dish.price)}
                         </span>
-                      </div>
-                      <div className="w-8 h-8 rounded-lg bg-surface-container-high border-2 border-outline flex items-center justify-center text-on-surface group-hover:bg-primary group-hover:text-on-primary transition-all shadow-hard-sm">
-                        <Plus className="w-4 h-4" />
+                        <div className="w-7 h-7 rounded-lg bg-surface-container-high border border-outline flex items-center justify-center text-on-surface group-hover:bg-primary group-hover:text-on-primary transition-all shadow-hard-sm">
+                          <Plus className="w-3.5 h-3.5" />
+                        </div>
                       </div>
                     </div>
+                  </motion.button>
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+
+        {/* =================================================================== */}
+        {/* SECTION 3: YOUR TRAY (Right Vertical Section) */}
+        {/* =================================================================== */}
+        <div className="w-full lg:w-80 xl:w-96 2xl:w-[360px] shrink-0 flex flex-col bg-surface-container-lowest border-2 border-outline-variant rounded-2xl shadow-prominent overflow-hidden">
+          {/* Header */}
+          <div className="p-4 border-b border-outline-variant flex items-center justify-between bg-primary/5 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-soft shrink-0">
+                <ShoppingCart className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-black text-on-surface leading-tight">3. Your Tray</h2>
+                <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-widest">
+                  {cart.length} {cart.length === 1 ? "item" : "items"}
+                </p>
+              </div>
+            </div>
+            {cart.length > 0 && (
+              <button
+                onClick={() => setCart([])}
+                className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 rounded-xl transition-all group cursor-pointer"
+                title="Clear Tray"
+              >
+                <Trash2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              </button>
+            )}
+          </div>
+
+          {/* Cart Items List */}
+          <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-2.5 custom-scrollbar min-h-0">
+            <AnimatePresence initial={false} mode="popLayout">
+              {cart.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-30 select-none py-12">
+                  <div className="w-16 h-16 rounded-full bg-outline-variant/10 flex items-center justify-center mb-4">
+                    <ShoppingCart className="w-8 h-8 text-outline-variant" />
                   </div>
-                </motion.button>
-              ))}
+                  <p className="font-black text-lg text-on-surface-variant">Empty Tray</p>
+                  <p className="text-xs font-bold text-on-surface-variant/60">Select dishes to add</p>
+                </div>
+              ) : (
+                <>
+                  {cart.map((item) => (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, x: -20 }}
+                      key={item.cartItemId}
+                      className="flex flex-col bg-surface-container-low p-2.5 pl-3 rounded-xl border border-outline-variant hover:border-primary/40 hover:bg-surface-container-lowest transition-all group shadow-sm gap-1.5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-black text-on-surface truncate text-xs lg:text-sm leading-tight group-hover:text-primary transition-colors">
+                            {item.name}
+                          </p>
+                          <p className="text-[10px] font-black text-primary/70">{formatCurrency(item.price)}</p>
+                        </div>
+
+                        <div className="flex items-center gap-1 bg-surface-container-high rounded-lg p-0.5 shadow-inner shrink-0">
+                          <button
+                            onClick={() => updateQuantity(item.cartItemId, -1)}
+                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-error/10 hover:text-error text-on-surface-variant transition-all cursor-pointer"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="w-6 text-center font-black text-on-surface text-xs">{item.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(item.cartItemId, 1)}
+                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-primary/10 hover:text-primary text-on-surface-variant transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <div className="min-w-[60px] text-right shrink-0">
+                          <p className="font-black text-on-surface text-xs lg:text-sm">
+                            {formatCurrency(getItemTotal(item))}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Modifiers & Combo Selections */}
+                      {item.modifiers && item.modifiers.length > 0 && (
+                        <div className="pl-2 border-l-2 border-primary/20 space-y-0.5">
+                          {item.modifiers.map((mod, i) => (
+                            <p key={i} className="text-[10px] font-bold text-on-surface-variant/80 flex justify-between">
+                              <span>🍳 {mod.name}</span>
+                              <span className="text-primary font-black">+{formatCurrency(mod.price)}</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      {item.comboSelections && item.comboSelections.length > 0 && (
+                        <div className="pl-2 border-l-2 border-primary/20 space-y-0.5">
+                          {item.comboSelections.map((sel, i) => (
+                            <p key={i} className="text-[10px] font-bold text-on-surface-variant/80 flex justify-between">
+                              <span>
+                                {sel.category === "Pizza Promo" ? `🍕 ${sel.name}` : `🥗 ${sel.category}: ${sel.name}`}
+                              </span>
+                              {sel.extraCharge > 0 && (
+                                <span className="text-primary font-black">+{formatCurrency(sel.extraCharge)}</span>
+                              )}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                  <div ref={cartEndRef} className="h-2" />
+                </>
+              )}
             </AnimatePresence>
           </div>
-        </div>
 
-        {/* Floating Mobile Cart Summary (Sticky Bottom) */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 p-4 pointer-events-none">
-          <motion.div
-            initial={{ y: 100 }}
-            animate={{ y: 0 }}
-            className="pointer-events-auto"
-          >
-            <button
-              onClick={() => {
-                const cartPanel = document.getElementById('cart-panel');
-                if (cartPanel) {
-                  cartPanel.classList.toggle('translate-y-0');
-                  cartPanel.classList.toggle('translate-y-full');
-                }
-              }}
-              className="w-full bg-primary text-on-primary h-16 rounded-2xl shadow-hard-lg flex items-center justify-between px-6 border-brutal active:scale-95 transition-all"
-            >
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <ShoppingCart className="w-6 h-6" />
-                  {cart.length > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-on-primary text-primary w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border-2 border-primary">
-                      {cart.reduce((sum, i) => sum + i.quantity, 0)}
-                    </span>
-                  )}
-                </div>
-                <span className="font-black uppercase tracking-widest text-sm">View Tray</span>
+          {/* Footer */}
+          <div className="p-3 lg:p-4 border-t border-outline-variant bg-surface-container-lowest shrink-0 space-y-3">
+            <div className="space-y-1.5 text-xs font-black uppercase tracking-wider border-b border-outline-variant/40 pb-2">
+              <div className="flex justify-between text-on-surface-variant/70">
+                <span>Subtotal (Food)</span>
+                <span>{formatCurrency(cartTotal)}</span>
               </div>
-              <span className="text-xl font-black tracking-tighter">{formatCurrency(cartTotal)}</span>
-            </button>
-          </motion.div>
-        </div>
-
-        {/* RIGHT PANEL: Cart & Customer */}
-        <div 
-          id="cart-panel"
-          className="fixed inset-0 z-50 lg:z-auto lg:static translate-y-full lg:translate-y-0 adaptive-transition bg-background lg:bg-transparent lg:w-[320px] xl:w-[380px] 2xl:w-[25%] flex flex-col gap-4 lg:h-[calc(100vh-120px)] lg:sticky lg:top-24"
-        >
-          {/* Mobile Close Button */}
-          <button 
-            onClick={() => {
-              const cartPanel = document.getElementById('cart-panel');
-              if (cartPanel) {
-                cartPanel.classList.add('translate-y-full');
-                cartPanel.classList.remove('translate-y-0');
-              }
-            }}
-            className="lg:hidden absolute top-4 right-4 z-10 w-12 h-12 bg-surface border-2 border-outline rounded-full flex items-center justify-center shadow-hard"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
-          {/* Customer Selection */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-[1.5rem] p-4 shadow-soft">
-            <CustomerSelect
-              selectedCustomerId={selectedCustomerId}
-              onSelect={setSelectedCustomerId}
-            />
-          </div>
-
-          <div className="flex-1 bg-surface-container-lowest border border-outline-variant rounded-[1.5rem] flex flex-col shadow-prominent overflow-hidden transition-all duration-300 min-h-0">
-            {/* Header: Fixed */}
-            <div className="p-4 border-b border-outline-variant flex items-center justify-between bg-primary/5 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-on-primary shadow-soft shrink-0">
-                  <ShoppingCart className="w-6 h-6" />
+              {orderType === "delivery" && (
+                <div className="flex justify-between text-primary font-black">
+                  <span>Delivery Fee {selectedFeeObj ? `(${selectedFeeObj.name})` : ""}</span>
+                  <span>{formatCurrency(deliveryFeeAmount)}</span>
                 </div>
-                <div>
-                  <h2 className="text-lg lg:text-xl font-black text-on-surface leading-tight">Your Tray</h2>
-                  <p className="text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-widest">{cart.length} unique {cart.length === 1 ? 'item' : 'items'}</p>
-                </div>
-              </div>
-              {cart.length > 0 && (
-                <button
-                  onClick={() => setCart([])}
-                  className="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-error/10 rounded-2xl transition-all group"
-                  title="Clear Cart"
-                >
-                  <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                </button>
               )}
             </div>
 
-            {/* Order Items List: Scrollable */}
-            <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-3 custom-scrollbar min-h-0">
-              <AnimatePresence initial={false} mode="popLayout">
-                {cart.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center opacity-30 select-none">
-                    <div className="w-24 h-24 rounded-full bg-outline-variant/10 flex items-center justify-center mb-6">
-                      <ShoppingCart className="w-12 h-12 text-outline-variant" />
-                    </div>
-                    <p className="font-black text-xl text-on-surface-variant">Empty Tray</p>
-                    <p className="text-sm font-bold text-on-surface-variant/60">Deliciousness awaits!</p>
-                  </div>
-                ) : (
-                  <>
-                    {cart.map((item) => (
-                      <motion.div
-                        layout
-                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, x: -20 }}
-                        key={item.cartItemId}
-                        className="flex flex-col bg-surface-container-low p-3 pl-4 rounded-2xl border border-outline-variant hover:border-primary/40 hover:bg-surface-container-lowest transition-all group shadow-sm gap-2"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-black text-on-surface truncate text-sm lg:text-base leading-tight group-hover:text-primary transition-colors">{item.name}</p>
-                            <p className="text-xs font-black text-primary/70">{formatCurrency(item.price)}</p>
-                          </div>
-
-                          <div className="flex items-center gap-1 bg-surface-container-high rounded-xl p-1 shadow-inner shrink-0 scale-90 lg:scale-100">
-                            <button
-                              onClick={() => updateQuantity(item.cartItemId, -1)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-error/10 hover:text-error text-on-surface-variant transition-all active:scale-90"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </button>
-                            <span className="w-7 text-center font-black text-on-surface text-sm">{item.quantity}</span>
-                            <button
-                              onClick={() => updateQuantity(item.cartItemId, 1)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-primary/10 hover:text-primary text-on-surface-variant transition-all active:scale-95"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          <div className="min-w-[70px] text-right shrink-0">
-                            <p className="font-black text-on-surface text-sm lg:text-base">
-                              {formatCurrency(getItemTotal(item))}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Modifiers display */}
-                        {item.modifiers && item.modifiers.length > 0 && (
-                          <div className="pl-2 border-l-2 border-primary/20 space-y-1">
-                            {item.modifiers.map((mod, i) => (
-                              <p key={i} className="text-xs font-bold text-on-surface-variant/80 flex justify-between">
-                                <span>🍳 {mod.name}</span>
-                                <span className="text-primary font-black">+{formatCurrency(mod.price)}</span>
-                              </p>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Combo and pizza promo selections display */}
-                        {item.comboSelections && item.comboSelections.length > 0 && (
-                          <div className="pl-2 border-l-2 border-primary/20 space-y-1">
-                            {item.comboSelections.map((sel, i) => (
-                              <p key={i} className="text-xs font-bold text-on-surface-variant/80 flex justify-between">
-                                <span>
-                                  {sel.category === "Pizza Promo" ? `🍕 ${sel.name}` : `🥗 ${sel.category}: ${sel.name}`}
-                                </span>
-                                {sel.extraCharge > 0 && (
-                                  <span className="text-primary font-black">+{formatCurrency(sel.extraCharge)}</span>
-                                )}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </motion.div>
-                    ))}
-                    <div ref={cartEndRef} className="h-2" />
-                  </>
-                )}
-              </AnimatePresence>
+            <div className="flex justify-between items-center pt-1">
+              <span className="text-sm font-black text-on-surface">Total</span>
+              <span className="text-2xl lg:text-3xl font-black text-primary tracking-tighter">
+                {formatCurrency(cartTotal + deliveryFeeAmount)}
+              </span>
             </div>
 
-            {/* Footer: Fixed */}
-            <div className="p-4 border-t border-outline-variant bg-surface-container-lowest shrink-0 shadow-[0_-12px_24px_-12px_rgba(0,0,0,0.1)]">
-              <div className="space-y-2 mb-6">
-                <div className="flex justify-between text-on-surface-variant font-black text-[10px] uppercase tracking-[0.2em] opacity-50">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(cartTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-outline-variant/30">
-                  <span className="text-lg font-black text-on-surface">Total</span>
-                  <div className="text-right">
-                    <span className="text-3xl font-black text-primary tracking-tighter block">{formatCurrency(cartTotal)}</span>
-                  </div>
-                </div>
+            <button
+              disabled={cart.length === 0}
+              onClick={handleCheckoutClick}
+              className={cn(
+                "w-full py-4 rounded-xl font-black text-base transition-all shadow-prominent flex items-center justify-center gap-3 group relative overflow-hidden cursor-pointer",
+                cart.length === 0
+                  ? "bg-surface-dim text-on-surface-variant cursor-not-allowed border-2 border-outline-variant"
+                  : "bg-primary text-on-primary hover:bg-secondary hover:scale-[1.01] active:scale-[0.98] border-brutal"
+              )}
+            >
+              <div className="flex items-center gap-2 relative z-10">
+                <span className="uppercase tracking-[0.15em] text-xs font-black">Complete the Order</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </div>
-
-              <button
-                disabled={cart.length === 0}
-                onClick={handleCheckoutClick}
-                className={cn(
-                  "w-full py-5 rounded-2xl font-black text-xl transition-all shadow-prominent flex items-center justify-center gap-4 group relative overflow-hidden",
-                  cart.length === 0
-                    ? "bg-surface-dim text-on-surface-variant cursor-not-allowed border-2 border-outline-variant"
-                    : "bg-primary text-on-primary hover:bg-secondary hover:scale-[1.02] active:scale-[0.98] border-brutal"
-                )}
-              >
-                <div className="flex items-center gap-3 relative z-10">
-                  <span className="uppercase tracking-[0.2em] text-sm">Complete the Order</span>
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </div>
-                {cart.length > 0 && (
-                  <motion.div
-                    initial={{ x: "-100%" }}
-                    animate={{ x: "100%" }}
-                    transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-                    className="absolute inset-0 bg-white/10 skew-x-[20deg]"
-                  />
-                )}
-              </button>
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -486,6 +552,8 @@ export default function POSPage() {
         isOpen={isPaymentModalOpen}
         onClose={() => setIsPaymentModalOpen(false)}
         total={cartTotal}
+        orderType={orderType}
+        selectedFeeId={selectedFeeId}
         items={cart}
         customerId={selectedCustomerId || ""}
         customerName={selectedCustomer?.name || "Generic Client"}

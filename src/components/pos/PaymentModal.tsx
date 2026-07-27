@@ -14,6 +14,8 @@ interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   total: number;
+  orderType: "pickup" | "delivery";
+  selectedFeeId?: string;
   items: any[];
   customerId: string;
   customerName: string;
@@ -29,10 +31,8 @@ const PAYMENT_METHODS = [
   { id: "Moza", icon: CreditCard, color: "bg-zinc-700", light: "bg-surface-container-high text-on-surface-variant" },
 ];
 
-export function PaymentModal({ isOpen, onClose, total, items, customerId, customerName, onSuccess }: PaymentModalProps) {
+export function PaymentModal({ isOpen, onClose, total, orderType, selectedFeeId, items, customerId, customerName, onSuccess }: PaymentModalProps) {
   const [selectedMethod, setSelectedMethod] = useState<string>("Cash");
-  const [orderType, setOrderType] = useState<"pickup" | "delivery">("pickup");
-  const [selectedFeeId, setSelectedFeeId] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Added payment entries (for multi-method payments)
@@ -81,8 +81,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
 
   useEffect(() => {
     if (isOpen) {
-      setOrderType("pickup");
-      setSelectedFeeId("");
       setIsProcessing(false);
       setSplitPayments([]);
       setSelectedMethod("Cash");
@@ -247,60 +245,6 @@ export function PaymentModal({ isOpen, onClose, total, items, customerId, custom
                 </div>
               </motion.div>
             )}
-
-            {/* Order Fulfillment Selection */}
-            <div className="bg-surface-container-low p-5 rounded-3xl border border-outline-variant space-y-4">
-              <label className="block text-xs font-black text-on-surface-variant uppercase tracking-widest ml-1">
-                Order Fulfillment
-              </label>
-              
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => setOrderType("pickup")}
-                  className={cn(
-                    "flex-1 py-4 px-6 rounded-2xl font-black text-sm uppercase tracking-wider border-2 transition-all flex items-center justify-center gap-2 cursor-pointer",
-                    orderType === "pickup"
-                      ? "bg-primary text-on-primary border-primary shadow-hard"
-                      : "bg-surface-container-lowest border-outline-variant hover:border-outline text-on-surface-variant"
-                  )}
-                >
-                  Pickup
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOrderType("delivery")}
-                  className={cn(
-                    "flex-1 py-4 px-6 rounded-2xl font-black text-sm uppercase tracking-wider border-2 transition-all flex items-center justify-center gap-2 cursor-pointer",
-                    orderType === "delivery"
-                      ? "bg-primary text-on-primary border-primary shadow-hard"
-                      : "bg-surface-container-lowest border-outline-variant hover:border-outline text-on-surface-variant"
-                  )}
-                >
-                  Delivery
-                </button>
-              </div>
-
-              {orderType === "delivery" && (
-                <div className="space-y-2 animate-fadeIn">
-                  <label className="block text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-1">
-                    Select Delivery Zone & Fee
-                  </label>
-                  <select
-                    value={selectedFeeId}
-                    onChange={(e) => setSelectedFeeId(e.target.value)}
-                    className="w-full bg-surface-container-lowest border-2 border-outline focus:border-primary rounded-2xl p-4 font-black uppercase tracking-wider text-xs outline-none transition-all cursor-pointer"
-                  >
-                    <option value="">-- CHOOSE A DELIVERY ZONE --</option>
-                    {deliveryFees?.map((f) => (
-                      <option key={f._id} value={f._id}>
-                        {f.name} ({formatCurrency(f.fee)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
 
             {/* Payment Methods Grid */}
             <div>
