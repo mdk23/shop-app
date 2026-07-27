@@ -6,13 +6,29 @@ import { Id } from "../../../convex/_generated/dataModel";
 import { useState, useMemo, useEffect } from "react";
 import { PageLayout } from "@/components/PageLayout";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, ChefHat, CheckCircle, Bell, ArrowRight } from "lucide-react";
+import { Clock, ChefHat, CheckCircle, Bell, ArrowRight, Store } from "lucide-react";
+import { useBranch } from "@/contexts/BranchContext";
 
 type PrepStatus = "pending" | "preparing" | "ready" | "completed";
 
 export default function ActiveOrdersPage() {
-  const activeOrders = useQuery(api.orders.listActiveOrders) || [];
+  const { selectedBranchId } = useBranch();
+  const branches = useQuery(api.branches.listAll);
+  const activeOrders = useQuery(api.orders.listActiveOrders, { branchId: selectedBranchId }) || [];
   const updatePrepStatus = useMutation(api.orders.updatePrepStatus);
+
+  const branchMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    (branches || []).forEach((b) => {
+      map[b._id] = b.code || b.name;
+    });
+    return map;
+  }, [branches]);
+
+  const defaultBranchCode = useMemo(() => {
+    const def = (branches || []).find((b) => b.isDefault);
+    return def ? (def.code || def.name) : "LOJA 1";
+  }, [branches]);
 
   // Group by status
   const pendingOrders = activeOrders.filter(o => o.prepStatus === "pending");
@@ -24,16 +40,8 @@ export default function ActiveOrdersPage() {
   };
 
   return (
-    <PageLayout isFullWidth>
+    <PageLayout title="Active Orders" subtitle="Live Kitchen & Preparation Pipeline" isFullWidth>
       <div className="flex flex-col gap-6 h-full pb-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-2">
-          <div>
-            <h1 className="text-3xl lg:text-5xl font-display text-on-surface leading-none mb-2 uppercase tracking-tighter flex items-center gap-4">
-              <Bell className="w-8 h-8 text-primary" />
-              Active Orders
-            </h1>
-          </div>
-        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         
         {/* Pending Column */}
@@ -52,7 +60,8 @@ export default function ActiveOrdersPage() {
               {pendingOrders.map(order => (
                 <OrderCard 
                   key={order._id} 
-                  order={order} 
+                  order={order}
+                  branchCode={order.branchId ? (branchMap[order.branchId] || "BRANCH") : defaultBranchCode}
                   onAction={() => handleUpdateStatus(order._id, "preparing")}
                   actionLabel="Start Preparing"
                   actionColor="bg-primary hover:bg-primary/90 text-on-primary"
@@ -80,7 +89,8 @@ export default function ActiveOrdersPage() {
               {preparingOrders.map(order => (
                 <OrderCard 
                   key={order._id} 
-                  order={order} 
+                  order={order}
+                  branchCode={order.branchId ? (branchMap[order.branchId] || "BRANCH") : defaultBranchCode}
                   onAction={() => handleUpdateStatus(order._id, "ready")}
                   actionLabel="Mark as Ready"
                   actionColor="bg-success hover:bg-success/90 text-on-primary"
@@ -109,6 +119,7 @@ export default function ActiveOrdersPage() {
                 <OrderCard 
                   key={order._id} 
                   order={order} 
+                  branchCode={order.branchId ? (branchMap[order.branchId] || "BRANCH") : defaultBranchCode}
                   onAction={() => handleUpdateStatus(order._id, "completed")}
                   actionLabel="Finish (Collect)"
                   actionColor="bg-surface border-2 border-outline hover:bg-surface-container text-on-surface"
@@ -125,7 +136,7 @@ export default function ActiveOrdersPage() {
   );
 }
 
-function OrderCard({ order, onAction, actionLabel, actionColor, actionIcon }: any) {
+function OrderCard({ order, branchCode, onAction, actionLabel, actionColor, actionIcon }: any) {
   const [elapsed, setElapsed] = useState("");
 
   useEffect(() => {
@@ -153,12 +164,23 @@ function OrderCard({ order, onAction, actionLabel, actionColor, actionIcon }: an
     >
       {/* Top Banner (Order ID & Type) */}
       <div className="flex items-center justify-between pb-3 border-b-2 border-outline border-dashed">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-black text-on-surface bg-surface-container px-2 py-1 rounded-lg">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-black text-on-surface bg-surface-container px-2 py-1 rounded-lg">
             {order.orderCode || `#${order._id.slice(-4).toUpperCase()}`}
+          </span>
+          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg bg-surface-container-high border border-outline/40 text-primary flex items-center gap-1 shadow-xs">
+            <Store className="w-3 h-3 text-primary" />
+            {branchCode}
           </span>
           <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isTakeaway ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning-dark'}`}>
             {typeLabel}
+          </span>
+          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+            order.status === "Paid" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" :
+            order.status === "Partially Paid" ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
+            "bg-amber-500/10 text-amber-600 border-amber-500/30"
+          }`}>
+            {order.status === "Paid" ? "Paid" : order.status === "Partially Paid" ? "Partially Paid" : "Pending Payment"}
           </span>
         </div>
         <div className="flex items-center gap-1 text-on-surface-variant text-xs font-bold">
@@ -166,6 +188,12 @@ function OrderCard({ order, onAction, actionLabel, actionColor, actionIcon }: an
           {elapsed}
         </div>
       </div>
+
+      {order.customerName && (
+        <div className="text-[11px] font-black text-on-surface-variant uppercase tracking-wider">
+          Client: <span className="text-on-surface">{order.customerName}</span>
+        </div>
+      )}
 
       {/* Items List */}
       <div className="flex flex-col gap-2 py-2">

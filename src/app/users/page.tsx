@@ -94,22 +94,12 @@ function UsersPageContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-display text-on-surface">User Management</h1>
-          <p className="text-sm font-bold text-on-surface-variant mt-1">
-            {activeTab === "users" ? (
-              `${filteredUsers.length} user${filteredUsers.length !== 1 ? "s" : ""} found`
-            ) : (
-              `${(activeSessions ?? []).length} active session${(activeSessions ?? []).length !== 1 ? "s" : ""} found`
-            )}
-          </p>
-        </div>
+      {/* Header Actions */}
+      <div className="flex justify-end items-center gap-4">
         {activeTab === "users" && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-primary text-on-primary rounded-xl font-black text-xs uppercase tracking-widest hover:bg-secondary transition-colors shadow-hard"
+            className="flex items-center gap-2 px-5 py-3 bg-primary text-on-primary rounded-xl font-black text-xs uppercase tracking-widest hover:bg-secondary transition-colors shadow-hard cursor-pointer"
             id="create-user-btn"
           >
             <Plus className="w-4 h-4" />
@@ -351,7 +341,7 @@ function UsersPageContent() {
 export default function UsersPage() {
   return (
     <AuthGuard requiredRoles={["admin", "manager"]}>
-      <PageLayout>
+      <PageLayout title="User Management" subtitle="System Users & Active Sessions">
         <UsersPageContent />
       </PageLayout>
     </AuthGuard>

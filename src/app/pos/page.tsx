@@ -28,7 +28,7 @@ type CartItem = {
   comboSelections?: { category: string; dishId?: any; name: string; extraCharge: number }[];
 };
 
-const categories = ["Chicken", "Sides", "Pizza", "Combos", "Cold Drinks", "Extras"];
+const categories = ["Chicken", "Sandwiches", "Sides", "Pizza", "Combos", "Cold Drinks", "Extras"];
 
 export default function POSPage() {
   const { currentUser } = useAuth();

@@ -26,6 +26,8 @@ import { CashMovementModal } from "@/components/caixa/CashMovementModal";
 import { CloseRegisterModal } from "@/components/caixa/CloseRegisterModal";
 import { CashMovementTable } from "@/components/caixa/CashMovementTable";
 
+import { useBranch } from "@/contexts/BranchContext";
+
 // ─────────────────────────────────────────────
 // STATE A — No Active Session
 // ─────────────────────────────────────────────
@@ -257,7 +259,11 @@ function ActiveSessionView({
 // ─────────────────────────────────────────────
 function CaixaContent() {
   const { currentUser, token } = useAuth();
-  const activeSession = useQuery(api.caixa.getActiveSession, { token });
+  const { selectedBranchId } = useBranch();
+  const activeSession = useQuery(api.caixa.getActiveSession, { 
+    token, 
+    branchId: selectedBranchId !== "all" ? selectedBranchId : undefined 
+  });
   const openSession = useMutation(api.caixa.openSession);
   const [showOpenModal, setShowOpenModal] = useState(false);
 
@@ -303,7 +309,12 @@ function CaixaContent() {
         <OpenRegisterModal
           onClose={() => setShowOpenModal(false)}
           onSave={async (openingAmount, notes) => {
-            await openSession({ token, openingAmount, notes });
+            await openSession({
+              token,
+              openingAmount,
+              notes,
+              branchId: selectedBranchId !== "all" ? selectedBranchId : undefined,
+            });
           }}
         />
       )}
@@ -314,7 +325,7 @@ function CaixaContent() {
 export default function CaixaPage() {
   return (
     <AuthGuard requiredPermission="access_caixa">
-      <PageLayout>
+      <PageLayout title="Cash Register" subtitle="Caixa & Session Management">
         <CaixaContent />
       </PageLayout>
     </AuthGuard>

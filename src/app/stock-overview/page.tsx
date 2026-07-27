@@ -241,18 +241,10 @@ export default function StockOverviewPage() {
   const outOfStockCount = ingredients?.filter((i) => i.stockQuantity <= 0).length || 0;
 
   return (
-    <PageLayout isFullWidth={true}>
+    <PageLayout title="Stock Overview" subtitle="Audit Trail & Kitchen Loss Overview" isFullWidth={true}>
       <div className="space-y-6 pb-12">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-2xl lg:text-3xl font-black text-on-surface uppercase tracking-tight">
-              Stock Ledger & Wastage
-            </h2>
-            <p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest opacity-60">
-              Audit trail & daily kitchen loss overview
-            </p>
-          </div>
+        {/* Header Actions */}
+        <div className="flex justify-end items-center gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {currentUser?.role !== "pos_seller" && (
               <button

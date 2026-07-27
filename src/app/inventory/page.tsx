@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { PageLayout } from "@/components/PageLayout";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -21,7 +21,8 @@ import {
   ChevronDown,
   ChevronsUpDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Filter
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,6 +41,19 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 15;
+
+  const statusCounts = useMemo(() => {
+    const list = ingredients ?? [];
+    let good = 0;
+    let low = 0;
+    let out = 0;
+    for (const item of list) {
+      if (item.stockQuantity <= 0) out++;
+      else if (item.stockQuantity <= item.lowStockThreshold) low++;
+      else good++;
+    }
+    return { All: list.length, Good: good, "Low Stock": low, "Out of Stock": out };
+  }, [ingredients]);
 
   const STATUS_CYCLE: Array<"All" | "Good" | "Low Stock" | "Out of Stock"> = ["All", "Good", "Low Stock", "Out of Stock"];
 
@@ -121,13 +135,9 @@ export default function InventoryPage() {
   };
 
   return (
-    <PageLayout>
+    <PageLayout title="Stock" subtitle="Supply & Ingredient Management">
       <div className="space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-black text-on-surface uppercase tracking-tight">Inventory</h1>
-            <p className="text-xs lg:text-sm text-on-surface-variant font-bold uppercase tracking-widest opacity-60">Supply Management</p>
-          </div>
+        <div className="flex flex-row items-center justify-end gap-4">
           <button 
             onClick={() => {
               setEditingIngredient(null);
@@ -146,26 +156,46 @@ export default function InventoryPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-on-surface-variant opacity-40" />
               <input
                 type="text"
-                placeholder="Search inventory..."
+                placeholder="Search inventory items..."
                 value={searchTerm}
                 onChange={handleSearchChange}
                 className="w-full bg-surface-container-high border border-outline-variant rounded-2xl pl-12 pr-4 py-4 outline-none focus:border-primary transition-colors font-black uppercase tracking-widest text-[10px]"
               />
             </div>
             <div className="flex items-center gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as any);
+                  setCurrentPage(1);
+                }}
+                className="flex-1 md:flex-none px-4 py-4 rounded-2xl bg-surface-container-high border border-outline-variant text-[10px] font-black uppercase tracking-widest outline-none focus:border-primary transition-all cursor-pointer text-on-surface"
+              >
+                <option value="All">All Stock Statuses ({statusCounts.All})</option>
+                <option value="Good">In Stock ({statusCounts.Good})</option>
+                <option value="Low Stock">Low Stock ({statusCounts["Low Stock"]})</option>
+                <option value="Out of Stock">Out of Stock ({statusCounts["Out of Stock"]})</option>
+              </select>
               <button 
-                onClick={handleStatusFilterChange}
-                className="flex-1 md:flex-none px-4 py-4 rounded-2xl bg-surface-container-high border border-outline-variant text-[10px] font-black uppercase tracking-widest hover:text-primary transition-all flex items-center justify-center gap-2">
-                {statusFilter === "All" ? "Status: All" : `Status: ${statusFilter}`}
-                <ChevronsUpDown className="w-4 h-4 opacity-40" />
-              </button>
-              <button className="p-4 rounded-2xl bg-surface-container-high border border-outline-variant text-on-surface-variant hover:text-primary transition-colors">
+                onClick={() => {
+                  setSearchTerm("");
+                  setStatusFilter("All");
+                  setCategoryFilter("All");
+                  setCurrentPage(1);
+                }}
+                title="Reset Filters"
+                className="p-4 rounded-2xl bg-surface-container-high border border-outline-variant text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+              >
                 <RefreshCcw className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          <div className="px-6 py-4 border-b border-outline-variant bg-surface-container-low/30 overflow-x-auto flex items-center gap-2">
+          {/* Filter Bar: Category Tabs (Above) */}
+          <div className="px-6 py-3 border-b border-outline-variant bg-surface-container-low/60 flex items-center gap-3 overflow-x-auto custom-scrollbar">
+            <span className="text-[11px] font-black uppercase tracking-widest text-on-surface-variant shrink-0 mr-1">
+              Category:
+            </span>
             {["All", "Food", "Packaging", "Drinks", "Kitchen"].map((cat) => (
               <button
                 key={cat}
@@ -174,13 +204,48 @@ export default function InventoryPage() {
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all border-2",
+                  "px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all border-2 cursor-pointer shadow-sm",
                   categoryFilter === cat
-                    ? "bg-primary text-on-primary border-primary shadow-soft"
-                    : "bg-surface-container-high text-on-surface-variant border-outline-variant hover:border-primary/50"
+                    ? "bg-primary text-on-primary border-primary shadow-soft font-black"
+                    : "bg-surface-container-high text-on-surface border-outline-variant hover:border-primary hover:text-primary"
                 )}
               >
                 {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Filter Bar: Stock Status Pills (Below) */}
+          <div className="px-6 py-3 border-b border-outline-variant bg-surface-container-low/30 flex items-center gap-3 overflow-x-auto custom-scrollbar">
+            <span className="text-[11px] font-black uppercase tracking-widest text-on-surface-variant shrink-0 mr-1">
+              Stock Status:
+            </span>
+            {[
+              { id: "All", label: "All Items", count: statusCounts.All, badgeColor: "bg-surface-container-highest text-on-surface font-bold" },
+              { id: "Good", label: "In Stock", count: statusCounts.Good, badgeColor: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border-emerald-500/30" },
+              { id: "Low Stock", label: "Low Stock", count: statusCounts["Low Stock"], badgeColor: "bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold border-amber-500/30" },
+              { id: "Out of Stock", label: "Out of Stock", count: statusCounts["Out of Stock"], badgeColor: "bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold border-rose-500/30" },
+            ].map((st) => (
+              <button
+                key={st.id}
+                onClick={() => {
+                  setStatusFilter(st.id as any);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all border-2 flex items-center gap-2 cursor-pointer shadow-sm",
+                  statusFilter === st.id
+                    ? "bg-primary text-on-primary border-primary shadow-soft font-black"
+                    : "bg-surface-container-high text-on-surface border-outline-variant hover:border-primary/40"
+                )}
+              >
+                <span>{st.label}</span>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold border",
+                  statusFilter === st.id ? "bg-white/20 text-on-primary border-white/30" : st.badgeColor
+                )}>
+                  {st.count}
+                </span>
               </button>
             ))}
           </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { X, CreditCard, Banknote, Smartphone, ArrowRight, Trash2, AlertCircle, Plus } from "lucide-react";
+import { X, CreditCard, Banknote, Smartphone, ArrowRight, Trash2, AlertCircle, Plus, Clock } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ const PAYMENT_METHODS = [
   { id: "eMola", icon: Smartphone, color: "bg-orange-600", light: "bg-surface-container-high text-on-surface-variant" },
   { id: "BIM", icon: CreditCard, color: "bg-blue-800", light: "bg-surface-container-high text-on-surface-variant" },
   { id: "Moza", icon: CreditCard, color: "bg-zinc-700", light: "bg-surface-container-high text-on-surface-variant" },
+  { id: "Pending", icon: Clock, color: "bg-amber-600", light: "bg-amber-100 text-amber-900 border-amber-300" },
 ];
 
 export function PaymentModal({ isOpen, onClose, total, orderType, selectedFeeId, items, customerId, customerName, onSuccess }: PaymentModalProps) {
@@ -75,8 +76,9 @@ export function PaymentModal({ isOpen, onClose, total, orderType, selectedFeeId,
   const hasCashPayment = finalPayments.some(p => p.method === "Cash");
   const cashBlocked = hasCashPayment && !hasCaixaOpen;
 
+  const isPendingSelected = selectedMethod === "Pending";
   const canCheckout = !cashBlocked && 
-    numAmountPaid >= grandTotal &&
+    (isPendingSelected || numAmountPaid >= grandTotal) &&
     (orderType === "pickup" || !!selectedFeeObj);
 
   useEffect(() => {
@@ -102,14 +104,64 @@ export function PaymentModal({ isOpen, onClose, total, orderType, selectedFeeId,
     setAmountPaid(newRemaining > 0 ? newRemaining.toString() : "0");
   };
 
+  const handleCheckoutPending = async () => {
+    if (orderType === "delivery" && !selectedFeeObj) {
+      toast.error("Please select a delivery zone/fee");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      let targetBranchId: string | undefined = undefined;
+      if (selectedBranchId && selectedBranchId !== "all") {
+        targetBranchId = selectedBranchId;
+      } else if (activeBranches && activeBranches.length > 0) {
+        const defaultBranch = activeBranches.find((b: any) => b.isDefault) || activeBranches[0];
+        targetBranchId = defaultBranch?._id;
+      }
+
+      const orderId = await createOrder({
+        items: items.map(i => ({ 
+          dishId: i.dishId, 
+          quantity: i.quantity, 
+          priceAtTime: i.price,
+          modifiers: i.modifiers,
+          comboSelections: i.comboSelections,
+        })),
+        total: grandTotal,
+        customerId: customerId as any,
+        paymentMethod: "Pending",
+        amountPaid: numAmountPaid > 0 && numAmountPaid < grandTotal ? numAmountPaid : 0,
+        splitPayments: undefined,
+        cashRegisterSessionId: undefined,
+        userId: currentUser?.userId,
+        username: currentUser?.username,
+        orderType,
+        deliveryFeeId: orderType === "delivery" ? (selectedFeeObj?._id as any) : undefined,
+        deliveryFeeName: orderType === "delivery" ? selectedFeeObj?.name : undefined,
+        deliveryFeeAmount: orderType === "delivery" ? selectedFeeObj?.fee : undefined,
+        branchId: targetBranchId as any,
+      });
+
+      onSuccess(orderId as string);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create pending order");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleCheckout = async () => {
+    if (isPendingSelected) {
+      return handleCheckoutPending();
+    }
     if (!canCheckout) {
       if (orderType === "delivery" && !selectedFeeObj) {
         toast.error("Please select a delivery zone/fee");
         return;
       }
       if (numAmountPaid < grandTotal) {
-        toast.error("Full payment is required.");
+        toast.error("Full payment is required for instant sale.");
         return;
       }
       toast.error("Invalid amount or payment blocked.");
@@ -385,29 +437,40 @@ export function PaymentModal({ isOpen, onClose, total, orderType, selectedFeeId,
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-4 pt-4">
+            <div className="space-y-3 pt-4">
               <button
                 disabled={!canCheckout || isProcessing}
                 onClick={handleCheckout}
                 className={cn(
-                  "w-full py-6 rounded-[1.5rem] font-black text-2xl shadow-prominent flex items-center justify-center gap-4 transition-all cursor-pointer",
+                  "w-full py-5 rounded-[1.5rem] font-black text-xl shadow-prominent flex items-center justify-center gap-3 transition-all cursor-pointer",
                   !canCheckout || isProcessing
                     ? "bg-surface-dim text-on-surface-variant cursor-not-allowed opacity-60"
                     : "bg-primary text-on-primary hover:bg-secondary hover:scale-[1.02] active:scale-[0.98]"
                 )}
               >
                 {isProcessing ? (
-                  <div className="w-8 h-8 border-4 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-4 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
                 ) : (
                   <>
-                    Confirm Sale
-                    <ArrowRight className="w-8 h-8" />
+                    Confirm & Complete Sale
+                    <ArrowRight className="w-6 h-6" />
                   </>
                 )}
               </button>
-              {numAmountPaid < grandTotal && (
-                <p className="text-center text-error font-black text-xs uppercase tracking-wider">
-                  Full payment required ({formatCurrency(remainingTotalDue)} remaining)
+
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={handleCheckoutPending}
+                className="w-full py-3.5 rounded-[1.2rem] font-black text-xs uppercase tracking-widest bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+              >
+                <Clock className="w-4 h-4 text-amber-600" />
+                Save as Pending Order (Pay Later)
+              </button>
+
+              {numAmountPaid < grandTotal && !isPendingSelected && (
+                <p className="text-center text-amber-700 dark:text-amber-400 font-bold text-[11px] uppercase tracking-wider">
+                  Need to pay later? Click "Save as Pending Order" above.
                 </p>
               )}
             </div>

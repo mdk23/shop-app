@@ -7,7 +7,7 @@ import { Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function CustomerDisplayPage() {
-  const activeOrders = useQuery(api.orders.listActiveOrders) || [];
+  const activeOrders = useQuery(api.orders.listActiveOrders, {}) || [];
 
   // Group by status
   const preparingOrders = activeOrders.filter(o => o.prepStatus === "pending" || o.prepStatus === "preparing");

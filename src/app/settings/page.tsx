@@ -34,17 +34,8 @@ export default function SettingsPage() {
   const [branchToEdit, setBranchToEdit] = useState<any | null>(null);
 
   return (
-    <PageLayout>
+    <PageLayout title="Global Settings" subtitle="App-wide configurations, branch locations & themes">
       <div className="max-w-5xl mx-auto space-y-8 pb-12">
-        <div>
-          <h1 className="text-3xl font-black text-on-surface tracking-tighter flex items-center gap-3">
-            <Settings2 className="w-8 h-8 text-primary" />
-            Global Settings
-          </h1>
-          <p className="text-on-surface-variant font-medium mt-2">
-            Manage app-wide configurations, multi-branch store locations, delivery zones, and color themes.
-          </p>
-        </div>
 
         {/* Store Locations / Branches Configuration Card */}
         <div className="bg-surface border border-outline/30 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">

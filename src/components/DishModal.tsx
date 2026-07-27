@@ -281,6 +281,7 @@ export function DishModal({ isOpen, onClose, initialData }: DishModalProps) {
                     className="w-full bg-surface-container-low border-2 border-outline rounded-lg px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-[2px_2px_0px_0px_var(--shadow-color)]"
                   >
                     <option value="Chicken">Chicken</option>
+                    <option value="Sandwiches">Sandwiches</option>
                     <option value="Sides">Sides</option>
                     <option value="Pizza">Pizza</option>
                     <option value="Combos">Combos</option>

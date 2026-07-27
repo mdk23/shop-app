@@ -101,11 +101,13 @@ function LayoutContent({
   isFullWidth,
   headerActions,
   title,
+  subtitle,
 }: {
   children: React.ReactNode;
   isFullWidth?: boolean;
   headerActions?: React.ReactNode;
   title?: string;
+  subtitle?: string;
 }) {
   const { toggleOpen } = useSidebar();
 
@@ -121,9 +123,18 @@ function LayoutContent({
             >
               <Menu className="w-6 h-6" />
             </button>
-            <h2 className="text-xl lg:text-3xl font-display text-on-surface truncate max-w-[150px] sm:max-w-none uppercase tracking-tighter">
-              {title || "Take Away"}
-            </h2>
+            {title && (
+              <div className="flex flex-col justify-center min-w-0">
+                <h2 className="text-lg lg:text-2xl font-display text-on-surface truncate uppercase tracking-tighter leading-tight">
+                  {title}
+                </h2>
+                {subtitle && (
+                  <p className="text-[9px] lg:text-[11px] text-on-surface-variant font-bold uppercase tracking-widest opacity-60 truncate leading-none mt-0.5">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3 lg:gap-6">
@@ -168,15 +179,17 @@ export function PageLayout({
   isFullWidth,
   headerActions,
   title,
+  subtitle,
 }: {
   children: React.ReactNode;
   isFullWidth?: boolean;
   headerActions?: React.ReactNode;
   title?: string;
+  subtitle?: string;
 }) {
   return (
     <SidebarProvider>
-      <LayoutContent isFullWidth={isFullWidth} headerActions={headerActions} title={title}>
+      <LayoutContent isFullWidth={isFullWidth} headerActions={headerActions} title={title} subtitle={subtitle}>
         {children}
       </LayoutContent>
     </SidebarProvider>

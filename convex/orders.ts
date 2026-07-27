@@ -69,20 +69,50 @@ export const create = mutation({
     }
 
     // Check if there is any cash payment (either paymentMethod is Cash or any split payment uses Cash)
-    const hasCashPayment = args.paymentMethod === "Cash" || 
-      (args.splitPayments && args.splitPayments.some(p => p.method === "Cash"));
+    const hasCashPayment = (args.paymentMethod === "Cash" || 
+      (args.splitPayments && args.splitPayments.some(p => p.method === "Cash"))) && args.amountPaid > 0;
+
+    // Resolve branchId for per-location counter & cash register scoping
+    let branchId = args.branchId;
+    if (!branchId && args.cashRegisterSessionId) {
+      const sessionObj = await ctx.db.get(args.cashRegisterSessionId);
+      if (sessionObj?.branchId) {
+        branchId = sessionObj.branchId;
+      }
+    }
+    if (!branchId) {
+      const defaultBranch = await ctx.db
+        .query("branches")
+        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .filter((q) => q.eq(q.field("isDefault"), true))
+        .first();
+      if (defaultBranch) {
+        branchId = defaultBranch._id;
+      } else {
+        const firstBranch = await ctx.db.query("branches").first();
+        if (firstBranch) {
+          branchId = firstBranch._id;
+        }
+      }
+    }
 
     // Resolve cash register session for Cash payment
     let cashRegisterSessionId = args.cashRegisterSessionId;
+
     if (hasCashPayment) {
       if (!cashRegisterSessionId) {
-        // Query active session
-        const activeSession = await ctx.db
+        // Query active sessions and match branchId
+        const openSessions = await ctx.db
           .query("cashRegisterSessions")
           .withIndex("by_status", (q) => q.eq("status", "open"))
-          .unique();
+          .collect();
+
+        const activeSession = (branchId ? openSessions.find((s) => s.branchId === branchId) : null)
+          || openSessions.find((s) => !s.branchId)
+          || openSessions[0];
+
         if (!activeSession) {
-          throw new Error("No active cash register session found. Please open the register first.");
+          throw new Error("No active cash register session found for this store location. Please open the register first.");
         }
         cashRegisterSessionId = activeSession._id;
       } else {
@@ -215,30 +245,6 @@ export const create = mutation({
     const localTimeMs = now + 7200000;
     const dateString = new Date(localTimeMs).toISOString().split("T")[0];
 
-    // Resolve branchId for per-location counter scoping
-    let branchId = args.branchId;
-    if (!branchId && cashRegisterSessionId) {
-      const sessionObj = await ctx.db.get(cashRegisterSessionId);
-      if (sessionObj?.branchId) {
-        branchId = sessionObj.branchId;
-      }
-    }
-    if (!branchId) {
-      const defaultBranch = await ctx.db
-        .query("branches")
-        .withIndex("by_status", (q) => q.eq("status", "active"))
-        .filter((q) => q.eq(q.field("isDefault"), true))
-        .first();
-      if (defaultBranch) {
-        branchId = defaultBranch._id;
-      } else {
-        const firstBranch = await ctx.db.query("branches").first();
-        if (firstBranch) {
-          branchId = firstBranch._id;
-        }
-      }
-    }
-
     let sequenceNumber = 1;
     const counterKey = branchId ? `daily_order_sequence_${branchId}` : "daily_order_sequence";
     const counter = await ctx.db
@@ -273,13 +279,15 @@ export const create = mutation({
 
     const orderCode = `ORD-${String(sequenceNumber).padStart(3, "0")}`;
 
-    // 5. Enforce Full Payment & Calculate Change
-    if (args.amountPaid < args.total) {
-      throw new Error(`Insufficient payment. All orders must be paid in full (Total: ${args.total}, Provided: ${args.amountPaid}).`);
+    // 5. Calculate Sale Status & Payment Validation
+    let status = "Paid";
+    if (args.amountPaid >= args.total) {
+      status = "Paid";
+    } else if (args.amountPaid > 0) {
+      status = "Partially Paid";
+    } else {
+      status = "Pending";
     }
-
-    // 6. Calculate Sale Status
-    const status = "Paid";
 
     // 7. Create Sale (Order)
     const orderId = await ctx.db.insert("orders", {
@@ -799,9 +807,11 @@ export const updatePrepStatus = mutation({
 });
 
 export const listActiveOrders = query({
-  args: {},
-  handler: async (ctx) => {
-    const orders = await ctx.db
+  args: {
+    branchId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let orders = await ctx.db
       .query("orders")
       .filter((q) => 
         q.or(
@@ -812,6 +822,21 @@ export const listActiveOrders = query({
       )
       .collect();
       
+    if (args.branchId && args.branchId !== "all") {
+      const targetBranch = await ctx.db.get(args.branchId as Id<"branches">);
+      const defaultBranch = await ctx.db
+        .query("branches")
+        .filter((q) => q.eq(q.field("isDefault"), true))
+        .first();
+      const isDefaultBranch = targetBranch?.isDefault || defaultBranch?._id === args.branchId;
+
+      orders = orders.filter((o) => {
+        if (o.branchId === args.branchId) return true;
+        if (!o.branchId && isDefaultBranch) return true;
+        return false;
+      });
+    }
+
     // Sort by created time ascending (oldest first)
     return orders.sort((a, b) => a.createdAt - b.createdAt);
   },

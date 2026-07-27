@@ -254,7 +254,7 @@ export default function DashboardPage() {
   }, [ingredients]);
 
   return (
-    <PageLayout isFullWidth={true}>
+    <PageLayout title="Dashboard" subtitle="Performance & Operations Overview" isFullWidth={true}>
       <div className="space-y-8 pb-12">
         {/* Sticky Filter Bar (Section 0) */}
         <DateRangeRibbon dateRangeType={dateRangeType} setDateRangeType={setDateRangeType} />

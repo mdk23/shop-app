@@ -88,15 +88,9 @@ export default function ClientsPage() {
   };
 
   return (
-    <PageLayout>
+    <PageLayout title="Clients" subtitle="Customer Database & Financial Ledger">
       <div className="space-y-12">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
-          <div>
-            <h1 className="text-on-surface mb-2">Clients</h1>
-            <p className="text-on-surface-variant font-black uppercase tracking-[0.3em] text-[10px] opacity-60 flex items-center gap-2">
-              <Users className="w-4 h-4" /> Customer Database & Financial Ledger
-            </p>
-          </div>
+        <div className="flex flex-row items-center justify-end gap-4">
           <div className="flex gap-4">
             <button
               onClick={() => {

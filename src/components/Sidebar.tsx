@@ -103,11 +103,11 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: "inventory_management",
-    name: "Inventory Management",
+    name: "Stock Management",
     emoji: "📦",
     items: [
       {
-        name: "Inventory",
+        name: "Stock",
         href: "/inventory",
         icon: Package,
         allowedRoles: ["admin", "manager"],
@@ -162,7 +162,7 @@ export function Sidebar() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Active Orders subscription & shake notification state
-  const activeOrders = useQuery(api.orders.listActiveOrders);
+  const activeOrders = useQuery(api.orders.listActiveOrders, {});
   const [isBellShaking, setIsBellShaking] = useState(false);
   const [prevActiveCount, setPrevActiveCount] = useState<number | null>(null);
 

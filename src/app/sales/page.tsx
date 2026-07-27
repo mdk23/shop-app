@@ -426,28 +426,22 @@ export default function SalesPage() {
   };
 
   return (
-    <PageLayout isFullWidth={true}>
+    <PageLayout 
+      title="Sales Dashboard" 
+      subtitle="Complete Sales Analytics & Workspace" 
+      isFullWidth={true}
+    >
       <div className="space-y-6 pb-12">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-black text-on-surface uppercase tracking-tight">
-              Sales Dashboard
-            </h1>
-            <p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest opacity-60">
-              Complete Sales Analytics & Workspace
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={exportToCSV}
-              disabled={!filteredOrders || filteredOrders.length === 0}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-primary text-on-primary border-2 border-outline rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-secondary active:scale-95 transition-all disabled:opacity-50 shadow-hard"
-            >
-              <Download className="w-4 h-4" />
-              Export Reports
-            </button>
-          </div>
+        {/* Header Actions */}
+        <div className="flex justify-end items-center gap-4">
+          <button
+            onClick={exportToCSV}
+            disabled={!filteredOrders || filteredOrders.length === 0}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-primary text-on-primary border-2 border-outline rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-secondary active:scale-95 transition-all disabled:opacity-50 shadow-hard cursor-pointer"
+          >
+            <Download className="w-4 h-4" />
+            Export Reports
+          </button>
         </div>
 
         {/* Top KPI & Delivery Metrics */}

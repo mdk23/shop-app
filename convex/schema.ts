@@ -20,7 +20,7 @@ export default defineSchema({
   dishes: defineTable({
     name: v.string(),
     price: v.number(),
-    category: v.string(), // Chicken, Drinks, Sides, Combos, Extras
+    category: v.string(), // Chicken, Sandwiches, Drinks, Sides, Combos, Extras
     isActive: v.optional(v.boolean()),
     description: v.optional(v.string()),
     options: v.optional(v.any()), // JSON for flexible options

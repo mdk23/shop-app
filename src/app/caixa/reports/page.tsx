@@ -42,11 +42,15 @@ const MOVEMENT_LABELS: Record<string, string> = {
 
 type SessionStatus = "all" | "open" | "closed";
 
+import { useBranch } from "@/contexts/BranchContext";
+
 function CaixaReportsContent() {
   const [statusFilter, setStatusFilter] = useState<SessionStatus>("all");
+  const { selectedBranchId } = useBranch();
 
   const sessions = useQuery(api.caixa.listSessions, {
     status: statusFilter === "all" ? undefined : statusFilter,
+    branchId: selectedBranchId,
     limit: 100,
   });
 
@@ -67,13 +71,6 @@ function CaixaReportsContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-display text-on-surface">Caixa Reports</h1>
-        <p className="text-sm font-bold text-on-surface-variant mt-1">
-          Cash register sessions overview and analysis
-        </p>
-      </div>
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -432,7 +429,10 @@ function StatCard({
 export default function CaixaReportsPage() {
   return (
     <AuthGuard requiredRoles={["admin", "manager"]}>
-      <PageLayout>
+      <PageLayout
+        title="Caixa Reports"
+        subtitle="Cash register sessions overview and analysis"
+      >
         <CaixaReportsContent />
       </PageLayout>
     </AuthGuard>

@@ -67,13 +67,9 @@ export default function DishesPage() {
   };
 
   return (
-    <PageLayout isFullWidth>
+    <PageLayout title="Menu & Recipes" subtitle="Manage your dishes and ingredient compositions" isFullWidth>
       <div className="space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-black text-on-surface">Menu & Recipes</h1>
-            <p className="text-on-surface-variant font-medium">Manage your dishes and their ingredient compositions</p>
-          </div>
+        <div className="flex flex-row items-center justify-end gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={handleSeedMenu}
@@ -96,7 +92,7 @@ export default function DishesPage() {
 
         {/* Group dishes by category, sorted alphabetically within each group */}
         {(() => {
-          const CATEGORY_ORDER = ["Chicken", "Sides", "Pizza", "Combos", "Cold Drinks", "Extras"];
+          const CATEGORY_ORDER = ["Chicken", "Sandwiches", "Sides", "Pizza", "Combos", "Cold Drinks", "Extras"];
           const grouped = (dishes ?? []).reduce((acc: Record<string, any[]>, dish) => {
             const cat = dish.category || "Other";
             if (!acc[cat]) acc[cat] = [];

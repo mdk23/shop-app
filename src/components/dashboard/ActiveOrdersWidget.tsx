@@ -7,7 +7,7 @@ import { Play, ClipboardList, CheckCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function ActiveOrdersWidget() {
-  const activeOrders = useQuery(api.orders.listActiveOrders);
+  const activeOrders = useQuery(api.orders.listActiveOrders, {});
 
   const grouped = React.useMemo(() => {
     const list = activeOrders || [];

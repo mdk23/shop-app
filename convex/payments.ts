@@ -161,12 +161,17 @@ export const add = mutation({
 
     // 3. Handle cash register movement if this is a Cash payment
     if (args.method === "Cash") {
-      const activeSession = await ctx.db
+      const openSessions = await ctx.db
         .query("cashRegisterSessions")
         .withIndex("by_status", (q) => q.eq("status", "open"))
-        .unique();
+        .collect();
+
+      const activeSession = (order.branchId ? openSessions.find((s) => s.branchId === order.branchId) : null)
+        || openSessions.find((s) => !s.branchId)
+        || openSessions[0];
+
       if (!activeSession) {
-        throw new Error("No active cash register session found. Please open the register first.");
+        throw new Error("No active cash register session found for this store location. Please open the register first.");
       }
 
       let userId = order.userId;
@@ -240,12 +245,17 @@ export const update = mutation({
 
     // 3. Handle Cash Register Addition for the NEW payment
     if (args.method === "Cash") {
-      const activeSession = await ctx.db
+      const openSessions = await ctx.db
         .query("cashRegisterSessions")
         .withIndex("by_status", (q) => q.eq("status", "open"))
-        .unique();
+        .collect();
+
+      const activeSession = (order.branchId ? openSessions.find((s) => s.branchId === order.branchId) : null)
+        || openSessions.find((s) => !s.branchId)
+        || openSessions[0];
+
       if (!activeSession) {
-        throw new Error("No active cash register session found. Please open the register first.");
+        throw new Error("No active cash register session found for this store location. Please open the register first.");
       }
 
       let userId = order.userId;

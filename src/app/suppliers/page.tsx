@@ -160,16 +160,9 @@ export default function SuppliersPage() {
   });
 
   return (
-    <PageLayout>
+    <PageLayout title="Suppliers" subtitle="Vendor & Supplier Directory">
       <div className="space-y-12">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
-          <div>
-            <h1 className="text-on-surface mb-2 font-display text-4xl uppercase tracking-tighter">Suppliers</h1>
-            <p className="text-on-surface-variant font-black uppercase tracking-[0.3em] text-[10px] opacity-60 flex items-center gap-2">
-              <Truck className="w-4 h-4 text-primary" /> Vendor & Supplier Directory
-            </p>
-          </div>
+        <div className="flex flex-row items-center justify-end gap-4">
           <button
             onClick={openAddModal}
             className="bg-brand-gradient text-white border-4 border-black px-8 py-4 rounded-lg font-display text-2xl uppercase tracking-tighter shadow-hard hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 self-start lg:self-auto"

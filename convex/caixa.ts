@@ -60,7 +60,10 @@ export const recordCashSale = internalMutation({
  * Get the active cash register session for the logged-in user.
  */
 export const getActiveSession = query({
-  args: { token: v.union(v.string(), v.null()) },
+  args: { 
+    token: v.union(v.string(), v.null()),
+    branchId: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const token = args.token;
     if (!token) return null;
@@ -72,12 +75,33 @@ export const getActiveSession = query({
 
     if (!session || session.expiresAt < Date.now()) return null;
 
-    const cashSession = await ctx.db
+    const openSessions = await ctx.db
       .query("cashRegisterSessions")
       .withIndex("by_status", (q) => q.eq("status", "open"))
-      .unique();
+      .collect();
 
-    return cashSession;
+    if (openSessions.length === 0) return null;
+
+    let targetBranchId = args.branchId && args.branchId !== "all" ? args.branchId : undefined;
+    if (!targetBranchId) {
+      const defaultBranch = await ctx.db
+        .query("branches")
+        .filter((q) => q.eq(q.field("isDefault"), true))
+        .first();
+      const firstBranch = await ctx.db.query("branches").first();
+      targetBranchId = defaultBranch?._id || firstBranch?._id;
+    }
+
+    if (targetBranchId) {
+      const match = openSessions.find((s) => s.branchId === targetBranchId);
+      if (match) return match;
+      // Fallback for legacy sessions created without branchId
+      const fallbackUnassigned = openSessions.find((s) => !s.branchId);
+      if (fallbackUnassigned) return fallbackUnassigned;
+      return null;
+    }
+
+    return openSessions[0] || null;
   },
 });
 
@@ -109,6 +133,7 @@ export const listSessions = query({
   args: {
     status: v.optional(v.union(v.literal("open"), v.literal("closed"))),
     limit: v.optional(v.number()),
+    branchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 50;
@@ -119,13 +144,30 @@ export const listSessions = query({
         .query("cashRegisterSessions")
         .withIndex("by_status", (q) => q.eq("status", args.status!))
         .order("desc")
-        .take(limit);
+        .take(limit * 2);
     } else {
       sessions = await ctx.db
         .query("cashRegisterSessions")
         .order("desc")
-        .take(limit);
+        .take(limit * 2);
     }
+
+    if (args.branchId && args.branchId !== "all") {
+      const targetBranch = await ctx.db.get(args.branchId as Id<"branches">);
+      const defaultBranch = await ctx.db
+        .query("branches")
+        .filter((q) => q.eq(q.field("isDefault"), true))
+        .first();
+      const isDefault = targetBranch?.isDefault || defaultBranch?._id === args.branchId;
+
+      sessions = sessions.filter((s) => {
+        if (s.branchId === args.branchId) return true;
+        if (!s.branchId && isDefault) return true;
+        return false;
+      });
+    }
+
+    sessions = sessions.slice(0, limit);
 
     return await Promise.all(
       sessions.map(async (session) => {
@@ -198,6 +240,7 @@ export const openSession = mutation({
     token: v.string(),
     openingAmount: v.number(),
     notes: v.optional(v.string()),
+    branchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await validateToken(ctx, args.token);
@@ -206,15 +249,32 @@ export const openSession = mutation({
       throw new Error("Only an Admin, Manager, or POS Seller can open the store cash register.");
     }
 
-    // Prevent duplicate open sessions globally
-    const existing = await ctx.db
+    // Resolve branchId
+    let targetBranchId = args.branchId && args.branchId !== "all" ? (args.branchId as Id<"branches">) : undefined;
+    if (!targetBranchId) {
+      const defaultBranch = await ctx.db
+        .query("branches")
+        .filter((q) => q.eq(q.field("isDefault"), true))
+        .first();
+      const firstBranch = await ctx.db.query("branches").first();
+      targetBranchId = defaultBranch?._id || firstBranch?._id;
+    }
+
+    if (!targetBranchId) {
+      throw new Error("No valid store branch found to associate with cash register session.");
+    }
+
+    // Check if there is already an open session in THIS specific branch
+    const openSessions = await ctx.db
       .query("cashRegisterSessions")
       .withIndex("by_status", (q) => q.eq("status", "open"))
-      .unique();
+      .collect();
 
-    if (existing) {
+    const existingInBranch = openSessions.find((s) => s.branchId === targetBranchId);
+
+    if (existingInBranch) {
       throw new Error(
-        "A store cash register session is already open. Please close it first."
+        "A store cash register session is already open for this branch. Please close it first."
       );
     }
 
@@ -227,6 +287,7 @@ export const openSession = mutation({
       openedAt: now,
       status: "open",
       notes: args.notes,
+      branchId: targetBranchId,
     });
 
     // Opening movement

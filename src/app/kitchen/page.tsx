@@ -242,16 +242,10 @@ export default function KitchenPage() {
   );
 
   return (
-    <PageLayout>
+    <PageLayout title="Kitchen Production" subtitle="Operational Batch Production & Recipes">
       <div className="space-y-8 pb-12">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8 lg:mb-12">
-          <div>
-            <h1 className="text-3xl lg:text-5xl 2xl:text-7xl font-display text-on-surface leading-none mb-2 uppercase tracking-tighter">Production</h1>
-            <p className="text-on-surface-variant font-bold uppercase tracking-[0.2em] text-[10px] lg:text-xs opacity-60">
-              Operational batch production
-            </p>
-          </div>
+        {/* Header Actions */}
+        <div className="flex justify-end gap-3 mb-8 lg:mb-12">
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => {
