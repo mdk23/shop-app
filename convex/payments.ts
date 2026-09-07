@@ -1,326 +1,169 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { mutation, query, MutationCtx } from "./_generated/server";
+import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { adjustPaymentMetrics } from "./metrics";
+import { authorize } from "./permissions";
+import { writeAudit } from "./audit";
+import {
+  applyDailyMetrics,
+  applyTodayCounters,
+  getLocalDateString,
+  sanitizeKey,
+  zeroDeltas,
+} from "./metrics";
 
-export const listByOrder = query({
-  args: { orderId: v.id("orders") },
+const isCash = (m: string) => m.trim().toLowerCase() === "cash";
+
+function statusPair(paid: number, total: number): {
+  status: Doc<"sales">["status"];
+  paymentStatus: Doc<"sales">["paymentStatus"];
+} {
+  if (paid <= 0) return { status: "PENDING", paymentStatus: "UNPAID" };
+  if (paid + 1e-6 >= total)
+    return { status: "COMPLETED", paymentStatus: "PAID" };
+  return { status: "PARTIALLY_PAID", paymentStatus: "PARTIALLY_PAID" };
+}
+
+/** Recompute a sale's paidAmount/balance/status from its payment rows. Returns before/after snapshot. */
+async function recomputeSale(ctx: MutationCtx, saleId: Id<"sales">) {
+  const sale = await ctx.db.get(saleId);
+  if (!sale) throw new Error("Sale not found.");
+  const rows = await ctx.db
+    .query("payments")
+    .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+    .collect();
+  const netPaid = rows.reduce((s, p) => s + p.amount, 0); // refunds are negative
+  const applied = Math.min(Math.max(0, netPaid), sale.total);
+  const balance = Math.max(0, sale.total - applied);
+
+  const keepRefunded =
+    sale.status === "REFUNDED" || sale.status === "PARTIALLY_REFUNDED" ||
+    sale.status === "CANCELLED";
+  const next = keepRefunded
+    ? { status: sale.status, paymentStatus: sale.paymentStatus }
+    : statusPair(applied, sale.total);
+
+  await ctx.db.patch(saleId, {
+    paidAmount: applied,
+    balance,
+    status: next.status,
+    paymentStatus: next.paymentStatus,
+    updatedAt: Date.now(),
+  });
+  return { sale, before: { paidAmount: sale.paidAmount, balance: sale.balance } };
+}
+
+export const listBySale = query({
+  args: { saleId: v.id("sales") },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("payments")
-      .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
+      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
       .collect();
-  },
-});
-
-export const remove = mutation({
-  args: { paymentId: v.id("payments") },
-  handler: async (ctx, args) => {
-    // 1. Fetch the payment
-    const payment = await ctx.db.get(args.paymentId);
-    if (!payment) throw new Error("Payment not found");
-
-    // 2. Fetch the order
-    const order = await ctx.db.get(payment.orderId);
-    if (!order) throw new Error("Associated order not found");
-
-    // 3. Handle cash register movement if this was a Cash payment
-    if (payment.method === "Cash") {
-      const caixaMovements = await ctx.db
-        .query("cashRegisterMovements")
-        .withIndex("by_order", (q) => q.eq("orderId", order._id))
-        .collect();
-
-      // Find a "sale" movement that we can deduct this payment from
-      const saleMovement = caixaMovements.find(m => m.type === "sale" && m.amount >= payment.amount);
-      
-      if (saleMovement) {
-        const session = await ctx.db.get(saleMovement.sessionId);
-        
-        // If session is closed, adjusting expected cash downwards means difference (actual - expected) goes up
-        if (session && session.status === "closed" && session.difference !== undefined) {
-          await ctx.db.patch(session._id, {
-            difference: session.difference + payment.amount
-          });
-        }
-
-        // Either reduce the movement amount or delete it if it matches exactly
-        if (saleMovement.amount === payment.amount) {
-          await ctx.db.delete(saleMovement._id);
-        } else {
-          await ctx.db.patch(saleMovement._id, { amount: saleMovement.amount - payment.amount });
-        }
-      }
-    }
-
-    // 4. Adjust payment metrics for removal
-    await adjustPaymentMetrics(ctx, order, payment.method, payment.amount, 0);
-
-    // Delete the payment record
-    await ctx.db.delete(args.paymentId);
-
-    // 5. Update the order
-    const remainingPayments = await ctx.db
-      .query("payments")
-      .withIndex("by_order", (q) => q.eq("orderId", order._id))
-      .collect();
-
-    const newAmountPaid = remainingPayments.reduce((sum, p) => sum + p.amount, 0);
-    const newRemainingAmount = Math.max(0, order.total - newAmountPaid);
-
-    let newStatus = "Pending";
-    if (newAmountPaid >= order.total) {
-      newStatus = "Paid";
-    } else if (newAmountPaid > 0) {
-      newStatus = "Partially Paid";
-    }
-
-    // Handle splitPayments array update
-    let updatedSplitPayments = order.splitPayments;
-    if (updatedSplitPayments) {
-      const index = updatedSplitPayments.findIndex(p => p.method === payment.method && p.amount === payment.amount);
-      if (index !== -1) {
-        updatedSplitPayments = [...updatedSplitPayments];
-        updatedSplitPayments.splice(index, 1);
-      }
-    }
-
-    let newMethod = order.paymentMethod;
-    if (updatedSplitPayments && updatedSplitPayments.length > 0) {
-      newMethod = updatedSplitPayments.length === 1 ? updatedSplitPayments[0].method : "Split";
-    } else {
-      newMethod = "Debt";
-    }
-
-    await ctx.db.patch(order._id, {
-      amountPaid: newAmountPaid,
-      status: newStatus,
-      splitPayments: updatedSplitPayments,
-      paymentMethod: newMethod,
-    });
-
-
   },
 });
 
 export const add = mutation({
   args: {
-    orderId: v.id("orders"),
-    amount: v.number(),
+    token: v.string(),
+    saleId: v.id("sales"),
     method: v.string(),
+    amount: v.number(),
   },
   handler: async (ctx, args) => {
-    const order = await ctx.db.get(args.orderId);
-    if (!order) throw new Error("Order not found");
+    const actor = await authorize(ctx, args.token, "pos.use");
+    if (args.amount <= 0) throw new Error("Payment amount must be positive.");
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale) throw new Error("Sale not found.");
+    if (sale.status === "CANCELLED")
+      throw new Error("Cannot add a payment to a cancelled sale.");
 
     const now = Date.now();
-
-    // 1. Insert payment
-    const newPaymentId = await ctx.db.insert("payments", {
-      orderId: args.orderId,
-      amount: args.amount,
+    await ctx.db.insert("payments", {
+      saleId: args.saleId,
       method: args.method,
+      amount: args.amount,
+      kind: "payment",
       createdAt: now,
     });
+    await recomputeSale(ctx, args.saleId);
 
-    // 2. Update order totals
-    const payments = await ctx.db
-      .query("payments")
-      .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
-      .collect();
-
-    const newAmountPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-    const newRemainingAmount = Math.max(0, order.total - newAmountPaid);
-
-    let newStatus = "Pending";
-    if (newAmountPaid >= order.total) {
-      newStatus = "Paid";
-    } else if (newAmountPaid > 0) {
-      newStatus = "Partially Paid";
-    }
-
-    let updatedSplitPayments = order.splitPayments || [];
-    updatedSplitPayments.push({ method: args.method, amount: args.amount });
-
-    let newMethod = "Debt";
-    if (updatedSplitPayments.length === 1) {
-      newMethod = updatedSplitPayments[0].method;
-    } else if (updatedSplitPayments.length > 1) {
-      newMethod = "Split";
-    }
-
-    // Adjust payment metrics for addition
-    await adjustPaymentMetrics(ctx, order, args.method, 0, args.amount);
-
-    await ctx.db.patch(args.orderId, {
-      amountPaid: newAmountPaid,
-      status: newStatus,
-      splitPayments: updatedSplitPayments,
-      paymentMethod: newMethod,
-    });
-
-    // 3. Handle cash register movement if this is a Cash payment
-    if (args.method === "Cash") {
-      const openSessions = await ctx.db
+    if (isCash(args.method)) {
+      const open = await ctx.db
         .query("cashRegisterSessions")
         .withIndex("by_status", (q) => q.eq("status", "open"))
         .collect();
-
-      const activeSession = (order.branchId ? openSessions.find((s) => s.branchId === order.branchId) : null)
-        || openSessions.find((s) => !s.branchId)
-        || openSessions[0];
-
-      if (!activeSession) {
-        throw new Error("No active cash register session found for this store location. Please open the register first.");
-      }
-
-      let userId = order.userId;
-      let username = order.username;
-      if (!userId || !username) {
-        userId = activeSession.userId;
-        const sessionUser = await ctx.db.get(userId);
-        username = sessionUser?.username || activeSession.username || "system";
-      }
-
-      await ctx.runMutation(internal.caixa.recordCashSale, {
-        sessionId: activeSession._id,
-        userId: userId,
-        username: username,
-        amount: args.amount,
-        orderId: args.orderId,
-        orderCode: order.orderCode,
-      });
-
-      if (!order.cashRegisterSessionId) {
-        await ctx.db.patch(args.orderId, { cashRegisterSessionId: activeSession._id });
+      const session =
+        open.find((s) => s.branchId === sale.branchId) ??
+        open.find((s) => !s.branchId);
+      if (session) {
+        await ctx.runMutation(internal.caixa.recordCashSale, {
+          sessionId: session._id,
+          userId: actor._id,
+          username: actor.username,
+          amount: args.amount,
+          saleId: args.saleId,
+          saleNumber: sale.saleNumber,
+        });
       }
     }
 
-    
-    return newPaymentId;
+    const dateString = getLocalDateString(sale.createdAt);
+    await applyDailyMetrics(ctx, dateString, {
+      ...zeroDeltas(),
+      cashCollected: isCash(args.method) ? args.amount : 0,
+      outstandingDebt: -args.amount,
+      totalPending: -args.amount,
+      paymentMethods: { [sanitizeKey(args.method)]: { amount: args.amount, count: 1 } },
+    });
+    await applyTodayCounters(ctx, dateString, {
+      ...zeroDeltas(),
+      cashCollected: isCash(args.method) ? args.amount : 0,
+      outstandingDebt: -args.amount,
+      paymentMethods: { [sanitizeKey(args.method)]: { amount: args.amount, count: 1 } },
+    });
+
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "payment.added",
+      entityType: "sale",
+      entityId: args.saleId,
+      details: `${args.method} ${args.amount} on ${sale.saleNumber}`,
+    });
   },
 });
 
-export const update = mutation({
-  args: {
-    paymentId: v.id("payments"),
-    amount: v.number(),
-    method: v.string(),
-  },
+export const remove = mutation({
+  args: { token: v.string(), paymentId: v.id("payments") },
   handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "payments.modify");
     const payment = await ctx.db.get(args.paymentId);
-    if (!payment) throw new Error("Payment not found");
+    if (!payment || !payment.saleId) throw new Error("Payment not found.");
+    const sale = await ctx.db.get(payment.saleId);
+    if (!sale) throw new Error("Sale not found.");
 
-    const order = await ctx.db.get(payment.orderId);
-    if (!order) throw new Error("Associated order not found");
+    await ctx.db.delete(args.paymentId);
+    await recomputeSale(ctx, payment.saleId);
 
-    // 1. Handle Cash Register Reversal for the OLD payment
-    if (payment.method === "Cash") {
-      const caixaMovements = await ctx.db
-        .query("cashRegisterMovements")
-        .withIndex("by_order", (q) => q.eq("orderId", order._id))
-        .collect();
-
-      const saleMovement = caixaMovements.find(m => m.type === "sale" && m.amount >= payment.amount);
-      if (saleMovement) {
-        const session = await ctx.db.get(saleMovement.sessionId);
-        if (session && session.status === "closed" && session.difference !== undefined) {
-          await ctx.db.patch(session._id, {
-            difference: session.difference + payment.amount
-          });
-        }
-        if (saleMovement.amount === payment.amount) {
-          await ctx.db.delete(saleMovement._id);
-        } else {
-          await ctx.db.patch(saleMovement._id, { amount: saleMovement.amount - payment.amount });
-        }
-      }
-    }
-
-    // 2. Update the payment record
-    await ctx.db.patch(args.paymentId, {
-      amount: args.amount,
-      method: args.method,
+    const dateString = getLocalDateString(sale.createdAt);
+    await applyDailyMetrics(ctx, dateString, {
+      ...zeroDeltas(),
+      cashCollected: isCash(payment.method) ? -payment.amount : 0,
+      outstandingDebt: payment.amount,
+      totalPending: payment.amount,
+      paymentMethods: {
+        [sanitizeKey(payment.method)]: { amount: -payment.amount, count: -1 },
+      },
     });
 
-    // 3. Handle Cash Register Addition for the NEW payment
-    if (args.method === "Cash") {
-      const openSessions = await ctx.db
-        .query("cashRegisterSessions")
-        .withIndex("by_status", (q) => q.eq("status", "open"))
-        .collect();
-
-      const activeSession = (order.branchId ? openSessions.find((s) => s.branchId === order.branchId) : null)
-        || openSessions.find((s) => !s.branchId)
-        || openSessions[0];
-
-      if (!activeSession) {
-        throw new Error("No active cash register session found for this store location. Please open the register first.");
-      }
-
-      let userId = order.userId;
-      let username = order.username;
-      if (!userId || !username) {
-        userId = activeSession.userId;
-        const sessionUser = await ctx.db.get(userId);
-        username = sessionUser?.username || activeSession.username || "system";
-      }
-
-      await ctx.runMutation(internal.caixa.recordCashSale, {
-        sessionId: activeSession._id,
-        userId: userId,
-        username: username,
-        amount: args.amount,
-        orderId: order._id,
-        orderCode: order.orderCode,
-      });
-
-      if (!order.cashRegisterSessionId) {
-        await ctx.db.patch(order._id, { cashRegisterSessionId: activeSession._id });
-      }
-    }
-
-    // 4. Update order totals
-    const payments = await ctx.db
-      .query("payments")
-      .withIndex("by_order", (q) => q.eq("orderId", order._id))
-      .collect();
-
-    const newAmountPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-    const newRemainingAmount = Math.max(0, order.total - newAmountPaid);
-
-    let newStatus = "Pending";
-    if (newAmountPaid >= order.total) {
-      newStatus = "Paid";
-    } else if (newAmountPaid > 0) {
-      newStatus = "Partially Paid";
-    }
-
-    // Rebuild split payments array
-    const updatedSplitPayments = payments.map(p => ({ method: p.method, amount: p.amount }));
-
-    let newMethod = "Debt";
-    if (updatedSplitPayments.length === 1) {
-      newMethod = updatedSplitPayments[0].method;
-    } else if (updatedSplitPayments.length > 1) {
-      newMethod = "Split";
-    }
-
-    // Adjust payment metrics for update
-    if (payment.method !== args.method) {
-      await adjustPaymentMetrics(ctx, order, payment.method, payment.amount, 0);
-      await adjustPaymentMetrics(ctx, order, args.method, 0, args.amount);
-    } else {
-      await adjustPaymentMetrics(ctx, order, args.method, payment.amount, args.amount);
-    }
-
-    await ctx.db.patch(order._id, {
-      amountPaid: newAmountPaid,
-      status: newStatus,
-      splitPayments: updatedSplitPayments,
-      paymentMethod: newMethod,
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "payment.removed",
+      entityType: "sale",
+      entityId: payment.saleId,
+      details: `Removed ${payment.method} ${payment.amount} from ${sale.saleNumber}`,
     });
-
-
   },
 });

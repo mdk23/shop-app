@@ -247,12 +247,12 @@ export function Sidebar() {
         <div className={cn("p-6 flex items-center justify-between", isCollapsed && "px-4")}>
           {!isCollapsed && (
             <h1 className="text-2xl font-display text-primary tracking-tighter uppercase select-none">
-              Take Away
+              Shop App
             </h1>
           )}
           {isCollapsed && (
             <h1 className="text-xl font-display text-primary tracking-tighter uppercase mx-auto select-none">
-              TA
+              SA
             </h1>
           )}
 

@@ -1,5 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { authorize } from "./permissions";
+import { writeAudit } from "./audit";
 
 // List all branches (Admin view)
 export const listAll = query({
@@ -24,6 +26,7 @@ export const listActive = query({
 // Create a new store branch
 export const create = mutation({
   args: {
+    token: v.string(),
     name: v.string(),
     code: v.string(),
     address: v.optional(v.string()),
@@ -31,6 +34,7 @@ export const create = mutation({
     isDefault: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "settings.manage");
     const existingCode = await ctx.db
       .query("branches")
       .withIndex("by_code", (q) => q.eq("code", args.code.toUpperCase()))
@@ -60,6 +64,14 @@ export const create = mutation({
       createdAt: Date.now(),
     });
 
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "branch.created",
+      entityType: "branch",
+      entityId: branchId,
+      details: `${args.name} (${args.code.toUpperCase()})`,
+    });
     return branchId;
   },
 });
@@ -67,6 +79,7 @@ export const create = mutation({
 // Update branch details or status
 export const update = mutation({
   args: {
+    token: v.string(),
     id: v.id("branches"),
     name: v.optional(v.string()),
     code: v.optional(v.string()),
@@ -76,6 +89,7 @@ export const update = mutation({
     isDefault: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "settings.manage");
     const branch = await ctx.db.get(args.id);
     if (!branch) {
       throw new Error("Branch not found.");
@@ -99,6 +113,14 @@ export const update = mutation({
     if (args.isDefault !== undefined) patchData.isDefault = args.isDefault;
 
     await ctx.db.patch(args.id, patchData);
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "branch.updated",
+      entityType: "branch",
+      entityId: args.id,
+      details: branch.name,
+    });
   },
 });
 

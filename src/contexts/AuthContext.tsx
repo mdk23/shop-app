@@ -14,6 +14,14 @@ import { Id } from "../../convex/_generated/dataModel";
 import { getStoredToken, setStoredToken, clearStoredToken } from "@/lib/auth";
 
 // ─────────────────────────────────────────────
+// DEV: auth bypass ("remove auth for now").
+// When true, the app auto-provisions an admin session (convex/devAuth.ts)
+// and skips the login flow entirely. Set to false to restore real auth.
+// ─────────────────────────────────────────────
+export const DEV_BYPASS_AUTH = true;
+const DEV_TOKEN = "dev-bypass-session-token";
+
+// ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
 
@@ -101,28 +109,42 @@ const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const REFRESH_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => getStoredToken());
+  const [token, setToken] = useState<string | null>(() =>
+    DEV_BYPASS_AUTH ? DEV_TOKEN : getStoredToken()
+  );
   const [isLoading, setIsLoading] = useState(true);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loginAction = useAction(api.authActions.login);
   const logoutMutation = useMutation(api.auth.logout);
   const refreshMutation = useMutation(api.auth.refreshSession);
+  const ensureDevSession = useMutation(api.devAuth.ensureDevSession);
 
   // Reactive session subscription
   const sessionData = useQuery(api.auth.getSession, { token });
 
-  // isLoading: true until useQuery has resolved at least once
+  // DEV bypass: provision the admin session once on mount.
   useEffect(() => {
-    if (sessionData !== undefined) {
-      setIsLoading(false);
+    if (DEV_BYPASS_AUTH) {
+      ensureDevSession().catch(() => {});
     }
+  }, [ensureDevSession]);
+
+  // isLoading: true until useQuery has resolved at least once.
+  // Under DEV bypass, keep waiting until the provisioned session lands
+  // so components never see a null currentUser.
+  useEffect(() => {
+    if (sessionData === undefined) return;
+    if (DEV_BYPASS_AUTH && sessionData === null) return;
+    setIsLoading(false);
   }, [sessionData]);
 
   const currentUser: CurrentUser | null = sessionData ?? null;
 
   // ── Strict Expiration & Backend Invalidation ──
   useEffect(() => {
+    if (DEV_BYPASS_AUTH) return; // no expiry / forced-logout while auth is bypassed
+
     // 1. If backend returns null but we have a token (meaning it was deleted/expired on server)
     if (!isLoading && token && sessionData === null) {
       clearStoredToken();
@@ -170,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, logoutMutation]);
 
   useEffect(() => {
+    if (DEV_BYPASS_AUTH) return; // no inactivity auto-logout while auth is bypassed
     if (!token) return;
 
     let lastRefresh = Date.now();

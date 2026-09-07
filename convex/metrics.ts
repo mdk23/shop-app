@@ -1,23 +1,28 @@
 import { MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
-// Helper to get local date string adjusted for UTC+2 (Mozambique/Maputo time)
+// ─────────────────────────────────────────────
+// TIME / KEY HELPERS
+// ─────────────────────────────────────────────
+
+/** Local calendar date ("YYYY-MM-DD") adjusted for UTC+2 (Maputo). */
 export function getLocalDateString(timestamp: number): string {
-  const localTimeMs = timestamp + 7200000;
+  const localTimeMs = timestamp + 2 * 60 * 60 * 1000;
   return new Date(localTimeMs).toISOString().split("T")[0];
 }
 
-// Helper to sanitize database keys to satisfy Convex's ASCII constraints
+/** Strip accents / non-ASCII so a string is a valid Convex record key. */
 export function sanitizeKey(str: string): string {
   if (!str) return "Unknown";
   return str
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9_\-\s]/g, "");
+    .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .trim() || "Unknown";
 }
 
 // ─────────────────────────────────────────────
-// CORE COUNTERS ENGINE
+// COUNTERS ENGINE
 // ─────────────────────────────────────────────
 
 export async function incrementCounter(
@@ -30,30 +35,15 @@ export async function incrementCounter(
     .query("counters")
     .withIndex("by_key", (q) => q.eq("key", key))
     .first();
-
   const now = Date.now();
-
   if (!existing) {
-    await ctx.db.insert("counters", {
-      key,
-      value: amount,
-      dateString,
-      updatedAt: now,
-    });
+    await ctx.db.insert("counters", { key, value: amount, dateString, updatedAt: now });
+    return;
+  }
+  if (dateString && existing.dateString !== dateString) {
+    await ctx.db.patch(existing._id, { value: amount, dateString, updatedAt: now });
   } else {
-    if (dateString && existing.dateString !== dateString) {
-      // Date has changed, reset daily counter
-      await ctx.db.patch(existing._id, {
-        value: amount,
-        dateString,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.patch(existing._id, {
-        value: existing.value + amount,
-        updatedAt: now,
-      });
-    }
+    await ctx.db.patch(existing._id, { value: existing.value + amount, updatedAt: now });
   }
 }
 
@@ -62,13 +52,44 @@ export async function decrementCounter(ctx: MutationCtx, key: string, amount: nu
     .query("counters")
     .withIndex("by_key", (q) => q.eq("key", key))
     .first();
-
   if (existing) {
     await ctx.db.patch(existing._id, {
       value: existing.value - amount,
       updatedAt: Date.now(),
     });
   }
+}
+
+/** Atomic O(1) sequence: bump `key` and return the new value. Daily-reset when `dateString` given. */
+export async function nextSequence(
+  ctx: MutationCtx,
+  key: string,
+  dateString?: string
+): Promise<number> {
+  const existing = await ctx.db
+    .query("counters")
+    .withIndex("by_key", (q) => q.eq("key", key))
+    .first();
+  const now = Date.now();
+  if (!existing) {
+    await ctx.db.insert("counters", { key, value: 1, dateString, updatedAt: now });
+    return 1;
+  }
+  if (dateString && existing.dateString !== dateString) {
+    await ctx.db.patch(existing._id, { value: 1, dateString, updatedAt: now });
+    return 1;
+  }
+  const value = existing.value + 1;
+  await ctx.db.patch(existing._id, { value, updatedAt: now });
+  return value;
+}
+
+export async function getCounter(ctx: MutationCtx, key: string): Promise<number> {
+  const row = await ctx.db
+    .query("counters")
+    .withIndex("by_key", (q) => q.eq("key", key))
+    .first();
+  return row?.value ?? 0;
 }
 
 // ─────────────────────────────────────────────
@@ -79,59 +100,73 @@ export async function syncGlobalStockCounters(
   ctx: MutationCtx,
   previousBalance: number,
   newBalance: number,
-  lowStockThreshold: number
+  reorderLevel: number
 ) {
-  const prevOutOfStock = previousBalance <= 0;
-  const newOutOfStock = newBalance <= 0;
-  
-  const prevLowStock = previousBalance > 0 && previousBalance <= lowStockThreshold;
-  const newLowStock = newBalance > 0 && newBalance <= lowStockThreshold;
+  const prevOut = previousBalance <= 0;
+  const newOut = newBalance <= 0;
+  const prevLow = previousBalance > 0 && previousBalance <= reorderLevel;
+  const newLow = newBalance > 0 && newBalance <= reorderLevel;
 
-  // Sync out of stock items count
-  if (prevOutOfStock !== newOutOfStock) {
-    if (newOutOfStock) {
-      await incrementCounter(ctx, "out_of_stock_items", 1);
-    } else {
-      await decrementCounter(ctx, "out_of_stock_items", 1);
-    }
+  if (prevOut !== newOut) {
+    if (newOut) await incrementCounter(ctx, "out_of_stock_items", 1);
+    else await decrementCounter(ctx, "out_of_stock_items", 1);
   }
-
-  // Sync low stock items count
-  if (prevLowStock !== newLowStock) {
-    if (newLowStock) {
-      await incrementCounter(ctx, "low_stock_items", 1);
-    } else {
-      await decrementCounter(ctx, "low_stock_items", 1);
-    }
+  if (prevLow !== newLow) {
+    if (newLow) await incrementCounter(ctx, "low_stock_items", 1);
+    else await decrementCounter(ctx, "low_stock_items", 1);
   }
 }
 
 // ─────────────────────────────────────────────
-// DAILY METRICS ENGINE
+// DAILY METRICS ENGINE (retail)
 // ─────────────────────────────────────────────
 
-interface MetricDeltas {
-  grossRevenue: number;
+type NumRecord = Record<string, number>;
+type MethodRecord = Record<string, { amount: number; count: number }>;
+
+export interface SaleMetricDeltas {
+  totalRevenue: number;
+  totalSales: number; // count of sales
+  totalItemsSold: number;
+  totalDiscount: number;
+  totalTax: number;
+  totalProfit: number;
+  totalPending: number;
   cashCollected: number;
   outstandingDebt: number;
-
-  deliveryRevenue: number;
-  orderCount: number;
-  cancelledOrderCount: number;
-  deliveryOrdersCount: number;
-  pickupOrdersCount: number;
-  profileSalesCount: number;
-  genericSalesCount: number;
-  totalItemsSold: number;
+  totalReturns: number; // count of return transactions
+  refundAmount: number;
   fullyPaidCount: number;
   partiallyPaidCount: number;
   pendingCount: number;
-  wasteCount: number;
-  wasteCost: number;
   customerId?: string;
-  paymentMethodsDeltas?: Record<string, { amount: number; count: number }>;
-  productSalesDeltas?: Record<string, number>;
-  categorySalesDeltas?: Record<string, number>;
+  paymentMethods?: MethodRecord;
+  categorySales?: NumRecord;
+  brandSales?: NumRecord;
+  productSales?: NumRecord;
+  sizeSales?: NumRecord;
+  colorSales?: NumRecord;
+}
+
+const ZERO: SaleMetricDeltas = {
+  totalRevenue: 0,
+  totalSales: 0,
+  totalItemsSold: 0,
+  totalDiscount: 0,
+  totalTax: 0,
+  totalProfit: 0,
+  totalPending: 0,
+  cashCollected: 0,
+  outstandingDebt: 0,
+  totalReturns: 0,
+  refundAmount: 0,
+  fullyPaidCount: 0,
+  partiallyPaidCount: 0,
+  pendingCount: 0,
+};
+
+export function zeroDeltas(): SaleMetricDeltas {
+  return { ...ZERO };
 }
 
 async function getOrCreateDailyMetrics(ctx: MutationCtx, dateString: string) {
@@ -139,345 +174,110 @@ async function getOrCreateDailyMetrics(ctx: MutationCtx, dateString: string) {
     .query("dailyMetrics")
     .withIndex("by_date", (q) => q.eq("dateString", dateString))
     .first();
-
   if (existing) return existing;
-
-  const newId = await ctx.db.insert("dailyMetrics", {
+  const id = await ctx.db.insert("dailyMetrics", {
     dateString,
-    grossRevenue: 0,
+    totalRevenue: 0,
+    totalSales: 0,
+    totalItemsSold: 0,
+    totalDiscount: 0,
+    totalTax: 0,
+    totalReturns: 0,
+    refundAmount: 0,
+    totalProfit: 0,
+    totalPending: 0,
     cashCollected: 0,
     outstandingDebt: 0,
-
-    deliveryRevenue: 0,
-    orderCount: 0,
-    cancelledOrderCount: 0,
-    deliveryOrdersCount: 0,
-    pickupOrdersCount: 0,
-    profileSalesCount: 0,
-    genericSalesCount: 0,
-    totalItemsSold: 0,
-    fullyPaidCount: 0,
-    partiallyPaidCount: 0,
-    pendingCount: 0,
-    wasteCount: 0,
-    wasteCost: 0,
-    customerIds: [],
     paymentMethods: {},
-    productSales: {},
     categorySales: {},
+    brandSales: {},
+    productSales: {},
+    sizeSales: {},
+    colorSales: {},
+    customerIds: [],
   });
-
-  return (await ctx.db.get(newId))!;
+  return (await ctx.db.get(id))!;
 }
 
-export async function applyMetricsDeltas(
+function mergeNumRecord(base: NumRecord | undefined, delta: NumRecord | undefined): NumRecord {
+  const out: NumRecord = { ...(base ?? {}) };
+  for (const [k, v] of Object.entries(delta ?? {})) {
+    out[k] = (out[k] ?? 0) + v;
+    if (out[k] === 0) delete out[k];
+  }
+  return out;
+}
+
+function mergeMethodRecord(base: MethodRecord | undefined, delta: MethodRecord | undefined): MethodRecord {
+  const out: MethodRecord = { ...(base ?? {}) };
+  for (const [k, v] of Object.entries(delta ?? {})) {
+    const cur = out[k] ?? { amount: 0, count: 0 };
+    cur.amount += v.amount;
+    cur.count += v.count;
+    if (cur.amount === 0 && cur.count === 0) delete out[k];
+    else out[k] = cur;
+  }
+  return out;
+}
+
+export async function applyDailyMetrics(
   ctx: MutationCtx,
   dateString: string,
-  deltas: MetricDeltas,
-  changeType: "create" | "remove"
+  d: SaleMetricDeltas
 ) {
-  const metric = await getOrCreateDailyMetrics(ctx, dateString);
-
-  // Update primitive totals
-  const updatedFields: Partial<typeof metric> = {
-    grossRevenue: metric.grossRevenue + deltas.grossRevenue,
-    cashCollected: metric.cashCollected + deltas.cashCollected,
-    outstandingDebt: metric.outstandingDebt + deltas.outstandingDebt,
-
-    deliveryRevenue: metric.deliveryRevenue + deltas.deliveryRevenue,
-    orderCount: metric.orderCount + deltas.orderCount,
-    cancelledOrderCount: metric.cancelledOrderCount + deltas.cancelledOrderCount,
-    deliveryOrdersCount: metric.deliveryOrdersCount + deltas.deliveryOrdersCount,
-    pickupOrdersCount: metric.pickupOrdersCount + deltas.pickupOrdersCount,
-    profileSalesCount: metric.profileSalesCount + deltas.profileSalesCount,
-    genericSalesCount: metric.genericSalesCount + deltas.genericSalesCount,
-    totalItemsSold: metric.totalItemsSold + deltas.totalItemsSold,
-    fullyPaidCount: metric.fullyPaidCount + deltas.fullyPaidCount,
-    partiallyPaidCount: metric.partiallyPaidCount + deltas.partiallyPaidCount,
-    pendingCount: metric.pendingCount + deltas.pendingCount,
-    wasteCount: metric.wasteCount + deltas.wasteCount,
-    wasteCost: metric.wasteCost + deltas.wasteCost,
+  const m = await getOrCreateDailyMetrics(ctx, dateString);
+  const patch: Record<string, unknown> = {
+    totalRevenue: (m.totalRevenue ?? 0) + d.totalRevenue,
+    totalSales: (m.totalSales ?? 0) + d.totalSales,
+    totalItemsSold: (m.totalItemsSold ?? 0) + d.totalItemsSold,
+    totalDiscount: (m.totalDiscount ?? 0) + d.totalDiscount,
+    totalTax: (m.totalTax ?? 0) + d.totalTax,
+    totalProfit: (m.totalProfit ?? 0) + d.totalProfit,
+    totalPending: (m.totalPending ?? 0) + d.totalPending,
+    cashCollected: (m.cashCollected ?? 0) + d.cashCollected,
+    outstandingDebt: (m.outstandingDebt ?? 0) + d.outstandingDebt,
+    totalReturns: (m.totalReturns ?? 0) + d.totalReturns,
+    refundAmount: (m.refundAmount ?? 0) + d.refundAmount,
+    fullyPaidCount: (m.fullyPaidCount ?? 0) + d.fullyPaidCount,
+    partiallyPaidCount: (m.partiallyPaidCount ?? 0) + d.partiallyPaidCount,
+    pendingCount: (m.pendingCount ?? 0) + d.pendingCount,
+    paymentMethods: mergeMethodRecord(m.paymentMethods, d.paymentMethods),
+    categorySales: mergeNumRecord(m.categorySales, d.categorySales),
+    brandSales: mergeNumRecord(m.brandSales, d.brandSales),
+    productSales: mergeNumRecord(m.productSales, d.productSales),
+    sizeSales: mergeNumRecord(m.sizeSales, d.sizeSales),
+    colorSales: mergeNumRecord(m.colorSales, d.colorSales),
   };
 
-  // Update Customer ID unique array
-  if (deltas.customerId) {
-    const customer = await ctx.db.get(deltas.customerId as Id<"customers">);
-    if (customer && !customer.isGeneric) {
-      const customerIdsSet = new Set(metric.customerIds || []);
-      if (changeType === "create") {
-        customerIdsSet.add(deltas.customerId);
-      } else {
-        // Check if this customer has other active orders on the same day
-        const orders = await ctx.db
-          .query("orders")
-          .withIndex("by_customer", (q) => q.eq("customerId", deltas.customerId as Id<"customers">))
-          .collect();
-        
-        const otherOrdersOnDay = orders.filter(
-          (o) => getLocalDateString(o.createdAt) === dateString && o.status !== "Cancelled"
-        );
-        
-        if (otherOrdersOnDay.length <= 1) { // 1 or 0, meaning only this one or none
-          customerIdsSet.delete(deltas.customerId);
-        }
-      }
-      updatedFields.customerIds = Array.from(customerIdsSet);
-    }
+  if (d.customerId) {
+    const set = new Set(m.customerIds ?? []);
+    if (d.totalSales > 0) set.add(d.customerId);
+    patch.customerIds = Array.from(set);
   }
 
-  // Update Payment Methods breakdown object
-  if (deltas.paymentMethodsDeltas) {
-    const paymentMethods = { ...(metric.paymentMethods || {}) };
-    for (const [method, data] of Object.entries(deltas.paymentMethodsDeltas)) {
-      if (!paymentMethods[method]) {
-        paymentMethods[method] = { amount: 0, count: 0 };
-      }
-      paymentMethods[method].amount += data.amount;
-      paymentMethods[method].count += data.count;
-      if (paymentMethods[method].amount === 0 && paymentMethods[method].count === 0) {
-        delete paymentMethods[method];
-      }
-    }
-    updatedFields.paymentMethods = paymentMethods;
-  }
-
-  // Update Product Sales breakdown object
-  if (deltas.productSalesDeltas) {
-    const productSales = { ...(metric.productSales || {}) };
-    for (const [productName, qty] of Object.entries(deltas.productSalesDeltas)) {
-      productSales[productName] = (productSales[productName] || 0) + qty;
-      if (productSales[productName] <= 0) {
-        delete productSales[productName];
-      }
-    }
-    updatedFields.productSales = productSales;
-  }
-
-  // Update Category Sales breakdown object
-  if (deltas.categorySalesDeltas) {
-    const categorySales = { ...(metric.categorySales || {}) };
-    for (const [categoryName, qty] of Object.entries(deltas.categorySalesDeltas)) {
-      categorySales[categoryName] = (categorySales[categoryName] || 0) + qty;
-      if (categorySales[categoryName] <= 0) {
-        delete categorySales[categoryName];
-      }
-    }
-    updatedFields.categorySales = categorySales;
-  }
-
-  await ctx.db.patch(metric._id, updatedFields);
+  await ctx.db.patch(m._id, patch);
 }
 
 // ─────────────────────────────────────────────
-// HIGH-LEVEL INTEGRATION HANDLERS
+// LIVE "today_*" COUNTERS
 // ─────────────────────────────────────────────
 
-export async function recordOrderMetrics(
+export async function applyTodayCounters(
   ctx: MutationCtx,
-  order: any,
-  items: any[],
-  changeType: "create" | "remove"
+  dateString: string,
+  d: SaleMetricDeltas
 ) {
-  const dateString = getLocalDateString(order.createdAt);
-  const sign = changeType === "create" ? 1 : -1;
-
-  // 1. Calculate Items, Product Sales & Category Sales maps
-  let totalItemsSold = 0;
-  const productSalesDeltas: Record<string, number> = {};
-  const categorySalesDeltas: Record<string, number> = {};
-
-  // Load all dishes category mapping
-  const allDishes = await ctx.db.query("dishes").collect();
-  const categoryMap: Record<string, string> = {};
-  allDishes.forEach((d) => {
-    categoryMap[d._id] = d.category || "Chicken";
-  });
-
-  for (const item of items) {
-    const qty = item.quantity * sign;
-    totalItemsSold += item.quantity;
-    
-    const dishId = item.dishId as Id<"dishes">;
-    const dishName = item.dishName || (await ctx.db.get(dishId))?.name || "Unknown";
-    const sanitizedDishName = sanitizeKey(dishName);
-    productSalesDeltas[sanitizedDishName] = (productSalesDeltas[sanitizedDishName] || 0) + qty;
-    
-    const category = dishId ? (categoryMap[dishId] || "Chicken") : "Chicken";
-    const sanitizedCategory = sanitizeKey(category);
-    categorySalesDeltas[sanitizedCategory] = (categorySalesDeltas[sanitizedCategory] || 0) + qty;
-  }
-
-  // 2. Parse Payment Methods breakdowns
-  const paymentMethodsDeltas: Record<string, { amount: number; count: number }> = {};
-  if (order.splitPayments && order.splitPayments.length > 0) {
-    order.splitPayments.forEach((p: any) => {
-      const method = p.method || "Cash";
-      if (!paymentMethodsDeltas[method]) {
-        paymentMethodsDeltas[method] = { amount: 0, count: 0 };
-      }
-      paymentMethodsDeltas[method].amount += p.amount * sign;
-      paymentMethodsDeltas[method].count += 1 * sign;
-    });
-  } else if (order.amountPaid > 0) {
-    const method = order.paymentMethod || "Cash";
-    paymentMethodsDeltas[method] = {
-      amount: order.amountPaid * sign,
-      count: 1 * sign,
-    };
-  }
-
-  // 3. Compile Deltas
-  const deltas: MetricDeltas = {
-    grossRevenue: order.total * sign,
-    cashCollected: order.amountPaid * sign,
-    outstandingDebt: 0,
-
-    deliveryRevenue: (order.deliveryFeeAmount || 0) * sign,
-    orderCount: 1 * sign,
-    cancelledOrderCount: changeType === "remove" ? 1 : 0,
-    deliveryOrdersCount: (order.orderType === "delivery" ? 1 : 0) * sign,
-    pickupOrdersCount: (order.orderType === "pickup" || !order.orderType ? 1 : 0) * sign,
-    profileSalesCount: (order.customerName !== "Generic Client" && order.customerName ? 1 : 0) * sign,
-    genericSalesCount: (order.customerName === "Generic Client" || !order.customerName ? 1 : 0) * sign,
-    totalItemsSold: totalItemsSold * sign,
-    fullyPaidCount: (order.status === "Paid" ? 1 : 0) * sign,
-    partiallyPaidCount: (order.status === "Partially Paid" ? 1 : 0) * sign,
-    pendingCount: (order.status === "Pending" ? 1 : 0) * sign,
-    wasteCount: 0,
-    wasteCost: 0,
-    customerId: order.customerId,
-    paymentMethodsDeltas,
-    productSalesDeltas,
-    categorySalesDeltas,
-  };
-
-  // 4. Update Daily Metrics Document
-  await applyMetricsDeltas(ctx, dateString, deltas, changeType);
-
-  // 5. Update Live Counters
-  const todayDateString = getLocalDateString(Date.now());
-  
-  // Note: Only update live counters if the order date is today
-  if (dateString === todayDateString) {
-    await incrementCounter(ctx, "today_gross_revenue", deltas.grossRevenue, dateString);
-    await incrementCounter(ctx, "today_cash_collected", deltas.cashCollected, dateString);
-    await incrementCounter(ctx, "today_outstanding_debt", deltas.outstandingDebt, dateString);
-
-    await incrementCounter(ctx, "today_delivery_revenue", deltas.deliveryRevenue, dateString);
-    
-    await incrementCounter(ctx, "today_order_count", deltas.orderCount, dateString);
-    if (changeType === "remove") {
-      await incrementCounter(ctx, "today_cancelled_orders_count", 1, dateString);
-    }
-    await incrementCounter(ctx, "today_delivery_orders_count", deltas.deliveryOrdersCount, dateString);
-    await incrementCounter(ctx, "today_pickup_orders_count", deltas.pickupOrdersCount, dateString);
-    
-    await incrementCounter(ctx, "today_profile_sales_count", deltas.profileSalesCount, dateString);
-    await incrementCounter(ctx, "today_generic_sales_count", deltas.genericSalesCount, dateString);
-    await incrementCounter(ctx, "today_items_sold", deltas.totalItemsSold, dateString);
-    
-    await incrementCounter(ctx, "today_fully_paid_count", deltas.fullyPaidCount, dateString);
-    await incrementCounter(ctx, "today_partially_paid_count", deltas.partiallyPaidCount, dateString);
-    await incrementCounter(ctx, "today_pending_count", deltas.pendingCount, dateString);
-
-    for (const [method, info] of Object.entries(paymentMethodsDeltas)) {
-      await incrementCounter(ctx, `today_payment_${method}`, info.amount, dateString);
-    }
-  }
-
-  // Global counter updates: active_orders (unpaid count in the entire system)
-  const isUnpaid = order.status !== "Paid";
-  if (isUnpaid) {
-    if (changeType === "create") {
-      await incrementCounter(ctx, "active_orders", 1);
-    } else {
-      await decrementCounter(ctx, "active_orders", 1);
-    }
-  }
-}
-
-export async function adjustPaymentMetrics(
-  ctx: MutationCtx,
-  order: any,
-  method: string,
-  oldAmount: number,
-  newAmount: number
-) {
-  const dateString = getLocalDateString(order.createdAt);
-  const diff = newAmount - oldAmount;
-
-  // 1. Compile Deltas
-  const paymentMethodsDeltas: Record<string, { amount: number; count: number }> = {
-    [method]: {
-      amount: diff,
-      // If we are transition from 0 amount to >0, count increases by 1.
-      // If we go from >0 to 0, count decreases by 1.
-      count: (oldAmount === 0 && newAmount > 0) ? 1 : (oldAmount > 0 && newAmount === 0) ? -1 : 0,
-    },
-  };
-
-  const deltas: MetricDeltas = {
-    grossRevenue: 0,
-    cashCollected: diff,
-    outstandingDebt: -diff,
-
-    deliveryRevenue: 0,
-    orderCount: 0,
-    cancelledOrderCount: 0,
-    deliveryOrdersCount: 0,
-    pickupOrdersCount: 0,
-    profileSalesCount: 0,
-    genericSalesCount: 0,
-    totalItemsSold: 0,
-    fullyPaidCount: 0,
-    partiallyPaidCount: 0,
-    pendingCount: 0,
-    wasteCount: 0,
-    wasteCost: 0,
-    paymentMethodsDeltas,
-  };
-
-  // 2. Determine order status changes for counts
-  const totalPaidAfterOld = order.amountPaid - oldAmount;
-  const totalPaidAfterNew = totalPaidAfterOld + newAmount;
-  
-  const wasFullyPaid = order.amountPaid >= order.total;
-  const isFullyPaid = totalPaidAfterNew >= order.total;
-
-  const wasPartiallyPaid = order.amountPaid > 0 && order.amountPaid < order.total;
-  const isPartiallyPaid = totalPaidAfterNew > 0 && totalPaidAfterNew < order.total;
-
-  const wasPending = order.amountPaid <= 0;
-  const isPending = totalPaidAfterNew <= 0;
-
-  deltas.fullyPaidCount = (isFullyPaid ? 1 : 0) - (wasFullyPaid ? 1 : 0);
-  deltas.partiallyPaidCount = (isPartiallyPaid ? 1 : 0) - (wasPartiallyPaid ? 1 : 0);
-  deltas.pendingCount = (isPending ? 1 : 0) - (wasPending ? 1 : 0);
-
-  // 3. Apply to Daily Metrics row
-  await applyMetricsDeltas(ctx, dateString, deltas, "create");
-
-  // 4. Apply to Live Counters if date is today
-  const todayDateString = getLocalDateString(Date.now());
-  if (dateString === todayDateString) {
-    await incrementCounter(ctx, "today_cash_collected", deltas.cashCollected, dateString);
-    await incrementCounter(ctx, "today_outstanding_debt", deltas.outstandingDebt, dateString);
-    
-    await incrementCounter(ctx, "today_fully_paid_count", deltas.fullyPaidCount, dateString);
-    await incrementCounter(ctx, "today_partially_paid_count", deltas.partiallyPaidCount, dateString);
-    await incrementCounter(ctx, "today_pending_count", deltas.pendingCount, dateString);
-
-    await incrementCounter(ctx, `today_payment_${method}`, diff, dateString);
-  }
-
-  // 5. Global Counter active_orders sync
-  if (wasFullyPaid !== isFullyPaid) {
-    if (isFullyPaid) {
-      // Order became Paid, so it is no longer an active unpaid order
-      await decrementCounter(ctx, "active_orders", 1);
-    } else {
-      // Order is no longer fully paid, so it becomes active again
-      await incrementCounter(ctx, "active_orders", 1);
-    }
+  if (dateString !== getLocalDateString(Date.now())) return;
+  await incrementCounter(ctx, "today_revenue", d.totalRevenue, dateString);
+  await incrementCounter(ctx, "today_sales_count", d.totalSales, dateString);
+  await incrementCounter(ctx, "today_items_sold", d.totalItemsSold, dateString);
+  await incrementCounter(ctx, "today_discount", d.totalDiscount, dateString);
+  await incrementCounter(ctx, "today_returns_count", d.totalReturns, dateString);
+  await incrementCounter(ctx, "today_refund_amount", d.refundAmount, dateString);
+  await incrementCounter(ctx, "today_cash_collected", d.cashCollected, dateString);
+  await incrementCounter(ctx, "today_outstanding_debt", d.outstandingDebt, dateString);
+  await incrementCounter(ctx, "today_gross_profit", d.totalProfit, dateString);
+  for (const [method, info] of Object.entries(d.paymentMethods ?? {})) {
+    await incrementCounter(ctx, `today_payment_${sanitizeKey(method)}`, info.amount, dateString);
   }
 }

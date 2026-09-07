@@ -112,7 +112,7 @@ function LoginForm() {
             </div>
             <div>
               <h1 className="text-on-surface font-display text-4xl tracking-tight font-extrabold mb-2">
-                Take Away
+                Shop App
               </h1>
               <p className="text-on-surface-variant text-sm font-medium">
                 Welcome back, please sign in to your staff portal.

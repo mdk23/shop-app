@@ -27,7 +27,7 @@ export default function CustomerDisplayPage() {
       <header className="bg-surface-container-lowest border-b-4 border-outline px-8 py-6 flex items-center justify-between">
         <h1 className="text-4xl font-black text-on-surface uppercase tracking-widest flex items-center gap-4">
           <span className="w-6 h-6 rounded-full bg-primary animate-pulse"></span>
-          Take Away Orders
+          Shop App Orders
         </h1>
         <div className="flex items-center gap-3 text-2xl font-bold text-on-surface-variant bg-surface border-2 border-outline px-6 py-3 rounded-2xl shadow-hard">
           <Clock className="w-8 h-8 text-primary" />

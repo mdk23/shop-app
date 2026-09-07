@@ -1,11 +1,25 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { validateToken } from "./auth";
+import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import { authorize } from "./permissions";
+import { writeAudit } from "./audit";
+import { nextSequence } from "./metrics";
 
-// List all purchase orders (optimized with index)
+const PO_ITEM = v.object({
+  productVariantId: v.id("productVariants"),
+  quantityOrdered: v.number(),
+  unitCost: v.number(),
+});
+
+// ─────────────────────────────────────────────
+// QUERIES
+// ─────────────────────────────────────────────
+
 export const list = query({
   args: {
     supplierId: v.optional(v.id("suppliers")),
+    branchId: v.optional(v.id("branches")),
     status: v.optional(
       v.union(
         v.literal("draft"),
@@ -17,134 +31,100 @@ export const list = query({
     ),
   },
   handler: async (ctx, args) => {
-    // 1. If status is provided, query by status index
+    let rows;
     if (args.status) {
-      let q = ctx.db
+      rows = await ctx.db
         .query("purchaseOrders")
-        .withIndex("by_status", (q) => q.eq("status", args.status!));
-      if (args.supplierId) {
-        return (await q.collect()).filter((po) => po.supplierId === args.supplierId);
-      }
-      return await q.collect();
-    }
-
-    // 2. If supplierId is provided, query by supplier index
-    if (args.supplierId) {
-      return await ctx.db
+        .withIndex("by_status", (q) => q.eq("status", args.status!))
+        .order("desc")
+        .collect();
+    } else if (args.supplierId) {
+      rows = await ctx.db
         .query("purchaseOrders")
         .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId!))
+        .order("desc")
         .collect();
+    } else {
+      rows = await ctx.db.query("purchaseOrders").order("desc").take(300);
     }
+    if (args.supplierId)
+      rows = rows.filter((p) => p.supplierId === args.supplierId);
+    if (args.branchId) rows = rows.filter((p) => p.branchId === args.branchId);
 
-    // 3. Fallback: return all orders ordered by creation time
-    return await ctx.db.query("purchaseOrders").order("desc").collect();
+    return await Promise.all(
+      rows.map(async (po) => {
+        const supplier = await ctx.db.get(po.supplierId);
+        return { ...po, supplierName: supplier?.name ?? "Unknown supplier" };
+      })
+    );
   },
 });
 
-// Fetch a single purchase order along with its items and supplier details
 export const get = query({
-  args: {
-    id: v.id("purchaseOrders"),
-  },
+  args: { id: v.id("purchaseOrders") },
   handler: async (ctx, args) => {
     const po = await ctx.db.get(args.id);
     if (!po) return null;
-
     const supplier = await ctx.db.get(po.supplierId);
+    const branch = po.branchId ? await ctx.db.get(po.branchId) : null;
     const items = await ctx.db
       .query("purchaseOrderItems")
       .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
       .collect();
-
-    // Fetch ingredient names dynamically to avoid storing stale names in item document
     const itemsWithDetails = await Promise.all(
       items.map(async (item) => {
-        const ingredient = await ctx.db.get(item.ingredientId);
+        const variant = item.productVariantId
+          ? await ctx.db.get(item.productVariantId)
+          : null;
+        const product = variant ? await ctx.db.get(variant.productId) : null;
         return {
           ...item,
-          ingredientName: ingredient?.name || "Unknown Ingredient",
-          ingredientUnit: ingredient?.unit || "pcs",
+          sku: variant?.sku ?? "—",
+          variantLabel: variant
+            ? [variant.color, variant.size].filter(Boolean).join(" / ") || variant.sku
+            : "—",
+          productName: product?.name ?? "Unknown product",
         };
       })
     );
-
     return {
       ...po,
-      supplierName: supplier?.name || "Unknown Supplier",
+      supplierName: supplier?.name ?? "Unknown supplier",
+      branchName: branch?.name ?? null,
       items: itemsWithDetails,
     };
   },
 });
 
-// Create a new purchase order draft
+// ─────────────────────────────────────────────
+// MUTATIONS
+// ─────────────────────────────────────────────
+
 export const create = mutation({
   args: {
     token: v.string(),
     supplierId: v.id("suppliers"),
+    branchId: v.id("branches"),
     orderDate: v.number(),
     expectedDeliveryDate: v.optional(v.number()),
     notes: v.optional(v.string()),
-    items: v.array(
-      v.object({
-        ingredientId: v.id("ingredients"),
-        quantityOrdered: v.number(),
-        unitCost: v.number(),
-      })
-    ),
+    items: v.array(PO_ITEM),
   },
-  handler: async (ctx, args) => {
-    const actor = await validateToken(ctx, args.token);
+  handler: async (ctx, args): Promise<Id<"purchaseOrders">> => {
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
+    if (args.items.length === 0) throw new Error("Add at least one line.");
 
-    // 1. Calculate order total
-    let totalAmount = 0;
-    for (const item of args.items) {
-      totalAmount += item.quantityOrdered * item.unitCost;
-    }
-
-    // 2. Generate daily purchase order code (PO-DD.MM.YY-XXX)
+    const totalAmount = args.items.reduce(
+      (s, i) => s + i.quantityOrdered * i.unitCost,
+      0
+    );
+    const seq = await nextSequence(ctx, "purchase_order_sequence");
     const now = Date.now();
-    const localTime = new Date(now + 7200000); // UTC+2 Maputo timezone
-    const day = String(localTime.getUTCDate()).padStart(2, "0");
-    const month = String(localTime.getUTCMonth() + 1).padStart(2, "0");
-    const year = String(localTime.getUTCFullYear()).slice(-2);
-    const dateString = `${day}.${month}.${year}`; // e.g. "09.07.26"
+    const orderCode = `PO-${String(seq).padStart(5, "0")}`;
 
-    let sequenceNumber = 1;
-    const counter = await ctx.db
-      .query("counters")
-      .withIndex("by_key", (q) => q.eq("key", "purchase_order_sequence"))
-      .first();
-
-    if (!counter) {
-      await ctx.db.insert("counters", {
-        key: "purchase_order_sequence",
-        value: 1,
-        dateString,
-        updatedAt: now,
-      });
-    } else {
-      if (counter.dateString !== dateString) {
-        // Reset counter for new day
-        sequenceNumber = 1;
-        await ctx.db.patch(counter._id, {
-          value: 1,
-          dateString,
-          updatedAt: now,
-        });
-      } else {
-        sequenceNumber = counter.value + 1;
-        await ctx.db.patch(counter._id, {
-          value: sequenceNumber,
-          updatedAt: now,
-        });
-      }
-    }
-
-    const orderCode = `PO-${dateString}-${String(sequenceNumber).padStart(3, "0")}`;
-
-    // 3. Insert Purchase Order document
     const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
       supplierId: args.supplierId,
+      branchId: args.branchId,
       orderCode,
       orderDate: args.orderDate,
       expectedDeliveryDate: args.expectedDeliveryDate,
@@ -154,88 +134,85 @@ export const create = mutation({
       notes: args.notes,
       createdAt: now,
     });
-
-    // 4. Insert items
     for (const item of args.items) {
       await ctx.db.insert("purchaseOrderItems", {
         purchaseOrderId,
-        ingredientId: item.ingredientId,
-        quantityOrdered: item.quantityOrdered,
-        quantityReceived: 0, // initially 0 in draft/sent phase
-        unitCost: item.unitCost,
-        totalCost: item.quantityOrdered * item.unitCost,
-      });
-    }
-
-    return purchaseOrderId;
-  },
-});
-
-// Update an existing draft PO
-export const update = mutation({
-  args: {
-    token: v.string(),
-    id: v.id("purchaseOrders"),
-    supplierId: v.id("suppliers"),
-    orderDate: v.number(),
-    expectedDeliveryDate: v.optional(v.number()),
-    notes: v.optional(v.string()),
-    items: v.array(
-      v.object({
-        ingredientId: v.id("ingredients"),
-        quantityOrdered: v.number(),
-        unitCost: v.number(),
-      })
-    ),
-  },
-  handler: async (ctx, args) => {
-    await validateToken(ctx, args.token);
-
-    const po = await ctx.db.get(args.id);
-    if (!po) throw new Error("Purchase order not found");
-    if (po.status !== "draft") throw new Error("Can only modify draft purchase orders");
-
-    // 1. Calculate new order total
-    let totalAmount = 0;
-    for (const item of args.items) {
-      totalAmount += item.quantityOrdered * item.unitCost;
-    }
-
-    // 2. Update PO Header
-    await ctx.db.patch(args.id, {
-      supplierId: args.supplierId,
-      orderDate: args.orderDate,
-      expectedDeliveryDate: args.expectedDeliveryDate,
-      totalAmount,
-      notes: args.notes,
-    });
-
-    // 3. Remove existing items and insert updated items
-    const existingItems = await ctx.db
-      .query("purchaseOrderItems")
-      .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", args.id))
-      .collect();
-
-    for (const item of existingItems) {
-      await ctx.db.delete(item._id);
-    }
-
-    for (const item of args.items) {
-      await ctx.db.insert("purchaseOrderItems", {
-        purchaseOrderId: args.id,
-        ingredientId: item.ingredientId,
+        productVariantId: item.productVariantId,
         quantityOrdered: item.quantityOrdered,
         quantityReceived: 0,
         unitCost: item.unitCost,
         totalCost: item.quantityOrdered * item.unitCost,
       });
     }
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "purchase_order.created",
+      entityType: "purchaseOrder",
+      entityId: purchaseOrderId,
+      details: `${orderCode}: ${args.items.length} line(s), total ${totalAmount}`,
+    });
+    return purchaseOrderId;
+  },
+});
 
+export const update = mutation({
+  args: {
+    token: v.string(),
+    id: v.id("purchaseOrders"),
+    supplierId: v.id("suppliers"),
+    branchId: v.id("branches"),
+    orderDate: v.number(),
+    expectedDeliveryDate: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    items: v.array(PO_ITEM),
+  },
+  handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
+    const po = await ctx.db.get(args.id);
+    if (!po) throw new Error("Purchase order not found.");
+    if (po.status !== "draft")
+      throw new Error("Only draft purchase orders can be edited.");
+
+    const totalAmount = args.items.reduce(
+      (s, i) => s + i.quantityOrdered * i.unitCost,
+      0
+    );
+    await ctx.db.patch(args.id, {
+      supplierId: args.supplierId,
+      branchId: args.branchId,
+      orderDate: args.orderDate,
+      expectedDeliveryDate: args.expectedDeliveryDate,
+      totalAmount,
+      notes: args.notes,
+    });
+    const existing = await ctx.db
+      .query("purchaseOrderItems")
+      .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", args.id))
+      .collect();
+    for (const it of existing) await ctx.db.delete(it._id);
+    for (const item of args.items) {
+      await ctx.db.insert("purchaseOrderItems", {
+        purchaseOrderId: args.id,
+        productVariantId: item.productVariantId,
+        quantityOrdered: item.quantityOrdered,
+        quantityReceived: 0,
+        unitCost: item.unitCost,
+        totalCost: item.quantityOrdered * item.unitCost,
+      });
+    }
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "purchase_order.updated",
+      entityType: "purchaseOrder",
+      entityId: args.id,
+      details: `${po.orderCode} edited`,
+    });
     return args.id;
   },
 });
 
-// Update Status (Transitions: draft -> sent -> cancelled)
 export const updateStatus = mutation({
   args: {
     token: v.string(),
@@ -243,160 +220,163 @@ export const updateStatus = mutation({
     status: v.union(v.literal("sent"), v.literal("cancelled")),
   },
   handler: async (ctx, args) => {
-    await validateToken(ctx, args.token);
-
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
     const po = await ctx.db.get(args.id);
-    if (!po) throw new Error("Purchase order not found");
-
-    if (args.status === "sent" && po.status !== "draft") {
-      throw new Error("Can only transition to 'sent' from 'draft'");
-    }
-    if (args.status === "cancelled" && (po.status === "completed" || po.status === "partially_received")) {
-      throw new Error("Cannot cancel a received purchase order");
-    }
-
+    if (!po) throw new Error("Purchase order not found.");
+    if (args.status === "sent" && po.status !== "draft")
+      throw new Error("Only a draft can be sent.");
+    if (
+      args.status === "cancelled" &&
+      (po.status === "completed" || po.status === "partially_received")
+    )
+      throw new Error("Cannot cancel a purchase order that has received stock.");
     await ctx.db.patch(args.id, { status: args.status });
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: `purchase_order.${args.status}`,
+      entityType: "purchaseOrder",
+      entityId: args.id,
+      details: po.orderCode,
+    });
     return args.id;
   },
 });
 
-// Delete a PO (Only allowed if still draft)
 export const remove = mutation({
-  args: {
-    token: v.string(),
-    id: v.id("purchaseOrders"),
-  },
+  args: { token: v.string(), id: v.id("purchaseOrders") },
   handler: async (ctx, args) => {
-    await validateToken(ctx, args.token);
-
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
     const po = await ctx.db.get(args.id);
-    if (!po) throw new Error("Purchase order not found");
-    if (po.status !== "draft" && po.status !== "cancelled") {
-      throw new Error("Can only delete draft or cancelled purchase orders");
-    }
-
-    // Remove PO Items first
+    if (!po) throw new Error("Purchase order not found.");
+    if (po.status !== "draft" && po.status !== "cancelled")
+      throw new Error("Only draft or cancelled purchase orders can be deleted.");
     const items = await ctx.db
       .query("purchaseOrderItems")
       .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
       .collect();
-
-    for (const item of items) {
-      await ctx.db.delete(item._id);
-    }
-
-    // Delete PO document
+    for (const it of items) await ctx.db.delete(it._id);
     await ctx.db.delete(po._id);
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "purchase_order.deleted",
+      entityType: "purchaseOrder",
+      entityId: args.id,
+      details: po.orderCode,
+    });
     return args.id;
   },
 });
 
-// Receive items and increment stock levels via mutateStock engine
+/** Receive (partial or full) — increments stock via the ledger with landed cost. */
 export const receiveItems = mutation({
   args: {
     token: v.string(),
     id: v.id("purchaseOrders"),
+    branchId: v.optional(v.id("branches")),
     items: v.array(
       v.object({
-        ingredientId: v.id("ingredients"),
+        productVariantId: v.id("productVariants"),
         quantityReceived: v.number(),
       })
     ),
   },
   handler: async (ctx, args) => {
-    const actor = await validateToken(ctx, args.token);
-
+    const actor = await authorize(ctx, args.token, "purchasing.receive");
     const po = await ctx.db.get(args.id);
-    if (!po) throw new Error("Purchase order not found");
-    if (po.status !== "sent" && po.status !== "partially_received") {
-      throw new Error("Can only receive items for sent or partially received purchase orders");
-    }
+    if (!po) throw new Error("Purchase order not found.");
+    if (po.status !== "sent" && po.status !== "partially_received")
+      throw new Error("Only sent or partially received purchase orders can receive stock.");
 
-    // 1. Fetch all items in this PO
+    const branchId = args.branchId ?? po.branchId;
+    if (!branchId) throw new Error("No branch to receive stock into.");
+
     const poItems = await ctx.db
       .query("purchaseOrderItems")
       .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
       .collect();
 
-    // 2. Loop through each received item
-    for (const rxItem of args.items) {
-      if (rxItem.quantityReceived <= 0) continue;
+    for (const rx of args.items) {
+      if (rx.quantityReceived <= 0) continue;
+      const line = poItems.find(
+        (i) => i.productVariantId === rx.productVariantId
+      );
+      if (!line)
+        throw new Error("A received line is not part of this purchase order.");
+      const outstanding = line.quantityOrdered - line.quantityReceived;
+      if (rx.quantityReceived > outstanding)
+        throw new Error(
+          `Receiving ${rx.quantityReceived} exceeds the ${outstanding} still outstanding on a line.`
+        );
 
-      const itemDoc = poItems.find((i) => i.ingredientId === rxItem.ingredientId);
-      if (!itemDoc) {
-        throw new Error(`Ingredient ${rxItem.ingredientId} is not part of this purchase order`);
-      }
-
-      // Update quantityReceived in purchaseOrderItems
-      const newReceived = itemDoc.quantityReceived + rxItem.quantityReceived;
-      await ctx.db.patch(itemDoc._id, {
-        quantityReceived: newReceived,
+      await ctx.db.patch(line._id, {
+        quantityReceived: line.quantityReceived + rx.quantityReceived,
       });
-
-      // Call mutateStock engine to increment stock and log movement
-      const { internal } = require("./_generated/api");
       await ctx.runMutation(internal.inventory.mutateStock, {
-        itemId: rxItem.ingredientId,
-        quantity: rxItem.quantityReceived,
-        movementType: "purchase_in",
+        productVariantId: rx.productVariantId,
+        branchId,
+        quantity: rx.quantityReceived,
+        movementType: "PURCHASE",
         referenceType: "purchase_order",
-        referenceId: po.orderCode,
-        notes: `Received via PO ${po.orderCode}`,
+        referenceId: po._id,
+        costPerUnit: line.unitCost,
+        notes: `Received via ${po.orderCode}`,
         userId: actor._id,
         username: actor.username,
       });
     }
 
-    // 3. Re-evaluate PO status
-    const updatedItems = await ctx.db
+    const updated = await ctx.db
       .query("purchaseOrderItems")
       .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
       .collect();
+    const allComplete = updated.every(
+      (i) => i.quantityReceived >= i.quantityOrdered
+    );
+    const anyReceived = updated.some((i) => i.quantityReceived > 0);
+    const newStatus = allComplete
+      ? "completed"
+      : anyReceived
+        ? "partially_received"
+        : po.status;
+    await ctx.db.patch(po._id, { status: newStatus });
 
-    let allCompleted = true;
-    let anyReceived = false;
-
-    for (const item of updatedItems) {
-      if (item.quantityReceived < item.quantityOrdered) {
-        allCompleted = false;
-      }
-      if (item.quantityReceived > 0) {
-        anyReceived = true;
-      }
-    }
-
-    let newStatus: "draft" | "sent" | "partially_received" | "completed" | "cancelled" = po.status;
-    if (allCompleted) {
-      newStatus = "completed";
-    } else if (anyReceived) {
-      newStatus = "partially_received";
-    }
-
-    await ctx.db.patch(po._id, {
-      status: newStatus,
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "purchase_order.received",
+      entityType: "purchaseOrder",
+      entityId: po._id,
+      details: `${po.orderCode}: received into branch ${branchId}, status ${newStatus}`,
     });
-
     return po._id;
   },
 });
 
-// Update PO payment status
 export const updatePaymentStatus = mutation({
   args: {
     token: v.string(),
     id: v.id("purchaseOrders"),
-    paymentStatus: v.union(v.literal("unpaid"), v.literal("partially_paid"), v.literal("paid")),
+    paymentStatus: v.union(
+      v.literal("unpaid"),
+      v.literal("partially_paid"),
+      v.literal("paid")
+    ),
   },
   handler: async (ctx, args) => {
-    await validateToken(ctx, args.token);
-
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
     const po = await ctx.db.get(args.id);
-    if (!po) throw new Error("Purchase order not found");
-
-    await ctx.db.patch(args.id, {
-      paymentStatus: args.paymentStatus,
+    if (!po) throw new Error("Purchase order not found.");
+    await ctx.db.patch(args.id, { paymentStatus: args.paymentStatus });
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "purchase_order.payment_status",
+      entityType: "purchaseOrder",
+      entityId: args.id,
+      details: `${po.orderCode} → ${args.paymentStatus}`,
     });
-
     return args.id;
   },
 });

@@ -14,7 +14,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Take Away POS",
+  title: "Shop App",
   description: "Modern Restaurant POS and Management System",
 };
 
