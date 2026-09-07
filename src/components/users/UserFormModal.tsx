@@ -165,7 +165,7 @@ export function UserFormModal({ user, onClose, actingUser }: UserFormModalProps)
                           ? "Full access"
                           : r === "manager"
                           ? "Operational access"
-                          : "POS & Caixa only"}
+                          : "POS & register only"}
                       </p>
                     </div>
                     {role === r && (

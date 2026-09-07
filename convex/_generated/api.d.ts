@@ -14,7 +14,7 @@ import type * as auth from "../auth.js";
 import type * as authActions from "../authActions.js";
 import type * as branches from "../branches.js";
 import type * as brands from "../brands.js";
-import type * as caixa from "../caixa.js";
+import type * as cashRegister from "../cashRegister.js";
 import type * as categories from "../categories.js";
 import type * as customerCredits from "../customerCredits.js";
 import type * as customers from "../customers.js";
@@ -53,7 +53,7 @@ declare const fullApi: ApiFromModules<{
   authActions: typeof authActions;
   branches: typeof branches;
   brands: typeof brands;
-  caixa: typeof caixa;
+  cashRegister: typeof cashRegister;
   categories: typeof categories;
   customerCredits: typeof customerCredits;
   customers: typeof customers;

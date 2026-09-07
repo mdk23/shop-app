@@ -5,6 +5,20 @@ import { getLocalDateString } from "./metrics";
 import { stockStatus } from "./stock";
 
 // ─────────────────────────────────────────────
+// BRANCH FILTER
+// The client uses the sentinel string "all" to mean "every branch".
+// Accept it in the validator and normalize it to `undefined`.
+// ─────────────────────────────────────────────
+
+const branchIdArg = v.optional(v.union(v.id("branches"), v.literal("all")));
+
+function normalizeBranchId(
+  branchId: Id<"branches"> | "all" | undefined
+): Id<"branches"> | undefined {
+  return !branchId || branchId === "all" ? undefined : branchId;
+}
+
+// ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
 
@@ -28,10 +42,11 @@ export const getDashboardMetrics = query({
   args: {
     start: v.number(),
     end: v.number(),
-    branchId: v.optional(v.id("branches")),
+    branchId: branchIdArg,
   },
   handler: async (ctx, args) => {
-    const { start, end, branchId } = args;
+    const { start, end } = args;
+    const branchId = normalizeBranchId(args.branchId);
     const span = Math.max(1, end - start);
 
     const current = (await salesInRange(ctx, start, end, branchId)).filter(
@@ -219,11 +234,11 @@ export const salesTrend = query({
   args: {
     start: v.number(),
     end: v.number(),
-    branchId: v.optional(v.id("branches")),
+    branchId: branchIdArg,
   },
   handler: async (ctx, args) => {
     const rows = (
-      await salesInRange(ctx, args.start, args.end, args.branchId)
+      await salesInRange(ctx, args.start, args.end, normalizeBranchId(args.branchId))
     ).filter((s) => s.status !== "CANCELLED");
     const singleDay = args.end - args.start <= 26 * 60 * 60 * 1000;
     const buckets: Record<string, { revenue: number; sales: number }> = {};
@@ -241,13 +256,116 @@ export const salesTrend = query({
   },
 });
 
-export const inventoryValuation = query({
-  args: { branchId: v.optional(v.id("branches")) },
+export const salesBreakdown = query({
+  args: {
+    start: v.number(),
+    end: v.number(),
+    branchId: v.optional(v.union(v.id("branches"), v.literal("all"))),
+  },
   handler: async (ctx, args) => {
-    const stockRows = args.branchId
+    const branchId = normalizeBranchId(args.branchId);
+    const sales = (await salesInRange(ctx, args.start, args.end, branchId)).filter(
+      (s) => s.status !== "CANCELLED"
+    );
+    const cat: Record<string, { qty: number; revenue: number }> = {};
+    const brand: Record<string, { qty: number; revenue: number }> = {};
+    const size: Record<string, { qty: number; revenue: number }> = {};
+    const color: Record<string, { qty: number; revenue: number }> = {};
+    const product: Record<string, { qty: number; revenue: number; profit: number }> = {};
+    const bump = (
+      rec: Record<string, { qty: number; revenue: number; profit?: number }>,
+      key: string,
+      qty: number,
+      revenue: number,
+      profit?: number
+    ) => {
+      const e = rec[key] ?? { qty: 0, revenue: 0, profit: 0 };
+      e.qty += qty;
+      e.revenue += revenue;
+      if (profit !== undefined) e.profit = (e.profit ?? 0) + profit;
+      rec[key] = e;
+    };
+
+    for (const s of sales) {
+      const items = await ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", s._id))
+        .collect();
+      for (const it of items) {
+        const profit = it.total - it.costPriceAtSale * it.quantity;
+        bump(product, it.productName, it.quantity, it.total, profit);
+        const variant = await ctx.db.get(it.productVariantId);
+        if (variant) {
+          if (variant.size) bump(size, variant.size, it.quantity, it.total);
+          if (variant.color) bump(color, variant.color, it.quantity, it.total);
+          const p = await ctx.db.get(variant.productId);
+          if (p) {
+            const c = await ctx.db.get(p.categoryId);
+            if (c) bump(cat, c.name, it.quantity, it.total);
+            if (p.brandId) {
+              const b = await ctx.db.get(p.brandId);
+              if (b) bump(brand, b.name, it.quantity, it.total);
+            }
+          }
+        }
+      }
+    }
+
+    const toRows = (r: Record<string, { qty: number; revenue: number; profit?: number }>) =>
+      Object.entries(r)
+        .map(([name, v2]) => ({ name, ...v2 }))
+        .sort((a, b) => b.revenue - a.revenue);
+
+    return {
+      byCategory: toRows(cat),
+      byBrand: toRows(brand),
+      bySize: toRows(size),
+      byColor: toRows(color),
+      byProduct: toRows(product),
+    };
+  },
+});
+
+export const customerDebt = query({
+  args: { branchId: v.optional(v.union(v.id("branches"), v.literal("all"))) },
+  handler: async (ctx, args) => {
+    const branchId = normalizeBranchId(args.branchId);
+    let sales = await ctx.db
+      .query("sales")
+      .withIndex("by_status", (q) => q.eq("status", "PARTIALLY_PAID"))
+      .collect();
+    const pending = await ctx.db
+      .query("sales")
+      .withIndex("by_status", (q) => q.eq("status", "PENDING"))
+      .collect();
+    sales = [...sales, ...pending].filter(
+      (s) => (!branchId || s.branchId === branchId) && s.balance > 0
+    );
+    const byCustomer: Record<string, { name: string; balance: number; sales: number }> = {};
+    for (const s of sales) {
+      const e = byCustomer[s.customerId] ?? {
+        name: s.customerName ?? "Walk-in",
+        balance: 0,
+        sales: 0,
+      };
+      e.balance += s.balance;
+      e.sales += 1;
+      byCustomer[s.customerId] = e;
+    }
+    return Object.entries(byCustomer)
+      .map(([customerId, v2]) => ({ customerId, ...v2 }))
+      .sort((a, b) => b.balance - a.balance);
+  },
+});
+
+export const inventoryValuation = query({
+  args: { branchId: branchIdArg },
+  handler: async (ctx, args) => {
+    const branchId = normalizeBranchId(args.branchId);
+    const stockRows = branchId
       ? await ctx.db
           .query("variantStock")
-          .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
+          .withIndex("by_branch", (q) => q.eq("branchId", branchId))
           .collect()
       : await ctx.db.query("variantStock").collect();
     let costValue = 0;

@@ -97,7 +97,7 @@ export const add = mutation({
         open.find((s) => s.branchId === sale.branchId) ??
         open.find((s) => !s.branchId);
       if (session) {
-        await ctx.runMutation(internal.caixa.recordCashSale, {
+        await ctx.runMutation(internal.cashRegister.recordCashSale, {
           sessionId: session._id,
           userId: actor._id,
           username: actor.username,

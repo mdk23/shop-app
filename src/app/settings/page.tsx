@@ -1,295 +1,386 @@
 "use client";
 
-import React, { useState } from "react";
-import { PageLayout } from "@/components/PageLayout";
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import {
-  Settings2,
-  Loader2,
-  Truck,
-  Palette,
-  Check,
-  Store,
-  Plus,
-  Edit2,
-  Globe,
-  ToggleLeft,
-  ToggleRight,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import type { Id } from "../../../convex/_generated/dataModel";
 import Link from "next/link";
+import { PageLayout } from "@/components/PageLayout";
+import {
+  Card,
+  Button,
+  Field,
+  TextInput,
+  Modal,
+  Table,
+  Th,
+  Td,
+  Badge,
+  Spinner,
+} from "@/components/ui";
+import { useToken } from "@/lib/useShop";
 import { useTheme, THEME_OPTIONS } from "@/contexts/ThemeContext";
-import { BranchManagementModal } from "@/components/settings/BranchManagementModal";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Check, Plus, Pencil, FileClock, Truck } from "lucide-react";
+
+const TOGGLE_KEYS = [
+  "allowNegativeStock",
+  "customerCreditEnabled",
+  "returnsEnabled",
+  "multiBranchEnabled",
+  "lowStockAlertsEnabled",
+];
+
+const VALUE_KEYS = [
+  "businessName",
+  "businessPhone",
+  "businessAddress",
+  "receiptFooter",
+  "currencySymbol",
+  "taxRatePercent",
+  "discountMaxPercentWithoutApproval",
+];
 
 export default function SettingsPage() {
-  const settings = useQuery(api.settings.getAll);
-  const branches = useQuery(api.branches.listAll);
-  const upsertSetting = useMutation(api.settings.upsert);
-  const ensureDefaultBranch = useMutation(api.branches.ensureDefaultBranch);
-
+  const token = useToken();
+  const settings = useQuery(api.settings.getAll, {});
+  const branches = useQuery(api.branches.listAll, {});
+  const upsert = useMutation(api.settings.upsert);
+  const initDefaults = useMutation(api.settings.initializeDefaults);
   const { theme, setTheme } = useTheme();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [branchToEdit, setBranchToEdit] = useState<any | null>(null);
+
+  const get = (key: string) => settings?.find((s) => s.key === key);
+
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  const saveValue = async (key: string) => {
+    const s = get(key);
+    setSavingKey(key);
+    try {
+      await upsert({
+        token,
+        key,
+        isActive: s?.isActive ?? true,
+        value: drafts[key] ?? s?.value ?? "",
+        label: s?.label,
+      });
+      toast.success("Saved");
+      setDrafts((p) => {
+        const n = { ...p };
+        delete n[key];
+        return n;
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const toggle = async (key: string) => {
+    const s = get(key);
+    try {
+      await upsert({
+        token,
+        key,
+        isActive: !(s?.isActive ?? false),
+        value: s?.value,
+        label: s?.label,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const [branchModal, setBranchModal] = useState<
+    null | { _id?: Id<"branches">; name: string; code: string; address: string; phone: string; isDefault: boolean }
+  >(null);
 
   return (
-    <PageLayout title="Global Settings" subtitle="App-wide configurations, branch locations & themes">
-      <div className="max-w-5xl mx-auto space-y-8 pb-12">
-
-        {/* Store Locations / Branches Configuration Card */}
-        <div className="bg-surface border border-outline/30 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline/20 pb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-                <Store className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-black text-on-surface leading-tight">
-                  Store Locations & Branches
-                </h2>
-                <p className="text-xs font-medium text-on-surface-variant/70 mt-1">
-                  Manage inventory, staff, and sales across store branches from one master admin panel.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                setBranchToEdit(null);
-                setModalOpen(true);
-              }}
-              className="px-5 py-3 rounded-2xl bg-primary text-on-primary font-bold text-xs uppercase tracking-wider hover:bg-secondary transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer border border-primary/40"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Branch</span>
-            </button>
-          </div>
-
-          {/* Branch List */}
-          <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">
-                  Store Locations List ({branches?.length || 0})
-                </h3>
-                <p className="text-[11px] text-on-surface-variant font-medium">
-                  Manage active store branches and default headquarters
-                </p>
-              </div>
-            </div>
-
-            {branches === undefined ? (
-              <div className="flex justify-center p-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              </div>
-            ) : branches.length === 0 ? (
-              <div className="text-center py-8 border border-dashed border-outline/30 rounded-2xl p-6 text-xs text-on-surface-variant font-bold uppercase tracking-wider">
-                No store branches configured yet. Click "Add Branch" to get started.
-              </div>
-            ) : (
-              <div className="border border-outline/30 rounded-2xl overflow-hidden shadow-sm">
-                <table className="w-full text-left border-separate border-spacing-0">
-                  <thead className="bg-surface-container-low text-on-surface text-[10px] uppercase tracking-widest font-black border-b border-outline/20">
-                    <tr>
-                      <th className="px-4 py-3">Code</th>
-                      <th className="px-4 py-3">Store Name</th>
-                      <th className="px-4 py-3">Address</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-outline/20 text-xs font-bold text-on-surface bg-surface">
-                    {branches.map((b: any) => (
-                      <tr key={b._id} className="hover:bg-surface-container/40 transition-colors">
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-surface-container-high border border-outline/30">
-                            {b.code}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold">{b.name}</span>
-                            {b.isDefault && (
-                              <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-widest">
-                                Default
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-on-surface-variant font-medium text-[11px]">
-                          {b.address || "---"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={cn(
-                              "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border",
-                              b.status === "active"
-                                ? "bg-primary/10 text-primary border-primary/20"
-                                : "bg-surface-container-high text-on-surface-variant border-outline/30"
-                            )}
-                          >
-                            {b.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => {
-                              setBranchToEdit(b);
-                              setModalOpen(true);
-                            }}
-                            className="p-1.5 rounded-lg border border-outline/30 hover:bg-surface-container text-on-surface-variant hover:text-primary transition-all cursor-pointer"
-                            title="Edit Branch"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Theme Customization Section */}
-        <div className="bg-surface border border-outline/30 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-              <Palette className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-on-surface leading-tight">
-                App Theme & Color Palette
-              </h2>
-              <p className="text-xs font-bold text-on-surface-variant/70 uppercase tracking-widest">
-                Select your preferred visual style
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {THEME_OPTIONS.map((opt) => {
-              const isSelected = theme === opt.key;
-              return (
-                <div
-                  key={opt.key}
-                  onClick={() => setTheme(opt.key)}
-                  className={cn(
-                    "rounded-2xl border p-5 transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden",
-                    isSelected
-                      ? "border-primary bg-primary/5 shadow-md"
-                      : "border-outline/30 hover:border-outline bg-surface hover:bg-surface-container-low"
-                  )}
-                >
-                  <div className="space-y-4">
-                    {/* Swatch visual header */}
-                    <div
-                      className="h-24 rounded-xl p-3 flex flex-col justify-between border border-black/10 shadow-inner transition-transform group-hover:scale-[1.02]"
-                      style={{ backgroundColor: opt.bgPreview }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-white shadow-sm"
-                          style={{ backgroundColor: opt.accent }}
-                        >
-                          {opt.key}
-                        </span>
-                        {isSelected && (
-                          <div className="w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-md">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-7 h-7 rounded-lg border border-black/20 shadow"
-                          style={{ backgroundColor: opt.primary }}
-                          title={`Primary: ${opt.primary}`}
-                        />
-                        <div
-                          className="w-7 h-7 rounded-lg border border-black/20 shadow"
-                          style={{ backgroundColor: opt.accent }}
-                          title={`Accent: ${opt.accent}`}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="text-lg font-black text-on-surface group-hover:text-primary transition-colors">
-                        {opt.name}
-                      </h3>
-                      <p className="text-xs text-on-surface-variant mt-1 leading-relaxed font-medium">
-                        {opt.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    className={cn(
-                      "mt-6 w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider border transition-all cursor-pointer shadow-sm",
-                      isSelected
-                        ? "bg-primary text-on-primary border-primary/40"
-                        : "bg-surface text-on-surface border-outline/40 hover:bg-surface-container"
-                    )}
-                  >
-                    {isSelected ? "Active Theme" : "Select Theme"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {settings === undefined ? (
-          <div className="flex items-center justify-center p-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Delivery Fees Configuration Card */}
-            <div className="bg-surface border border-outline/30 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-                    <Truck className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-on-surface leading-tight">Delivery Zones</h2>
-                    <p className="text-xs font-bold text-on-surface-variant/60 uppercase tracking-widest">
-                      Delivery Fees & Zones
-                    </p>
-                  </div>
-                </div>
-                <p className="text-sm text-on-surface-variant mb-6 font-medium leading-relaxed">
-                  Configure delivery zone names and associated fee amounts. Admins and Managers can add new zones, adjust existing prices in MT, and toggle status.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end">
-                <Link
-                  href="/settings/delivery-fees"
-                  className="px-5 py-3 rounded-xl bg-surface border border-outline/30 hover:bg-surface-container font-bold text-xs uppercase tracking-wider text-on-surface hover:text-primary transition-all flex items-center gap-2 cursor-pointer shadow-sm"
-                >
-                  Configure Zones
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
+    <PageLayout title="Settings" subtitle="Business configuration">
+      <div className="flex gap-2 mb-4">
+        <Link href="/settings/audit-logs">
+          <Button variant="secondary">
+            <FileClock className="w-3.5 h-3.5" /> Audit Logs
+          </Button>
+        </Link>
+        <Link href="/settings/delivery-fees">
+          <Button variant="secondary">
+            <Truck className="w-3.5 h-3.5" /> Delivery Fees
+          </Button>
+        </Link>
+        <div className="ml-auto" />
+        <Button
+          variant="ghost"
+          onClick={async () => {
+            await initDefaults({ token });
+            toast.success("Defaults ensured");
+          }}
+        >
+          Restore missing defaults
+        </Button>
       </div>
 
-      {/* Branch Management Modal */}
-      <BranchManagementModal
-        isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setBranchToEdit(null);
-        }}
-        branchToEdit={branchToEdit}
-      />
+      {settings === undefined ? (
+        <Spinner />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card className="p-4">
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">Business</h3>
+            <div className="space-y-3">
+              {VALUE_KEYS.map((key) => {
+                const s = get(key);
+                const val = drafts[key] ?? s?.value ?? "";
+                return (
+                  <Field key={key} label={s?.label ?? key}>
+                    <div className="flex gap-2">
+                      <TextInput
+                        value={val}
+                        onChange={(e) =>
+                          setDrafts((p) => ({ ...p, [key]: e.target.value }))
+                        }
+                      />
+                      {drafts[key] !== undefined && (
+                        <Button
+                          size="sm"
+                          onClick={() => saveValue(key)}
+                          loading={savingKey === key}
+                        >
+                          Save
+                        </Button>
+                      )}
+                    </div>
+                  </Field>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">Features</h3>
+            <div className="space-y-2">
+              {TOGGLE_KEYS.map((key) => {
+                const s = get(key);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggle(key)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-surface-container-low border border-outline text-left"
+                  >
+                    <span className="text-xs font-bold">{s?.label ?? key}</span>
+                    <Badge tone={s?.isActive ? "success" : "neutral"}>
+                      {s?.isActive ? "On" : "Off"}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card className="p-4 lg:col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-black uppercase tracking-wider">Branches</h3>
+              <Button
+                size="sm"
+                onClick={() =>
+                  setBranchModal({
+                    name: "",
+                    code: "",
+                    address: "",
+                    phone: "",
+                    isDefault: false,
+                  })
+                }
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </Button>
+            </div>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Code</Th>
+                  <Th>Address</Th>
+                  <Th>Status</Th>
+                  <Th className="w-16" />
+                </tr>
+              </thead>
+              <tbody>
+                {(branches ?? []).map((b) => (
+                  <tr key={b._id}>
+                    <Td className="font-bold">
+                      {b.name}
+                      {b.isDefault && <Badge tone="info"> default</Badge>}
+                    </Td>
+                    <Td className="font-mono text-xs">{b.code}</Td>
+                    <Td className="text-on-surface-variant">{b.address ?? "—"}</Td>
+                    <Td>
+                      <Badge tone={b.status === "active" ? "success" : "neutral"}>
+                        {b.status}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setBranchModal({
+                            _id: b._id,
+                            name: b.name,
+                            code: b.code,
+                            address: b.address ?? "",
+                            phone: b.phone ?? "",
+                            isDefault: !!b.isDefault,
+                          })
+                        }
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card>
+
+          <Card className="p-4 lg:col-span-2">
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">Theme</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {THEME_OPTIONS.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTheme(t.key)}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-colors",
+                    theme === t.key
+                      ? "border-primary bg-primary/5"
+                      : "border-outline hover:border-primary/50"
+                  )}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span
+                      className="w-4 h-4 rounded-full border border-outline"
+                      style={{ background: t.primary }}
+                    />
+                    <span className="text-xs font-black uppercase tracking-wider">
+                      {t.name}
+                    </span>
+                    {theme === t.key && <Check className="w-3.5 h-3.5 text-primary ml-auto" />}
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant">{t.description}</p>
+                </button>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {branchModal && (
+        <BranchModal
+          token={token}
+          data={branchModal}
+          onClose={() => setBranchModal(null)}
+        />
+      )}
     </PageLayout>
+  );
+}
+
+function BranchModal({
+  token,
+  data,
+  onClose,
+}: {
+  token: string;
+  data: {
+    _id?: Id<"branches">;
+    name: string;
+    code: string;
+    address: string;
+    phone: string;
+    isDefault: boolean;
+  };
+  onClose: () => void;
+}) {
+  const create = useMutation(api.branches.create);
+  const update = useMutation(api.branches.update);
+  const [f, setF] = useState(data);
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f, v: string | boolean) =>
+    setF((p) => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    if (!f.name.trim() || !f.code.trim()) return toast.error("Name and code required.");
+    setBusy(true);
+    try {
+      if (f._id) {
+        await update({
+          token,
+          id: f._id,
+          name: f.name,
+          code: f.code,
+          address: f.address || undefined,
+          phone: f.phone || undefined,
+          isDefault: f.isDefault,
+        });
+      } else {
+        await create({
+          token,
+          name: f.name,
+          code: f.code,
+          address: f.address || undefined,
+          phone: f.phone || undefined,
+          isDefault: f.isDefault,
+        });
+      }
+      toast.success("Saved");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={f._id ? "Edit Branch" : "New Branch"}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Name" required>
+        <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} />
+      </Field>
+      <Field label="Code" required>
+        <TextInput value={f.code} onChange={(e) => set("code", e.target.value)} />
+      </Field>
+      <Field label="Address">
+        <TextInput value={f.address} onChange={(e) => set("address", e.target.value)} />
+      </Field>
+      <Field label="Phone">
+        <TextInput value={f.phone} onChange={(e) => set("phone", e.target.value)} />
+      </Field>
+      <label className="flex items-center gap-2 text-xs font-bold">
+        <input
+          type="checkbox"
+          checked={f.isDefault}
+          onChange={(e) => set("isDefault", e.target.checked)}
+        />
+        Default branch
+      </label>
+    </Modal>
   );
 }

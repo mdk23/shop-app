@@ -14,8 +14,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Shop App",
-  description: "Modern Restaurant POS and Management System",
+  title: "Threadline",
+  description: "Clothing retail management, POS & inventory system",
 };
 
 export default function RootLayout({

@@ -5,12 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number) {
-  // Format as number first, then append 'Mt' to guarantee exactly what the user wants.
-  const formattedNumber = new Intl.NumberFormat("pt-MZ", {
+/**
+ * Single currency formatter for the whole app. Symbol defaults to "MT"
+ * (Mozambican metical) and can be overridden from the `currencySymbol` setting.
+ */
+export function formatCurrency(amount: number, symbol = "MT") {
+  const n = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
-  
-  return `${formattedNumber} Mt`;
+  }).format(amount ?? 0);
+  return `${n} ${symbol}`;
 }
+
+/** @deprecated use formatCurrency */
+export const formatMT = (amount: number) => formatCurrency(amount);

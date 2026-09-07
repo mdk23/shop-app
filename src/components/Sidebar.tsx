@@ -5,150 +5,101 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Users,
   LayoutDashboard,
   ShoppingCart,
+  Landmark,
+  Receipt,
+  RotateCcw,
+  Users,
+  Shirt,
+  Tags,
+  Award,
   Package,
-  UtensilsCrossed,
+  SlidersHorizontal,
+  ArrowLeftRight,
+  ScrollText,
+  Truck,
+  ClipboardList,
+  BarChart3,
+  Shield,
   Settings,
+  FileClock,
   LogOut,
   ChevronLeft,
   ChevronDown,
-  ChefHat,
-  Landmark,
-  Receipt,
-  FileText,
-  Activity,
-  Shield,
-  Bell,
-  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 
 type MenuItem = {
   name: string;
   href: string;
   icon: React.ElementType;
-  allowedRoles?: UserRole[]; // undefined = all roles
+  allowedRoles?: UserRole[]; // undefined = all
 };
 
-type MenuGroup = {
-  id: string;
-  name: string;
-  emoji: string;
-  items: MenuItem[];
-};
+type MenuGroup = { id: string; name: string; emoji: string; items: MenuItem[] };
 
-// Dashboard, POS, and Caixa are top-level items outside any collapsible group
+const MANAGER: UserRole[] = ["admin", "manager"];
+
 const topMenuItems: MenuItem[] = [
-  {
-    name: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    allowedRoles: ["admin", "manager"],
-  },
-  { name: "New Order", href: "/pos", icon: ShoppingCart },
-  { name: "Active Orders", href: "/active-orders", icon: Bell },
-  { name: "Caixa", href: "/caixa", icon: Landmark },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, allowedRoles: MANAGER },
+  { name: "POS", href: "/pos", icon: ShoppingCart },
+  { name: "Cash Register", href: "/cash-register", icon: Landmark },
 ];
 
 const menuGroups: MenuGroup[] = [
   {
-    id: "sales_finance",
-    name: "Sales & Finance",
-    emoji: "📊",
+    id: "sales",
+    name: "Sales",
+    emoji: "🧾",
     items: [
-      {
-        name: "Sales",
-        href: "/sales",
-        icon: Receipt,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Caixa Reports",
-        href: "/caixa/reports",
-        icon: FileText,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Clients",
-        href: "/clients",
-        icon: Users,
-        allowedRoles: ["admin", "manager"],
-      },
+      { name: "Sales", href: "/sales", icon: Receipt, allowedRoles: MANAGER },
+      { name: "Returns", href: "/returns", icon: RotateCcw },
+      { name: "Cash Reports", href: "/cash-register/reports", icon: ScrollText, allowedRoles: MANAGER },
+      { name: "Customers", href: "/customers", icon: Users },
     ],
   },
   {
-    id: "production_menu",
-    name: "Dishes & Kitchen",
-    emoji: "🍳",
+    id: "catalog",
+    name: "Catalog",
+    emoji: "👕",
     items: [
-      {
-        name: "Dishes",
-        href: "/dishes",
-        icon: UtensilsCrossed,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Kitchen",
-        href: "/kitchen",
-        icon: ChefHat,
-        allowedRoles: ["admin", "manager"],
-      },
+      { name: "Products", href: "/products", icon: Shirt, allowedRoles: MANAGER },
+      { name: "Categories", href: "/products/categories", icon: Tags, allowedRoles: MANAGER },
+      { name: "Brands", href: "/products/brands", icon: Award, allowedRoles: MANAGER },
     ],
   },
   {
-    id: "inventory_management",
-    name: "Stock Management",
+    id: "inventory",
+    name: "Inventory",
     emoji: "📦",
     items: [
-      {
-        name: "Stock",
-        href: "/inventory",
-        icon: Package,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Stock Overview",
-        href: "/stock-overview",
-        icon: Activity,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Suppliers",
-        href: "/suppliers",
-        icon: Truck,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Purchase Orders",
-        href: "/purchase-orders",
-        icon: FileText,
-        allowedRoles: ["admin", "manager"],
-      },
+      { name: "Stock", href: "/inventory", icon: Package, allowedRoles: MANAGER },
+      { name: "Adjustments", href: "/inventory/adjustments", icon: SlidersHorizontal, allowedRoles: MANAGER },
+      { name: "Transfers", href: "/inventory/transfers", icon: ArrowLeftRight, allowedRoles: MANAGER },
+      { name: "Stock Ledger", href: "/inventory/ledger", icon: ScrollText, allowedRoles: MANAGER },
     ],
   },
   {
-    id: "administration",
+    id: "purchasing",
+    name: "Purchasing",
+    emoji: "🚚",
+    items: [
+      { name: "Suppliers", href: "/suppliers", icon: Truck, allowedRoles: MANAGER },
+      { name: "Purchase Orders", href: "/purchase-orders", icon: ClipboardList, allowedRoles: MANAGER },
+    ],
+  },
+  {
+    id: "admin",
     name: "Administration",
     emoji: "⚙️",
     items: [
-      {
-        name: "Users",
-        href: "/users",
-        icon: Shield,
-        allowedRoles: ["admin", "manager"],
-      },
-      {
-        name: "Settings",
-        href: "/settings",
-        icon: Settings,
-        allowedRoles: ["admin", "manager"],
-      },
+      { name: "Reports", href: "/reports", icon: BarChart3, allowedRoles: MANAGER },
+      { name: "Users", href: "/users", icon: Shield, allowedRoles: MANAGER },
+      { name: "Settings", href: "/settings", icon: Settings, allowedRoles: MANAGER },
+      { name: "Audit Logs", href: "/settings/audit-logs", icon: FileClock, allowedRoles: MANAGER },
     ],
   },
 ];
@@ -157,86 +108,39 @@ export function Sidebar() {
   const pathname = usePathname();
   const { isCollapsed, toggleCollapse, isOpen, close } = useSidebar();
   const { currentUser, logout } = useAuth();
-
-  // Track which groups are expanded/collapsed (initially all collapsed)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-  // Active Orders subscription & shake notification state
-  const activeOrders = useQuery(api.orders.listActiveOrders, {});
-  const [isBellShaking, setIsBellShaking] = useState(false);
-  const [prevActiveCount, setPrevActiveCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (activeOrders === undefined) return;
-    const currentCount = activeOrders.length;
-    if (prevActiveCount !== null && currentCount > prevActiveCount) {
-      setIsBellShaking(true);
-      const timer = setTimeout(() => setIsBellShaking(false), 600);
-      return () => clearTimeout(timer);
-    }
-    setPrevActiveCount(currentCount);
-  }, [activeOrders, prevActiveCount]);
-
-  // Auto-expand the group containing the active page when pathname changes
   useEffect(() => {
     const activeGroup = menuGroups.find((group) =>
       group.items.some(
-        (item) =>
-          pathname === item.href ||
-          (item.href !== "/caixa" && pathname.startsWith(item.href + "/"))
+        (item) => pathname === item.href || pathname.startsWith(item.href + "/")
       )
     );
-    if (activeGroup) {
-      setExpandedGroups((prev) => ({
-        ...prev,
-        [activeGroup.id]: true,
-      }));
-    }
+    if (activeGroup)
+      setExpandedGroups((p) => ({ ...p, [activeGroup.id]: true }));
   }, [pathname]);
 
-  const toggleGroup = (groupId: string) => {
-    setExpandedGroups((prev) => ({
-      ...prev,
-      [groupId]: !prev[groupId],
-    }));
-  };
+  const canSee = (item: MenuItem) =>
+    !item.allowedRoles ||
+    (currentUser ? item.allowedRoles.includes(currentUser.role) : false);
 
-  // Filter top-level items based on role
-  const visibleTopItems = topMenuItems.filter((item) => {
-    if (!item.allowedRoles) return true;
-    if (!currentUser) return false;
-    return item.allowedRoles.includes(currentUser.role);
-  });
-
-  // Filter groups and items based on role
+  const visibleTopItems = topMenuItems.filter(canSee);
   const visibleGroups = menuGroups
-    .map((group) => {
-      const visibleItems = group.items.filter((item) => {
-        if (!item.allowedRoles) return true;
-        if (!currentUser) return false;
-        return item.allowedRoles.includes(currentUser.role);
-      });
-      return {
-        ...group,
-        items: visibleItems,
-      };
-    })
-    .filter((group) => group.items.length > 0);
+    .map((g) => ({ ...g, items: g.items.filter(canSee) }))
+    .filter((g) => g.items.length > 0);
 
-  const handleLogout = async () => {
-    await logout();
-  };
+  const isActive = (href: string) =>
+    pathname === href ||
+    (href !== "/cash-register" && pathname.startsWith(href + "/"));
 
   return (
     <>
-      {/* Mobile Overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm"
           onClick={close}
         />
       )}
-
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 bg-surface border-r border-outline/30 flex flex-col adaptive-transition lg:static shadow-lg lg:shadow-none",
@@ -245,20 +149,18 @@ export function Sidebar() {
         )}
       >
         <div className={cn("p-6 flex items-center justify-between", isCollapsed && "px-4")}>
-          {!isCollapsed && (
+          {!isCollapsed ? (
             <h1 className="text-2xl font-display text-primary tracking-tighter uppercase select-none">
-              Shop App
+              Threadline
             </h1>
-          )}
-          {isCollapsed && (
+          ) : (
             <h1 className="text-xl font-display text-primary tracking-tighter uppercase mx-auto select-none">
-              SA
+              TL
             </h1>
           )}
-
           <button
             onClick={toggleCollapse}
-            className="hidden lg:flex w-8 h-8 items-center justify-center rounded-xl hover:bg-surface-container text-on-surface-variant transition-colors border border-transparent hover:border-outline/40"
+            className="hidden lg:flex w-8 h-8 items-center justify-center rounded-xl hover:bg-surface-container text-on-surface-variant transition-colors"
           >
             <div className={cn("transition-transform duration-300", isCollapsed && "rotate-180")}>
               <ChevronLeft className="w-5 h-5" />
@@ -266,181 +168,95 @@ export function Sidebar() {
           </button>
         </div>
 
-        <nav className="flex-1 px-3 space-y-1.5 mt-6 overflow-y-auto scrollbar-hide">
-          {/* Top Level Menu Items (Dashboard, POS, Caixa) */}
-          {visibleTopItems.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/caixa" && pathname.startsWith(item.href + "/"));
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => {
-                  if (window.innerWidth < 1024) close();
-                }}
-                className={cn(
-                  "flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all duration-200 group relative border border-transparent",
-                  isActive
-                    ? "bg-primary text-on-primary shadow-sm font-bold"
-                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface border-transparent",
-                  isCollapsed && "justify-center px-0"
-                )}
-              >
-                <item.icon
-                  className={cn(
-                    "w-5 h-5 flex-shrink-0",
-                    isActive ? "text-on-primary" : "text-on-surface-variant group-hover:text-primary",
-                    item.name === "Active Orders" && isBellShaking && "animate-shake"
-                  )}
-                />
-                {!isCollapsed && (
-                  <span className="whitespace-nowrap font-black uppercase tracking-wider text-[10px]">
-                    {item.name}
-                  </span>
-                )}
+        <nav className="flex-1 px-3 space-y-1.5 mt-4 overflow-y-auto scrollbar-hide">
+          {visibleTopItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => {
+                if (window.innerWidth < 1024) close();
+              }}
+              className={cn(
+                "flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all duration-200 group relative border border-transparent",
+                isActive(item.href)
+                  ? "bg-primary text-on-primary shadow-sm font-bold"
+                  : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface",
+                isCollapsed && "justify-center px-0"
+              )}
+            >
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && (
+                <span className="whitespace-nowrap font-black uppercase tracking-wider text-[10px]">
+                  {item.name}
+                </span>
+              )}
+            </Link>
+          ))}
 
-                {item.name === "Active Orders" && activeOrders && activeOrders.length > 0 && !isCollapsed && (
-                  <span className={cn(
-                    "px-1.5 py-0.5 rounded text-[8px] font-black tracking-tighter uppercase border ml-2 transition-all",
-                    isActive 
-                      ? "bg-surface text-on-surface border-outline" 
-                      : "bg-primary/10 text-primary border-primary/20"
-                  )}>
-                    {activeOrders.length}
-                  </span>
-                )}
-
-                {isCollapsed && item.name === "Active Orders" && activeOrders && activeOrders.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-error rounded-full border border-surface shadow-hard-sm" />
-                )}
-
-                {isActive && !isCollapsed && (
-                  <div className="ml-auto w-2 h-2 bg-surface border border-outline rounded-full" />
-                )}
-
-                {isCollapsed && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-surface-container-highest text-on-surface text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-hard border border-outline font-black uppercase tracking-wider">
-                    {item.name}
-                  </div>
-                )}
-              </Link>
-            );
-          })}
-
-          {/* Separator between Top Items and Collapsible Groups */}
           {visibleGroups.length > 0 && (
             <div className="border-t-2 border-outline-variant/30 my-4" />
           )}
 
-          {/* Collapsible Groups or Flat Icons if Collapsed */}
-          {isCollapsed ? (
-            visibleGroups.map((group, groupIdx) => (
+          {visibleGroups.map((group) => {
+            const expanded = isCollapsed ? true : !!expandedGroups[group.id];
+            return (
               <div key={group.id} className="space-y-1">
-                {groupIdx > 0 && <div className="border-t-2 border-outline-variant/30 my-2" />}
-                {group.items.map((item) => {
-                  const isActive =
-                    pathname === item.href ||
-                    (item.href !== "/caixa" && pathname.startsWith(item.href + "/"));
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => {
-                        if (window.innerWidth < 1024) close();
-                      }}
-                      className={cn(
-                        "flex items-center justify-center w-full py-3 rounded-lg transition-all duration-200 group relative border-2 border-transparent",
-                        isActive
-                          ? "bg-primary text-on-primary border-outline shadow-hard"
-                          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface hover:border-outline"
-                      )}
-                    >
-                      <item.icon
-                        className={cn(
-                          "w-5 h-5 flex-shrink-0",
-                          isActive ? "text-on-primary" : "text-on-surface-variant group-hover:text-primary"
-                        )}
-                      />
-                      <div className="absolute left-full ml-2 px-2 py-1 bg-surface-container-highest text-on-surface text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-hard border border-outline font-black uppercase tracking-wider">
-                        {item.name}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            ))
-          ) : (
-            visibleGroups.map((group) => {
-              const isExpanded = !!expandedGroups[group.id];
-              return (
-                <div key={group.id} className="space-y-1">
-                  {/* Group Header */}
+                {!isCollapsed && (
                   <button
-                    onClick={() => toggleGroup(group.id)}
-                    className="flex items-center justify-between w-full px-3 py-2 mt-4 select-none cursor-pointer rounded-lg hover:bg-surface-container-high/40 transition-colors group/header"
+                    onClick={() =>
+                      setExpandedGroups((p) => ({ ...p, [group.id]: !p[group.id] }))
+                    }
+                    className="flex items-center justify-between w-full px-3 py-2 mt-3 select-none rounded-lg hover:bg-surface-container-high/40 transition-colors group/header"
                   >
-                    <span className="flex items-center gap-2 text-[10px] font-black tracking-widest text-on-surface-variant opacity-60 group-hover/header:opacity-100 transition-opacity uppercase">
+                    <span className="flex items-center gap-2 text-[10px] font-black tracking-widest text-on-surface-variant opacity-60 group-hover/header:opacity-100 uppercase">
                       <span className="text-sm leading-none">{group.emoji}</span>
-                      <span>{group.name}</span>
+                      {group.name}
                     </span>
                     <ChevronDown
                       className={cn(
-                        "w-3.5 h-3.5 text-on-surface-variant opacity-40 group-hover/header:opacity-80 transition-transform duration-200",
-                        isExpanded ? "rotate-0" : "-rotate-90"
+                        "w-3.5 h-3.5 opacity-40 transition-transform",
+                        expanded ? "rotate-0" : "-rotate-90"
                       )}
                     />
                   </button>
-
-                  {/* Group Items with Framer Motion slide height */}
-                  <AnimatePresence initial={false}>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: "easeInOut" }}
-                        className="overflow-hidden space-y-1 pl-3.5 mt-1 border-l border-outline-variant/30 ml-2"
-                      >
-                        {group.items.map((item) => {
-                          const isActive =
-                            pathname === item.href ||
-                            (item.href !== "/caixa" && pathname.startsWith(item.href + "/"));
-                          return (
-                            <Link
-                              key={item.href}
-                              href={item.href}
-                              onClick={() => {
-                                if (window.innerWidth < 1024) close();
-                              }}
-                              className={cn(
-                                "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative uppercase tracking-wider text-[10px] font-bold border border-transparent",
-                                isActive
-                                  ? "bg-primary text-on-primary shadow-sm"
-                                  : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface border-transparent"
-                              )}
-                            >
-                              <item.icon
-                                className={cn(
-                                  "w-4 h-4 flex-shrink-0",
-                                  isActive ? "text-on-primary" : "text-on-surface-variant group-hover:text-primary"
-                                )}
-                              />
-                              <span className="whitespace-nowrap">{item.name}</span>
-
-                              {isActive && (
-                                <div className="ml-auto w-2 h-2 bg-surface border border-outline rounded-full" />
-                              )}
-                            </Link>
-                          );
-                        })}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })
-          )}
+                )}
+                <AnimatePresence initial={false}>
+                  {expanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className={cn(
+                        "overflow-hidden space-y-1",
+                        !isCollapsed && "pl-3.5 mt-1 border-l border-outline-variant/30 ml-2"
+                      )}
+                    >
+                      {group.items.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => {
+                            if (window.innerWidth < 1024) close();
+                          }}
+                          className={cn(
+                            "flex items-center gap-3 rounded-xl transition-all duration-200 group relative uppercase tracking-wider text-[10px] font-bold border border-transparent",
+                            isCollapsed ? "justify-center py-3" : "px-3 py-2.5",
+                            isActive(item.href)
+                              ? "bg-primary text-on-primary shadow-sm"
+                              : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                          )}
+                        >
+                          <item.icon className={cn("flex-shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
+                          {!isCollapsed && <span className="whitespace-nowrap">{item.name}</span>}
+                        </Link>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t-2 border-outline space-y-2">
@@ -450,14 +266,16 @@ export function Sidebar() {
                 {currentUser.role === "admin"
                   ? "Administrator"
                   : currentUser.role === "manager"
-                  ? "Manager"
-                  : "POS Seller"}
+                    ? "Manager"
+                    : "POS Seller"}
               </p>
-              <p className="text-xs font-black text-on-surface truncate">{currentUser.name}</p>
+              <p className="text-xs font-black text-on-surface truncate">
+                {currentUser.name}
+              </p>
             </div>
           )}
           <button
-            onClick={handleLogout}
+            onClick={() => logout()}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-error font-black uppercase tracking-wider hover:bg-error/10 transition-colors border-2 border-transparent hover:border-error",
               isCollapsed && "justify-center px-0"
@@ -465,11 +283,6 @@ export function Sidebar() {
           >
             <LogOut className="w-5 h-5 flex-shrink-0" />
             {!isCollapsed && <span className="text-[10px]">Sign Out</span>}
-            {isCollapsed && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-surface-container-highest text-on-surface text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-hard border border-outline">
-                Sign Out
-              </div>
-            )}
           </button>
         </div>
       </aside>

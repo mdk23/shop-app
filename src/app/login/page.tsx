@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { Eye, EyeOff, LogIn, AlertCircle, ChefHat } from "lucide-react";
+import { Eye, EyeOff, LogIn, AlertCircle, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ConvexError } from "convex/values";
 import { toast } from "sonner";
@@ -108,11 +108,11 @@ function LoginForm() {
           {/* Header */}
           <div className="px-8 pt-12 pb-6 flex flex-col items-center gap-4 text-center">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-2 shadow-inner">
-              <ChefHat className="w-8 h-8" />
+              <ShoppingBag className="w-8 h-8" />
             </div>
             <div>
               <h1 className="text-on-surface font-display text-4xl tracking-tight font-extrabold mb-2">
-                Shop App
+                Threadline
               </h1>
               <p className="text-on-surface-variant text-sm font-medium">
                 Welcome back, please sign in to your staff portal.

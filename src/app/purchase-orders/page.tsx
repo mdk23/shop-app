@@ -1,380 +1,438 @@
 "use client";
 
 import { useState } from "react";
-import { PageLayout } from "@/components/PageLayout";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { useAuth } from "@/contexts/AuthContext";
-import { cn, formatCurrency } from "@/lib/utils";
-import { FileText, Plus, Search, Truck, Receipt } from "lucide-react";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { PageLayout } from "@/components/PageLayout";
+import {
+  Card,
+  Button,
+  Field,
+  Select,
+  TextInput,
+  Textarea,
+  Modal,
+  Table,
+  Th,
+  Td,
+  Badge,
+  EmptyState,
+  Spinner,
+  Toolbar,
+} from "@/components/ui";
+import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
+import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { Plus, Trash2 } from "lucide-react";
 
-// Extracted Sub-components
-import { PurchaseOrderTable } from "@/components/purchase-orders/PurchaseOrderTable";
-import { PurchaseOrderModal } from "@/components/purchase-orders/PurchaseOrderModal";
-import { PODetailDrawer } from "@/components/purchase-orders/PODetailDrawer";
-import { POReceiveModal } from "@/components/purchase-orders/POReceiveModal";
+const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error"> = {
+  draft: "neutral",
+  sent: "info",
+  partially_received: "warning",
+  completed: "success",
+  cancelled: "error",
+};
+
+type Line = PickedVariant & { quantityOrdered: number; unitCost: number };
 
 export default function PurchaseOrdersPage() {
-  const { token } = useAuth();
-
-  // Queries & Mutations
-  const purchaseOrders = useQuery(api.purchaseOrders.list, {});
+  const token = useToken();
+  const fmt = useCurrency();
+  const { branchId, branches } = useResolvedBranch();
   const suppliers = useQuery(api.suppliers.list, { status: "active" });
-  const ingredients = useQuery(api.ingredients.list);
-
-  const createPO = useMutation(api.purchaseOrders.create);
-  const updatePO = useMutation(api.purchaseOrders.update);
-  const updatePOStatus = useMutation(api.purchaseOrders.updateStatus);
-  const removePO = useMutation(api.purchaseOrders.remove);
-  const receivePOItems = useMutation(api.purchaseOrders.receiveItems);
-  const updatePOPaymentStatus = useMutation(api.purchaseOrders.updatePaymentStatus);
-
-  // States
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "sent" | "received" | "cancelled">("all");
-  const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
-
-  // Receiving states
-  const [receivingPO, setReceivingPO] = useState<any>(null);
-
-  // Detail query
-  const poDetails = useQuery(
-    api.purchaseOrders.get,
-    selectedPOId ? { id: selectedPOId as any } : "skip"
-  );
-
-  // Modal States
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingPO, setEditingPO] = useState<any>(null);
-
-  // Form Items State (shared with PurchaseOrderModal)
-  const [formItems, setFormItems] = useState<
-    Array<{ ingredientId: string; quantityOrdered: number; unitCost: number }>
-  >([]);
-
-  const openCreatePO = () => {
-    setEditingPO(null);
-    setFormItems([]);
-    setIsFormOpen(true);
-  };
-
-  const openEditPO = async (po: any) => {
-    setEditingPO(po);
-    try {
-      toast.loading("Loading order details...", { id: "load-po-edit" });
-      const fullPO = await fetchPOData(po._id);
-      if (fullPO) {
-        setFormItems(
-          fullPO.items.map((i: any) => ({
-            ingredientId: i.ingredientId,
-            quantityOrdered: i.quantityOrdered,
-            unitCost: i.unitCost,
-          }))
-        );
-      }
-      toast.success("Order details loaded", { id: "load-po-edit" });
-      setIsFormOpen(true);
-    } catch (e) {
-      toast.error("Failed to load PO details", { id: "load-po-edit" });
-    }
-  };
-
-  const fetchPOData = async (poId: string) => {
-    setSelectedPOId(poId);
-    return new Promise<any>((resolve) => {
-      const check = setInterval(() => {
-        if (poDetails && poDetails._id === poId) {
-          clearInterval(check);
-          resolve(poDetails);
-        }
-      }, 100);
-      setTimeout(() => {
-        clearInterval(check);
-        resolve(null);
-      }, 5000);
-    });
-  };
-
-  const handleFormSubmit = async (data: {
-    supplierId: string;
-    expectedDeliveryDate: string;
-    notes: string;
-    items: Array<{ ingredientId: string; quantityOrdered: number; unitCost: number }>;
-  }) => {
-    if (!token) {
-      toast.error("You must be logged in to modify purchase orders");
-      return;
-    }
-
-    const orderDate = Date.now();
-    const expDate = data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate).getTime() : undefined;
-
-    try {
-      if (editingPO) {
-        await updatePO({
-          token,
-          id: editingPO._id,
-          supplierId: data.supplierId as any,
-          orderDate: editingPO.orderDate,
-          expectedDeliveryDate: expDate,
-          notes: data.notes || undefined,
-          items: data.items.map((i) => ({
-            ingredientId: i.ingredientId as any,
-            quantityOrdered: i.quantityOrdered,
-            unitCost: i.unitCost,
-          })),
-        });
-        toast.success("Purchase order updated successfully");
-      } else {
-        await createPO({
-          token,
-          supplierId: data.supplierId as any,
-          orderDate,
-          expectedDeliveryDate: expDate,
-          notes: data.notes || undefined,
-          items: data.items.map((i) => ({
-            ingredientId: i.ingredientId as any,
-            quantityOrdered: i.quantityOrdered,
-            unitCost: i.unitCost,
-          })),
-        });
-        toast.success("Purchase order draft created");
-      }
-      setIsFormOpen(false);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save purchase order");
-    }
-  };
-
-  const handleTransitionStatus = async (poId: string, status: "sent" | "cancelled") => {
-    if (!token) {
-      toast.error("You must be logged in to update order status");
-      return;
-    }
-
-    const actionText = status === "sent" ? "Send Purchase Order" : "Cancel Purchase Order";
-    toast.warning(`${actionText}?`, {
-      description: `Transitioning PO to ${status}.`,
-      action: {
-        label: "Confirm",
-        onClick: async () => {
-          try {
-            await updatePOStatus({ token, id: poId as any, status });
-            toast.success(`Purchase order marked as ${status}`);
-            setSelectedPOId(null);
-          } catch (err: any) {
-            toast.error(err.message || "Failed to update status");
-          }
-        },
-      },
-      duration: 5000,
-    });
-  };
-
-  const handleDeletePO = (po: any) => {
-    if (!token) {
-      toast.error("You must be logged in to delete purchase orders");
-      return;
-    }
-
-    toast.warning(`Delete purchase order ${po.orderCode}?`, {
-      description: "This draft will be permanently deleted.",
-      action: {
-        label: "Delete",
-        onClick: async () => {
-          try {
-            await removePO({ token, id: po._id });
-            toast.success("Purchase order deleted successfully");
-          } catch (err: any) {
-            toast.error(err.message || "Failed to delete purchase order");
-          }
-        },
-      },
-      duration: 5000,
-    });
-  };
-
-  const getSupplierName = (supplierId: string) => {
-    const s = (suppliers || []).find((sup) => sup._id === supplierId);
-    return s ? s.name : "Unknown Supplier";
-  };
-
-  const filteredPOs = (purchaseOrders || []).filter((po) => {
-    const sName = getSupplierName(po.supplierId).toLowerCase();
-    const code = po.orderCode.toLowerCase();
-    const matchesSearch = sName.includes(searchTerm.toLowerCase()) || code.includes(searchTerm.toLowerCase());
-
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "received" && (po.status === "completed" || po.status === "partially_received")) ||
-      po.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
+  const [statusFilter, setStatusFilter] = useState("");
+  const list = useQuery(api.purchaseOrders.list, {
+    status: (statusFilter || undefined) as never,
   });
+  const create = useMutation(api.purchaseOrders.create);
 
-  const draftCount = (purchaseOrders || []).filter((po) => po.status === "draft").length;
-  const sentCount = (purchaseOrders || []).filter((po) => po.status === "sent").length;
-  const pendingValue = (purchaseOrders || [])
-    .filter((po) => po.status === "draft" || po.status === "sent")
-    .reduce((sum, po) => sum + po.totalAmount, 0);
+  const [open, setOpen] = useState(false);
+  const [detailId, setDetailId] = useState<Id<"purchaseOrders"> | null>(null);
+
+  const [supplierId, setSupplierId] = useState("");
+  const [poBranch, setPoBranch] = useState("");
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState<Line[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const total = lines.reduce((s, l) => s + l.quantityOrdered * l.unitCost, 0);
+
+  const submit = async () => {
+    const b = (poBranch || branchId) as Id<"branches"> | undefined;
+    if (!supplierId || !b) return toast.error("Supplier and branch required.");
+    if (lines.length === 0) return toast.error("Add at least one line.");
+    setBusy(true);
+    try {
+      await create({
+        token,
+        supplierId: supplierId as Id<"suppliers">,
+        branchId: b,
+        orderDate: Date.now(),
+        notes: notes || undefined,
+        items: lines.map((l) => ({
+          productVariantId: l.variantId,
+          quantityOrdered: l.quantityOrdered,
+          unitCost: l.unitCost,
+        })),
+      });
+      toast.success("Purchase order created");
+      setOpen(false);
+      setLines([]);
+      setSupplierId("");
+      setNotes("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <PageLayout title="Purchase Orders" subtitle="Manage purchasing & supplier fulfillment">
-      <div className="space-y-12">
-        <div className="flex flex-row items-center justify-end gap-4">
-          <button
-            onClick={openCreatePO}
-            className="bg-brand-gradient text-white border-4 border-black px-8 py-4 rounded-lg font-display text-2xl uppercase tracking-tighter shadow-hard hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 self-start lg:self-auto"
-          >
-            <Plus className="w-8 h-8" strokeWidth={3} />
-            Create Purchase Order
-          </button>
-        </div>
+    <PageLayout title="Purchase Orders" subtitle="Purchasing · restock from suppliers">
+      <Toolbar>
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-44"
+        >
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="sent">Sent</option>
+          <option value="partially_received">Partially received</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </Select>
+        <div className="ml-auto" />
+        <Button onClick={() => setOpen(true)}>
+          <Plus className="w-3.5 h-3.5" /> New PO
+        </Button>
+      </Toolbar>
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-surface border-2 border-outline rounded-2xl p-5 shadow-hard flex items-center gap-4 hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">Draft POs</span>
-              <p className="text-2xl font-display text-on-surface mt-0.5">{draftCount}</p>
-            </div>
-          </div>
-          <div className="bg-surface border-2 border-outline rounded-2xl p-5 shadow-hard flex items-center gap-4 hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500">
-              <Truck className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">Sent Orders</span>
-              <p className="text-2xl font-display text-on-surface mt-0.5">{sentCount}</p>
-            </div>
-          </div>
-          <div className="bg-surface border-2 border-outline rounded-2xl p-5 shadow-hard flex items-center gap-4 hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all">
-            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-              <Receipt className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="text-[9px] font-black text-on-surface-variant uppercase tracking-widest">Pending Total Value</span>
-              <p className="text-2xl font-display text-on-surface mt-0.5">{formatCurrency(pendingValue)}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters and List */}
-        <div className="bg-surface border-4 border-outline rounded-xl shadow-hard flex flex-col min-h-[500px]">
-          <div className="p-6 border-b-4 border-outline flex flex-col lg:flex-row items-center gap-4 bg-surface-container-low/50">
-            {/* Search Input */}
-            <div className="relative flex-1 w-full max-w-md">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-on-surface-variant" />
-              <input
-                type="text"
-                placeholder="Search PO Code or Supplier..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-surface-container-high border-2 border-outline rounded-lg pl-12 pr-4 py-3 outline-none focus:border-primary transition-all font-black uppercase tracking-wider text-[10px] shadow-hard-sm"
-              />
-            </div>
-
-            {/* Status Tabs */}
-            <div className="flex border-2 border-outline rounded-lg overflow-hidden w-full lg:w-auto shadow-hard-sm">
-              {(["all", "draft", "sent", "received", "cancelled"] as const).map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => setStatusFilter(filter)}
-                  className={cn(
-                    "flex-1 lg:flex-initial px-5 py-2.5 font-black uppercase text-[10px] tracking-wider transition-all",
-                    statusFilter === filter
-                      ? "bg-black text-white"
-                      : "bg-surface text-on-surface hover:bg-surface-container-high"
-                  )}
-                >
-                  {filter}
-                </button>
+      <Card>
+        {list === undefined ? (
+          <Spinner />
+        ) : list.length === 0 ? (
+          <EmptyState title="No purchase orders" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Code</Th>
+                <Th>Supplier</Th>
+                <Th>Date</Th>
+                <Th className="text-right">Total</Th>
+                <Th>Status</Th>
+                <Th>Payment</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((po) => (
+                <tr key={po._id} className="hover:bg-surface-container-low">
+                  <Td className="font-mono text-[11px] font-bold">{po.orderCode}</Td>
+                  <Td>{po.supplierName}</Td>
+                  <Td className="text-on-surface-variant text-xs">
+                    {new Date(po.orderDate).toLocaleDateString()}
+                  </Td>
+                  <Td className="text-right font-bold">{fmt(po.totalAmount)}</Td>
+                  <Td>
+                    <Badge tone={STATUS_TONE[po.status]}>
+                      {po.status.replace(/_/g, " ")}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    <Badge tone={po.paymentStatus === "paid" ? "success" : "neutral"}>
+                      {po.paymentStatus.replace("_", " ")}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    <Button variant="ghost" size="sm" onClick={() => setDetailId(po._id)}>
+                      Open
+                    </Button>
+                  </Td>
+                </tr>
               ))}
-            </div>
-          </div>
+            </tbody>
+          </Table>
+        )}
+      </Card>
 
-          {/* Orders Table */}
-          <PurchaseOrderTable
-            filteredPOs={filteredPOs}
-            getSupplierName={getSupplierName}
-            onSelectPO={setSelectedPOId}
-            onEditDraft={openEditPO}
-            onDeleteDraft={handleDeletePO}
-            onSendDraft={(id) => handleTransitionStatus(id, "sent")}
-            onCancelPO={(id) => handleTransitionStatus(id, "cancelled")}
-          />
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        size="lg"
+        title="New Purchase Order"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submit} loading={busy}>
+              Create ({fmt(total)})
+            </Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Supplier" required>
+            <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+              <option value="">Select…</option>
+              {(suppliers ?? []).map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Receive into branch" required>
+            <Select
+              value={poBranch || branchId || ""}
+              onChange={(e) => setPoBranch(e.target.value)}
+            >
+              {branches.map((b) => (
+                <option key={b._id} value={b._id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
         </div>
-      </div>
 
-      {/* PO Form Modal */}
-      <PurchaseOrderModal
-        isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        editingPO={editingPO}
-        suppliers={suppliers || []}
-        ingredients={ingredients || []}
-        onSubmit={handleFormSubmit}
-        formItems={formItems}
-        setFormItems={setFormItems}
-      />
-
-      {/* PO Detail Inspector Drawer */}
-      {selectedPOId && poDetails && (
-        <PODetailDrawer
-          poDetails={poDetails}
-          onClose={() => setSelectedPOId(null)}
-          token={token}
-          onUpdatePaymentStatus={async (id, paymentStatus) => {
-            if (!token) return;
-            try {
-              await updatePOPaymentStatus({
-                token,
-                id: id as any,
-                paymentStatus: paymentStatus as any,
-              });
-              toast.success("Payment status updated");
-            } catch (err: any) {
-              toast.error(err.message || "Failed to update payment status");
+        <Field label="Add items">
+          <VariantPicker
+            onPick={(v) =>
+              setLines((p) =>
+                p.some((l) => l.variantId === v.variantId)
+                  ? p
+                  : [...p, { ...v, quantityOrdered: 1, unitCost: v.costPrice }]
+              )
             }
-          }}
-          onDeletePO={handleDeletePO}
-          onEditPO={(po) => {
-            setIsFormOpen(true);
-            openEditPO(po);
-            setSelectedPOId(null);
-          }}
-          onSendPO={(id) => handleTransitionStatus(id, "sent")}
-          onReceiveStockClick={(po) => {
-            setReceivingPO(po);
-          }}
-          onCancelPO={(id) => handleTransitionStatus(id, "cancelled")}
-        />
-      )}
+          />
+        </Field>
 
-      {/* Receive Stock Modal */}
-      {receivingPO && (
-        <POReceiveModal
-          receivingPO={receivingPO}
-          onClose={() => setReceivingPO(null)}
-          onSave={async (itemsToReceive) => {
-            if (!token) return;
-            toast.loading("Recording receipt...", { id: "rx-po" });
-            await receivePOItems({
-              token,
-              id: receivingPO._id,
-              items: itemsToReceive as any,
-            });
-            toast.success("Stock received successfully!", { id: "rx-po" });
-            setReceivingPO(null);
-            setSelectedPOId(null);
-          }}
-        />
+        {lines.length > 0 && (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Item</Th>
+                <Th className="text-right w-20">Qty</Th>
+                <Th className="text-right w-28">Unit cost</Th>
+                <Th className="text-right w-28">Line</Th>
+                <Th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={l.variantId}>
+                  <Td className="text-xs">{l.label}</Td>
+                  <Td>
+                    <input
+                      type="number"
+                      value={l.quantityOrdered}
+                      onChange={(e) =>
+                        setLines((p) =>
+                          p.map((x, j) =>
+                            j === i
+                              ? { ...x, quantityOrdered: Number(e.target.value) }
+                              : x
+                          )
+                        )
+                      }
+                      className="w-16 px-2 py-1 bg-surface-container-low border border-outline rounded-lg text-xs text-right"
+                    />
+                  </Td>
+                  <Td>
+                    <input
+                      type="number"
+                      value={l.unitCost}
+                      onChange={(e) =>
+                        setLines((p) =>
+                          p.map((x, j) =>
+                            j === i ? { ...x, unitCost: Number(e.target.value) } : x
+                          )
+                        )
+                      }
+                      className="w-20 px-2 py-1 bg-surface-container-low border border-outline rounded-lg text-xs text-right"
+                    />
+                  </Td>
+                  <Td className="text-right text-xs font-bold">
+                    {fmt(l.quantityOrdered * l.unitCost)}
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={() => setLines((p) => p.filter((_, j) => j !== i))}
+                      className="text-on-surface-variant hover:text-error"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <Field label="Notes">
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+      </Modal>
+
+      {detailId && (
+        <PODetail token={token} id={detailId} fmt={fmt} onClose={() => setDetailId(null)} />
       )}
     </PageLayout>
+  );
+}
+
+function PODetail({
+  token,
+  id,
+  fmt,
+  onClose,
+}: {
+  token: string;
+  id: Id<"purchaseOrders">;
+  fmt: (n: number) => string;
+  onClose: () => void;
+}) {
+  const po = useQuery(api.purchaseOrders.get, { id });
+  const updateStatus = useMutation(api.purchaseOrders.updateStatus);
+  const receiveItems = useMutation(api.purchaseOrders.receiveItems);
+  const updatePayment = useMutation(api.purchaseOrders.updatePaymentStatus);
+  const removePo = useMutation(api.purchaseOrders.remove);
+  const [receiving, setReceiving] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn: () => Promise<unknown>, msg: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      toast.success(msg);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doReceive = () => {
+    const items = Object.entries(receiving)
+      .map(([variantId, q]) => ({
+        productVariantId: variantId as Id<"productVariants">,
+        quantityReceived: Number(q) || 0,
+      }))
+      .filter((x) => x.quantityReceived > 0);
+    if (items.length === 0) return toast.error("Enter received quantities.");
+    run(() => receiveItems({ token, id, items }).then(() => setReceiving({})), "Stock received");
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={po ? `PO ${po.orderCode}` : "Purchase Order"}
+      subtitle={po ? `${po.supplierName}${po.branchName ? ` → ${po.branchName}` : ""}` : undefined}
+      footer={
+        po && (
+          <div className="flex flex-wrap gap-2">
+            {po.status === "draft" && (
+              <>
+                <Button
+                  variant="danger"
+                  loading={busy}
+                  onClick={() =>
+                    run(() => removePo({ token, id }).then(onClose), "Deleted")
+                  }
+                >
+                  Delete
+                </Button>
+                <Button
+                  loading={busy}
+                  onClick={() =>
+                    run(
+                      () => updateStatus({ token, id, status: "sent" }),
+                      "Marked as sent"
+                    )
+                  }
+                >
+                  Mark sent
+                </Button>
+              </>
+            )}
+            {(po.status === "sent" || po.status === "partially_received") && (
+              <Button loading={busy} onClick={doReceive}>
+                Receive entered qty
+              </Button>
+            )}
+            {po.paymentStatus !== "paid" && po.status !== "cancelled" && (
+              <Button
+                variant="secondary"
+                loading={busy}
+                onClick={() =>
+                  run(
+                    () => updatePayment({ token, id, paymentStatus: "paid" }),
+                    "Marked paid"
+                  )
+                }
+              >
+                Mark paid
+              </Button>
+            )}
+          </div>
+        )
+      }
+    >
+      {!po ? (
+        <Spinner />
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Item</Th>
+              <Th className="text-right">Ordered</Th>
+              <Th className="text-right">Received</Th>
+              <Th className="text-right">Unit cost</Th>
+              {(po.status === "sent" || po.status === "partially_received") && (
+                <Th className="text-right w-24">Receive</Th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {po.items.map((it) => (
+              <tr key={it._id}>
+                <Td className="text-xs">
+                  {it.productName} <span className="text-on-surface-variant">({it.variantLabel})</span>
+                </Td>
+                <Td className="text-right">{it.quantityOrdered}</Td>
+                <Td className="text-right font-bold">{it.quantityReceived}</Td>
+                <Td className="text-right">{fmt(it.unitCost)}</Td>
+                {(po.status === "sent" || po.status === "partially_received") && (
+                  <Td>
+                    <input
+                      type="number"
+                      value={
+                        it.productVariantId
+                          ? receiving[it.productVariantId] ?? ""
+                          : ""
+                      }
+                      onChange={(e) =>
+                        it.productVariantId &&
+                        setReceiving((p) => ({
+                          ...p,
+                          [it.productVariantId as string]: e.target.value,
+                        }))
+                      }
+                      placeholder={String(it.quantityOrdered - it.quantityReceived)}
+                      className="w-20 px-2 py-1 bg-surface-container-low border border-outline rounded-lg text-xs text-right"
+                    />
+                  </Td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Modal>
   );
 }

@@ -7,17 +7,18 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 export default function SeedPage() {
-  const seed = useMutation(api.seed.seed);
-  const [status, setStatus] = useState("Seeding database...");
+  const seed = useMutation(api.seedClothing.seed);
+  const [status, setStatus] = useState("Seeding catalog…");
   const router = useRouter();
 
   useEffect(() => {
-    seed()
-      .then(() => {
-        setStatus("Success! Redirecting...");
-        setTimeout(() => router.push("/pos"), 1500);
+    seed({ wipe: true })
+      .then((msg) => {
+        setStatus("Success! " + (typeof msg === "string" ? msg : ""));
+        setTimeout(() => router.push("/dashboard"), 1800);
       })
       .catch((e) => setStatus("Error: " + e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

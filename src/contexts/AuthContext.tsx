@@ -50,52 +50,91 @@ interface AuthContextValue {
 // PERMISSIONS
 // ─────────────────────────────────────────────
 
+// Mirrors convex/permissions.ts — the server is authoritative; this is only for
+// hiding navigation and guarding routes in the UI.
 export type Permission =
-  | "manage_users"
-  | "create_managers"
-  | "create_pos_sellers"
-  | "access_inventory"
-  | "access_kitchen"
-  | "access_reports"
-  | "access_analytics"
-  | "access_caixa"
-  | "access_pos"
-  | "access_customers"
-  | "access_dishes"
-  | "access_settings"
-  | "view_audit_logs"
-  | "delete_users";
+  | "products.view"
+  | "products.manage"
+  | "products.delete"
+  | "products.change_cost"
+  | "inventory.view"
+  | "inventory.adjust"
+  | "inventory.transfer"
+  | "purchasing.view"
+  | "purchasing.manage"
+  | "purchasing.receive"
+  | "suppliers.view"
+  | "suppliers.manage"
+  | "pos.use"
+  | "sales.view"
+  | "sales.cancel"
+  | "sales.discount"
+  | "sales.discount_large"
+  | "payments.modify"
+  | "returns.view"
+  | "returns.process"
+  | "returns.approve"
+  | "customers.view"
+  | "customers.manage"
+  | "customers.credit_grant"
+  | "cash_register.use"
+  | "cash_register.close"
+  | "cash_register.reports"
+  | "reports.view"
+  | "users.manage"
+  | "settings.manage"
+  | "audit.view";
+
+const MANAGER_PERMISSIONS: Permission[] = [
+  "products.view",
+  "products.manage",
+  "products.change_cost",
+  "inventory.view",
+  "inventory.adjust",
+  "inventory.transfer",
+  "purchasing.view",
+  "purchasing.manage",
+  "purchasing.receive",
+  "suppliers.view",
+  "suppliers.manage",
+  "pos.use",
+  "sales.view",
+  "sales.cancel",
+  "sales.discount",
+  "sales.discount_large",
+  "payments.modify",
+  "returns.view",
+  "returns.process",
+  "returns.approve",
+  "customers.view",
+  "customers.manage",
+  "customers.credit_grant",
+  "cash_register.use",
+  "cash_register.close",
+  "cash_register.reports",
+  "reports.view",
+  "audit.view",
+];
 
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
-    "manage_users",
-    "create_managers",
-    "create_pos_sellers",
-    "access_inventory",
-    "access_kitchen",
-    "access_reports",
-    "access_analytics",
-    "access_caixa",
-    "access_pos",
-    "access_customers",
-    "access_dishes",
-    "access_settings",
-    "view_audit_logs",
-    "delete_users",
+    ...MANAGER_PERMISSIONS,
+    "products.delete",
+    "users.manage",
+    "settings.manage",
   ],
-  manager: [
-    "create_pos_sellers",
-    "access_inventory",
-    "access_kitchen",
-    "access_reports",
-    "access_caixa",
-    "access_pos",
-    "access_customers",
-  ],
+  manager: MANAGER_PERMISSIONS,
   pos_seller: [
-    "access_pos",
-    "access_customers",
-    "access_caixa",
+    "products.view",
+    "inventory.view",
+    "pos.use",
+    "sales.view",
+    "sales.discount",
+    "returns.view",
+    "returns.process",
+    "customers.view",
+    "customers.manage",
+    "cash_register.use",
   ],
 };
 

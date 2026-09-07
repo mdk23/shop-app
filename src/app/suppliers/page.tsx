@@ -1,505 +1,286 @@
 "use client";
 
 import { useState } from "react";
-import { PageLayout } from "@/components/PageLayout";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { useAuth } from "@/contexts/AuthContext";
-import { cn } from "@/lib/utils";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { PageLayout } from "@/components/PageLayout";
 import {
-  Truck,
-  Plus,
-  Search,
-  Pencil,
-  Trash2,
-  X,
-  Save,
-  Phone,
-  Mail,
-  MapPin,
-  CreditCard,
-  User,
-  AlertCircle
-} from "lucide-react";
+  Card,
+  Button,
+  Field,
+  TextInput,
+  Textarea,
+  Select,
+  Modal,
+  Table,
+  Th,
+  Td,
+  Badge,
+  EmptyState,
+  Spinner,
+  Toolbar,
+  ConfirmDialog,
+  inputClass,
+} from "@/components/ui";
+import { useToken } from "@/lib/useShop";
 import { toast } from "sonner";
-import { Id } from "../../../convex/_generated/dataModel";
+import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+
+type Supplier = {
+  _id: Id<"suppliers">;
+  name: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  taxNumber?: string;
+  paymentTerms?: string;
+  notes?: string;
+  status: "active" | "inactive";
+};
 
 export default function SuppliersPage() {
-  const { token } = useAuth();
-  
-  // Queries & Mutations
-  const suppliers = useQuery(api.suppliers.list, {});
-  const ingredients = useQuery(api.ingredients.list);
-  const createSupplier = useMutation(api.suppliers.create);
-  const updateSupplier = useMutation(api.suppliers.update);
-  const removeSupplier = useMutation(api.suppliers.remove);
-
-  // Component States
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  
-  // Modal States
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<any>(null);
-  
-  // Form States
-  const [name, setName] = useState("");
-  const [contactName, setContactName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("");
-  const [status, setStatus] = useState<"active" | "inactive">("active");
-  const [suppliedIngredients, setSuppliedIngredients] = useState<string[]>([]);
-
-  const openAddModal = () => {
-    setEditingSupplier(null);
-    setName("");
-    setContactName("");
-    setPhone("");
-    setEmail("");
-    setAddress("");
-    setPaymentTerms("");
-    setStatus("active");
-    setSuppliedIngredients([]);
-    setIsModalOpen(true);
-  };
-
-  const openEditModal = (supplier: any) => {
-    setEditingSupplier(supplier);
-    setName(supplier.name);
-    setContactName(supplier.contactName || "");
-    setPhone(supplier.phone || "");
-    setEmail(supplier.email || "");
-    setAddress(supplier.address || "");
-    setPaymentTerms(supplier.paymentTerms || "");
-    setStatus(supplier.status);
-    setSuppliedIngredients(supplier.suppliedIngredients || []);
-    setIsModalOpen(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Supplier name is required");
-      return;
-    }
-    if (!token) {
-      toast.error("You must be logged in to modify suppliers");
-      return;
-    }
-
-    try {
-      if (editingSupplier) {
-        await updateSupplier({
-          token,
-          id: editingSupplier._id,
-          name,
-          contactName: contactName || undefined,
-          phone: phone || undefined,
-          email: email || undefined,
-          address: address || undefined,
-          paymentTerms: paymentTerms || undefined,
-          status,
-          suppliedIngredients: suppliedIngredients.map(id => id as any),
-        });
-        toast.success("Supplier updated successfully");
-      } else {
-        await createSupplier({
-          token,
-          name,
-          contactName: contactName || undefined,
-          phone: phone || undefined,
-          email: email || undefined,
-          address: address || undefined,
-          paymentTerms: paymentTerms || undefined,
-          status,
-          suppliedIngredients: suppliedIngredients.map(id => id as any),
-        });
-        toast.success("Supplier added successfully");
-      }
-      setIsModalOpen(false);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save supplier");
-    }
-  };
-
-  const handleDelete = (supplier: any) => {
-    if (!token) {
-      toast.error("You must be logged in to delete suppliers");
-      return;
-    }
-
-    toast.warning(`Delete supplier "${supplier.name}"?`, {
-      description: "This action cannot be undone.",
-      action: {
-        label: "Delete",
-        onClick: async () => {
-          try {
-            await removeSupplier({ token, id: supplier._id });
-            toast.success("Supplier deleted successfully");
-          } catch (err: any) {
-            toast.error(err.message || "Failed to delete supplier");
-          }
-        },
-      },
-      duration: 5000,
-    });
-  };
-
-  // Filter & Search Logic
-  const filteredSuppliers = (suppliers || []).filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (s.contactName && s.contactName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (s.phone && s.phone.includes(searchTerm));
-    
-    const matchesStatus = statusFilter === "all" || s.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
+  const token = useToken();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const rows = useQuery(api.suppliers.list, {
+    search: search || undefined,
+    status: (statusFilter || undefined) as "active" | "inactive" | undefined,
   });
+  const remove = useMutation(api.suppliers.remove);
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Supplier | null>(null);
+  const [deleting, setDeleting] = useState<Supplier | null>(null);
 
   return (
-    <PageLayout title="Suppliers" subtitle="Vendor & Supplier Directory">
-      <div className="space-y-12">
-        <div className="flex flex-row items-center justify-end gap-4">
-          <button
-            onClick={openAddModal}
-            className="bg-brand-gradient text-white border-4 border-black px-8 py-4 rounded-lg font-display text-2xl uppercase tracking-tighter shadow-hard hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 self-start lg:self-auto"
-          >
-            <Plus className="w-8 h-8" strokeWidth={3} />
-            Add New Supplier
-          </button>
+    <PageLayout title="Suppliers" subtitle="Purchasing · vendor directory">
+      <Toolbar>
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+          <input
+            className={`${inputClass} pl-9 w-56`}
+            placeholder="Search suppliers…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-32"
+        >
+          <option value="">Any status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </Select>
+        <div className="ml-auto" />
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setOpen(true);
+          }}
+        >
+          <Plus className="w-3.5 h-3.5" /> New Supplier
+        </Button>
+      </Toolbar>
 
-        {/* Directory Controls */}
-        <div className="bg-surface border-4 border-outline rounded-xl shadow-hard flex flex-col min-h-[500px]">
-          <div className="p-6 border-b-4 border-outline flex flex-col md:flex-row items-center gap-4 bg-surface-container-low/50">
-            {/* Search Input */}
-            <div className="relative flex-1 w-full max-w-md">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-on-surface-variant" />
-              <input
-                type="text"
-                placeholder="Search by name, contact, or phone..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-surface-container-high border-2 border-outline rounded-lg pl-12 pr-4 py-3 outline-none focus:border-primary transition-all font-black uppercase tracking-wider text-[10px] shadow-hard-sm"
-              />
-            </div>
-            
-            {/* Status Filters */}
-            <div className="flex border-2 border-outline rounded-lg overflow-hidden w-full md:w-auto shadow-hard-sm">
-              {(["all", "active", "inactive"] as const).map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => setStatusFilter(filter)}
-                  className={cn(
-                    "flex-1 md:flex-initial px-6 py-2.5 font-black uppercase text-[10px] tracking-wider transition-all",
-                    statusFilter === filter
-                      ? "bg-black text-white"
-                      : "bg-surface text-on-surface hover:bg-surface-container-high"
-                  )}
-                >
-                  {filter}
-                </button>
+      <Card>
+        {rows === undefined ? (
+          <Spinner />
+        ) : rows.length === 0 ? (
+          <EmptyState title="No suppliers" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Name</Th>
+                <Th>Contact</Th>
+                <Th>Phone</Th>
+                <Th>Terms</Th>
+                <Th>Status</Th>
+                <Th className="w-28" />
+              </tr>
+            </thead>
+            <tbody>
+              {(rows as Supplier[]).map((s) => (
+                <tr key={s._id} className="hover:bg-surface-container-low">
+                  <Td className="font-bold">{s.name}</Td>
+                  <Td className="text-on-surface-variant">{s.contactName ?? "—"}</Td>
+                  <Td>{s.phone ?? "—"}</Td>
+                  <Td className="text-on-surface-variant">{s.paymentTerms ?? "—"}</Td>
+                  <Td>
+                    <Badge tone={s.status === "active" ? "success" : "neutral"}>
+                      {s.status}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditing(s);
+                          setOpen(true);
+                        }}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleting(s)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </Td>
+                </tr>
               ))}
-            </div>
-          </div>
+            </tbody>
+          </Table>
+        )}
+      </Card>
 
-          {/* Supplier Grid */}
-          <div className="flex-1 p-6 overflow-auto">
-            {suppliers === undefined ? (
-              <div className="flex flex-col items-center justify-center py-24 text-on-surface-variant/40">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                <p className="mt-4 font-black uppercase tracking-wider text-[10px]">Loading Suppliers...</p>
-              </div>
-            ) : filteredSuppliers.length === 0 ? (
-              <div className="text-center py-24 text-on-surface-variant/40 font-black uppercase tracking-wider text-[10px]">
-                <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-35" />
-                No suppliers found in directory
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredSuppliers.map((supplier) => (
-                  <div
-                    key={supplier._id}
-                    className="bg-surface-container-low border-2 border-outline rounded-xl p-5 shadow-hard flex flex-col justify-between hover:translate-x-0.5 hover:translate-y-0.5 transition-all"
-                  >
-                    <div>
-                      {/* Name & Status */}
-                      <div className="flex justify-between items-start gap-4 mb-4">
-                        <div>
-                          <h3 className="font-display text-xl uppercase tracking-tight text-on-surface line-clamp-1">
-                            {supplier.name}
-                          </h3>
-                          {supplier.contactName && (
-                            <span className="text-[10px] font-black text-on-surface-variant/60 uppercase tracking-wider flex items-center gap-1.5 mt-0.5">
-                              <User className="w-3.5 h-3.5 text-primary" /> {supplier.contactName}
-                            </span>
-                          )}
-                        </div>
-                        <span
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest",
-                            supplier.status === "active"
-                              ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                              : "bg-error/10 text-error border border-error/20"
-                          )}
-                        >
-                          {supplier.status}
-                        </span>
-                      </div>
-
-                      {/* Details list */}
-                      <div className="space-y-2 border-t border-outline/50 pt-4 text-xs font-bold text-on-surface-variant">
-                        {supplier.phone && (
-                          <div className="flex items-center gap-2.5">
-                            <Phone className="w-4 h-4 text-on-surface-variant/60 flex-shrink-0" />
-                            <span>{supplier.phone}</span>
-                          </div>
-                        )}
-                        {supplier.email && (
-                          <div className="flex items-center gap-2.5">
-                            <Mail className="w-4 h-4 text-on-surface-variant/60 flex-shrink-0" />
-                            <span className="truncate">{supplier.email}</span>
-                          </div>
-                        )}
-                        {supplier.address && (
-                          <div className="flex items-start gap-2.5">
-                            <MapPin className="w-4 h-4 text-on-surface-variant/60 mt-0.5 flex-shrink-0" />
-                            <span className="line-clamp-2">{supplier.address}</span>
-                          </div>
-                        )}
-                        {supplier.paymentTerms && (
-                          <div className="flex items-center gap-2.5">
-                            <CreditCard className="w-4 h-4 text-on-surface-variant/60 flex-shrink-0" />
-                            <span>Terms: <strong className="text-on-surface uppercase">{supplier.paymentTerms}</strong></span>
-                          </div>
-                        )}
-                        {supplier.suppliedIngredients && supplier.suppliedIngredients.length > 0 && (
-                          <div className="flex items-start gap-2.5 pt-1">
-                            <Truck className="w-4 h-4 text-on-surface-variant/60 mt-0.5 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[10px] text-on-surface-variant/60 block uppercase">Supplies</span>
-                              <p className="text-on-surface uppercase text-[10px] tracking-wide truncate">
-                                {supplier.suppliedIngredients.map((id: string) => {
-                                  const ing = (ingredients || []).find((i) => i._id === id);
-                                  return ing ? ing.name : "";
-                                }).filter(Boolean).join(", ")}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex justify-end gap-3 mt-6 border-t border-outline/50 pt-4">
-                      <button
-                        onClick={() => openEditModal(supplier)}
-                        className="px-4 py-2 border-2 border-black rounded font-display text-sm uppercase tracking-tighter hover:bg-surface-container-high active:bg-surface-container-highest transition-all shadow-hard-sm"
-                      >
-                        <Pencil className="w-4 h-4 inline mr-1.5" /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(supplier)}
-                        className="px-4 py-2 bg-error/10 text-error border-2 border-black rounded font-display text-sm uppercase tracking-tighter hover:bg-error hover:text-white transition-all shadow-hard-sm"
-                      >
-                        <Trash2 className="w-4 h-4 inline mr-1.5" /> Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Modal - Add / Edit */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-surface w-full max-w-lg border-4 border-outline rounded-lg shadow-hard-lg flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-6 border-b-4 border-black bg-surface-container-low flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary text-on-primary rounded flex items-center justify-center">
-                  <Truck className="w-6 h-6" />
-                </div>
-                <h2 className="text-3xl font-display text-on-surface uppercase tracking-tighter">
-                  {editingSupplier ? "Edit Supplier" : "Add Supplier"}
-                </h2>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="w-10 h-10 flex items-center justify-center rounded bg-surface-container-highest text-on-surface hover:bg-error hover:text-white transition-colors shadow-hard border-2 border-outline"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleSubmit} className="p-8 space-y-5 overflow-y-auto max-h-[70vh]">
-              {/* Supplier Name */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                  Supplier Name *
-                </label>
-                <input
-                  required
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm"
-                  placeholder="e.g. Maputo Poultry Ltd"
-                />
-              </div>
-
-              {/* Contact Person */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                  Contact Person
-                </label>
-                <input
-                  type="text"
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm"
-                  placeholder="e.g. Carlos Tembe"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Phone */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm"
-                    placeholder="e.g. +258 84 123 4567"
-                  />
-                </div>
-
-                {/* Email */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm"
-                    placeholder="e.g. contact@maputopoultry.co.mz"
-                  />
-                </div>
-              </div>
-
-              {/* Address */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                  Address
-                </label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm"
-                  placeholder="e.g. Av. Moçambique, Maputo"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Payment Terms */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                    Payment Terms
-                  </label>
-                  <input
-                    type="text"
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
-                    className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-bold uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm"
-                    placeholder="e.g. Cash, Net 15"
-                  />
-                </div>
-
-                {/* Status */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                    Status
-                  </label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as any)}
-                    className="w-full bg-surface-container-low border-2 border-outline rounded px-4 py-3 text-on-surface font-black uppercase tracking-wider text-xs focus:border-primary outline-none transition-all shadow-hard-sm h-[46px]"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Supplied Ingredients Selection */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest block">
-                  Supplied Ingredients
-                </label>
-                <div className="bg-surface-container-low border-2 border-outline rounded-lg p-4 max-h-[150px] overflow-y-auto space-y-2 shadow-hard-sm">
-                  {ingredients === undefined ? (
-                    <p className="text-[10px] uppercase font-bold text-on-surface-variant/50">Loading ingredients...</p>
-                  ) : ingredients.length === 0 ? (
-                    <p className="text-[10px] uppercase font-bold text-on-surface-variant/50">No ingredients configured.</p>
-                  ) : (
-                    ingredients.map((ing) => {
-                      const isChecked = suppliedIngredients.includes(ing._id);
-                      return (
-                        <label key={ing._id} className="flex items-center gap-2 cursor-pointer text-xs font-bold uppercase select-none">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              if (isChecked) {
-                                setSuppliedIngredients(suppliedIngredients.filter((id) => id !== ing._id));
-                              } else {
-                                setSuppliedIngredients([...suppliedIngredients, ing._id]);
-                              }
-                            }}
-                            className="w-4 h-4 rounded border-2 border-outline text-primary focus:ring-primary cursor-pointer"
-                          />
-                          <span>{ing.name} ({ing.unit})</span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="flex justify-end gap-3 pt-6 border-t border-black mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-3 border-2 border-black rounded font-display text-base uppercase tracking-tighter hover:bg-surface-container-high active:bg-surface-container-highest transition-all shadow-hard-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-brand-gradient text-white border-2 border-black rounded font-display text-base uppercase tracking-tighter hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 shadow-hard-sm"
-                >
-                  <Save className="w-5 h-5" />
-                  Save Supplier
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {open && (
+        <SupplierModal
+          token={token}
+          existing={editing}
+          onClose={() => setOpen(false)}
+        />
       )}
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title="Delete supplier"
+        message={`Delete "${deleting?.name}"? This cannot be undone.`}
+        danger
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          if (!deleting) return;
+          try {
+            await remove({ token, id: deleting._id });
+            toast.success("Supplier deleted");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed");
+          }
+          setDeleting(null);
+        }}
+      />
     </PageLayout>
+  );
+}
+
+function SupplierModal({
+  token,
+  existing,
+  onClose,
+}: {
+  token: string;
+  existing: Supplier | null;
+  onClose: () => void;
+}) {
+  const create = useMutation(api.suppliers.create);
+  const update = useMutation(api.suppliers.update);
+  const [f, setF] = useState({
+    name: existing?.name ?? "",
+    contactName: existing?.contactName ?? "",
+    phone: existing?.phone ?? "",
+    email: existing?.email ?? "",
+    address: existing?.address ?? "",
+    taxNumber: existing?.taxNumber ?? "",
+    paymentTerms: existing?.paymentTerms ?? "",
+    notes: existing?.notes ?? "",
+    status: existing?.status ?? "active",
+  });
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  const save = async () => {
+    if (!f.name.trim()) return toast.error("Name is required.");
+    setBusy(true);
+    try {
+      const payload = {
+        token,
+        name: f.name,
+        contactName: f.contactName || undefined,
+        phone: f.phone || undefined,
+        email: f.email || undefined,
+        address: f.address || undefined,
+        taxNumber: f.taxNumber || undefined,
+        paymentTerms: f.paymentTerms || undefined,
+        notes: f.notes || undefined,
+        status: f.status as "active" | "inactive",
+      };
+      if (existing) await update({ ...payload, id: existing._id });
+      else await create(payload);
+      toast.success("Saved");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={existing ? "Edit Supplier" : "New Supplier"}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Name" required>
+        <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Contact person">
+          <TextInput value={f.contactName} onChange={(e) => set("contactName", e.target.value)} />
+        </Field>
+        <Field label="Phone">
+          <TextInput value={f.phone} onChange={(e) => set("phone", e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Email">
+          <TextInput value={f.email} onChange={(e) => set("email", e.target.value)} />
+        </Field>
+        <Field label="Tax number">
+          <TextInput value={f.taxNumber} onChange={(e) => set("taxNumber", e.target.value)} />
+        </Field>
+      </div>
+      <Field label="Address">
+        <TextInput value={f.address} onChange={(e) => set("address", e.target.value)} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Payment terms">
+          <TextInput
+            value={f.paymentTerms}
+            onChange={(e) => set("paymentTerms", e.target.value)}
+            placeholder="e.g. Net 30"
+          />
+        </Field>
+        <Field label="Status">
+          <Select value={f.status} onChange={(e) => set("status", e.target.value)}>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </Select>
+        </Field>
+      </div>
+      <Field label="Notes">
+        <Textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} />
+      </Field>
+    </Modal>
   );
 }

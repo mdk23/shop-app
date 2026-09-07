@@ -1,528 +1,391 @@
 "use client";
 
-import React, { useState } from "react";
-import { PageLayout } from "@/components/PageLayout";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { formatCurrency } from "@/lib/utils";
-import { format, startOfDay, endOfDay, subDays } from "date-fns";
-import ManagePaymentsModal from "@/components/pos/ManagePaymentsModal";
-import { Download } from "lucide-react";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { PageLayout } from "@/components/PageLayout";
+import {
+  Card,
+  Button,
+  Select,
+  Modal,
+  Table,
+  Th,
+  Td,
+  Badge,
+  EmptyState,
+  Spinner,
+  Toolbar,
+  StatCard,
+  Field,
+  TextInput,
+  ConfirmDialog,
+  inputClass,
+} from "@/components/ui";
+import { ReceiptModal } from "@/components/pos/ReceiptModal";
+import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { toast } from "sonner";
+import { Search, Download } from "lucide-react";
 
-// New modular components
-import { SalesMetrics } from "@/components/sales/SalesMetrics";
-import { SalesFilterBar } from "@/components/sales/SalesFilterBar";
-import { SalesTrendChart } from "@/components/sales/SalesTrendChart";
-import { CategorySalesChart } from "@/components/sales/CategorySalesChart";
-import { PaymentSplitChart } from "@/components/sales/PaymentSplitChart";
-import { TopDishesList } from "@/components/sales/TopDishesList";
-import { PeakHoursList } from "@/components/sales/PeakHoursList";
-import { SalesTable } from "@/components/sales/SalesTable";
-import { CancelOrderModal } from "@/components/sales/CancelOrderModal";
+const RANGES = [
+  { key: "today", label: "Today" },
+  { key: "7", label: "Last 7 days" },
+  { key: "30", label: "Last 30 days" },
+  { key: "90", label: "Last 90 days" },
+];
 
-import { useBranch } from "@/contexts/BranchContext";
+const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error"> = {
+  COMPLETED: "success",
+  PARTIALLY_PAID: "warning",
+  PENDING: "info",
+  CANCELLED: "neutral",
+  REFUNDED: "error",
+  PARTIALLY_REFUNDED: "error",
+};
 
 export default function SalesPage() {
-  const { selectedBranchId } = useBranch();
-  const [dateRange, setDateRange] = useState({
-    start: startOfDay(new Date()).getTime(),
-    end: endOfDay(new Date()).getTime(),
-    label: "Today",
+  const fmt = useCurrency();
+  const token = useToken();
+  const { branchId, isAll } = useResolvedBranch();
+  const [range, setRange] = useState("30");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [detailId, setDetailId] = useState<Id<"sales"> | null>(null);
+
+  const { start, end } = useMemo(() => {
+    const now = Date.now();
+    if (range === "today") {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return { start: d.getTime(), end: now };
+    }
+    return { start: now - Number(range) * 86400000, end: now };
+  }, [range]);
+
+  const sales = useQuery(api.sales.listByRange, {
+    start,
+    end,
+    branchId: isAll ? undefined : branchId,
   });
 
-  // Queries
-  const orders = useQuery(api.orders.listByRange, {
-    start: dateRange.start,
-    end: dateRange.end,
-    branchId: selectedBranchId,
-  });
-  const dishes = useQuery(api.dishes.list);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return (sales ?? []).filter(
+      (s) =>
+        (!statusFilter || s.status === statusFilter) &&
+        (!term ||
+          s.saleNumber.toLowerCase().includes(term) ||
+          (s.customerName ?? "").toLowerCase().includes(term))
+    );
+  }, [sales, statusFilter, search]);
 
-  // Mutations
-  const removeOrder = useMutation(api.orders.remove);
-
-  // Search & Filters State
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | "Completed" | "Pending" | "Cancelled">("All");
-  const [methodFilter, setMethodFilter] = useState<string>("All");
-  const [fulfillmentFilter, setFulfillmentFilter] = useState<"All" | "Pickup" | "Delivery">("All");
-  const [sellerFilter, setSellerFilter] = useState<string>("All");
-  const [orderToDelete, setOrderToDelete] = useState<any>(null);
-  const [orderToManagePayments, setOrderToManagePayments] = useState<any>(null);
-
-  // Sorting State
-  const [sortField, setSortField] = useState<"refCode" | "client" | "method" | "status" | "delivery" | null>(null);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-
-  // Pagination
-  const ROWS_PER_PAGE = 10;
-  const [currentPage, setCurrentPage] = useState(1);
-
-  // Interactive Chart Mode
-  const [chartMode, setChartMode] = useState<"revenue" | "orders" | "aov">("revenue");
-
-  // Dynamic list of sellers in the active orders
-  const uniqueSellers = React.useMemo(() => {
-    if (!orders) return [];
-    const sellersSet = new Set<string>();
-    orders.forEach((o) => {
-      if (o.username) {
-        sellersSet.add(o.username);
-      }
-    });
-    return Array.from(sellersSet).sort();
-  }, [orders]);
-
-  // Reset to page 1 whenever filters or sorting change
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, statusFilter, methodFilter, fulfillmentFilter, sellerFilter, dateRange, sortField, sortOrder]);
-
-  const handleSort = (field: "refCode" | "client" | "method" | "status" | "delivery") => {
-    if (sortField === field) {
-      if (sortOrder === "asc") {
-        setSortOrder("desc");
-      } else {
-        setSortField(null);
-      }
-    } else {
-      setSortField(field);
-      setSortOrder("asc");
-    }
-  };
-
-  // Map dishes to categories for category analytics
-  const dishCategoryMap = React.useMemo(() => {
-    const map: Record<string, string> = {};
-    if (dishes) {
-      dishes.forEach((d) => {
-        map[d._id] = d.category || "Chicken";
-      });
-    }
-    return map;
-  }, [dishes]);
-
-  // Filters calculation
-  const filteredOrders = React.useMemo(() => {
-    if (!orders) return [];
-    const filtered = orders.filter((order) => {
-      const searchString = searchTerm.toLowerCase();
-      const orderCodeMatch = (order.orderCode ?? "").toLowerCase().includes(searchString);
-      const orderIdMatch = order._id.toLowerCase().includes(searchString);
-      const customerMatch = (order as any).customer?.name.toLowerCase().includes(searchString);
-      const itemMatch = order.items.some((item: any) =>
-        item.dishName.toLowerCase().includes(searchString)
-      );
-      const matchesSearch = orderCodeMatch || orderIdMatch || itemMatch || customerMatch;
-
-      let matchesStatus = true;
-      if (statusFilter === "Completed") {
-        matchesStatus = order.status === "Paid";
-      } else if (statusFilter === "Pending") {
-        matchesStatus = order.status === "Pending" || order.status === "Partially Paid";
-      } else if (statusFilter === "Cancelled") {
-        matchesStatus = order.status === "Cancelled";
-      }
-
-      let matchesMethod = true;
-      if (methodFilter !== "All") {
-        const primaryMatch = order.paymentMethod === methodFilter;
-        const splitMatch = order.payments?.some((p: any) => p.method === methodFilter);
-        matchesMethod = primaryMatch || splitMatch;
-      }
-
-      let matchesFulfillment = true;
-      if (fulfillmentFilter === "Pickup") {
-        matchesFulfillment = order.orderType === "pickup" || !order.orderType;
-      } else if (fulfillmentFilter === "Delivery") {
-        matchesFulfillment = order.orderType === "delivery";
-      }
-
-      let matchesSeller = true;
-      if (sellerFilter !== "All") {
-        matchesSeller = order.username === sellerFilter;
-      }
-
-      return matchesSearch && matchesStatus && matchesMethod && matchesFulfillment && matchesSeller;
-    });
-
-    if (!sortField) return filtered;
-
-    return [...filtered].sort((a, b) => {
-      let aVal = "";
-      let bVal = "";
-
-      if (sortField === "refCode") {
-        aVal = a.orderCode ?? `#${a._id.slice(-6).toUpperCase()}`;
-        bVal = b.orderCode ?? `#${b._id.slice(-6).toUpperCase()}`;
-      } else if (sortField === "client") {
-        aVal = (a as any).customer?.name || "Generic Client";
-        bVal = (b as any).customer?.name || "Generic Client";
-      } else if (sortField === "method") {
-        if (a.payments && a.payments.length > 0) {
-          aVal = a.payments.map((p: any) => p.method).join(" + ");
-        } else {
-          aVal = a.paymentMethod || "Cash";
-        }
-        if (b.payments && b.payments.length > 0) {
-          bVal = b.payments.map((p: any) => p.method).join(" + ");
-        } else {
-          bVal = b.paymentMethod || "Cash";
-        }
-      } else if (sortField === "status") {
-        aVal = a.status;
-        bVal = b.status;
-      } else if (sortField === "delivery") {
-        aVal = a.orderType === "delivery" ? "delivery" : "pickup";
-        bVal = b.orderType === "delivery" ? "delivery" : "pickup";
-      }
-
-      const comparison = aVal.localeCompare(bVal);
-      return sortOrder === "asc" ? comparison : -comparison;
-    });
-  }, [orders, searchTerm, statusFilter, methodFilter, fulfillmentFilter, sellerFilter, sortField, sortOrder]);
-
-  // Aggregate stats based on active orders
-  const metrics = React.useMemo(() => {
-    if (!orders) {
-      return {
-        totalSales: 0,
-        totalCollected: 0,
-        count: 0,
-        paymentData: [],
-        topDishes: [],
-        categorySales: [],
-        peakHours: [],
-        deliveryRevenue: 0,
-        deliveryOrdersCount: 0,
-        pickupOrdersCount: 0,
-        averageDeliveryFee: 0,
-        deliveryRevenuePercentage: 0,
-      };
-    }
-
-    const activeOrders = orders.filter((o) => o.status !== "Cancelled");
-
-    const totalSales = activeOrders.reduce((acc, o) => acc + o.total, 0);
-    const totalCollected = activeOrders.reduce((acc, o) => {
-      const payments = (o as any).payments || [];
-      if (payments.length > 0) {
-        return acc + payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      }
-      return acc + o.amountPaid;
-    }, 0);
-
-    // Payment methods map
-    const paymentMap: Record<string, number> = {};
-    // Stock mapping
-    const dishMap: Record<string, number> = {};
-    // Category mapping
-    const categoryMap: Record<string, number> = {};
-    // Peak hours mapping
-    const hourSlots = {
-      "Breakfast (08-12h)": 0,
-      "Lunch (12-15h)": 0,
-      "Afternoon (15-18h)": 0,
-      "Dinner (18-22h)": 0,
-      "Night (22-08h)": 0,
-    };
-
-    activeOrders.forEach((o) => {
-      // Payments split
-      const payments = (o as any).payments || [];
-      if (payments.length > 0) {
-        payments.forEach((p: any) => {
-          const method = p.method || "Cash";
-          paymentMap[method] = (paymentMap[method] || 0) + p.amount;
-        });
-      } else {
-        const method = o.paymentMethod || "Cash";
-        paymentMap[method] = (paymentMap[method] || 0) + o.amountPaid;
-      }
-
-      // Dish count
-      o.items.forEach((item: any) => {
-        dishMap[item.dishName] = (dishMap[item.dishName] || 0) + item.quantity;
-
-        // Categories sold mapping
-        const cat = dishCategoryMap[item.dishId] || "Chicken";
-        categoryMap[cat] = (categoryMap[cat] || 0) + item.quantity;
-      });
-
-      // Hour grouping
-      const hour = new Date(o.createdAt).getHours();
-      if (hour >= 8 && hour < 12) hourSlots["Breakfast (08-12h)"] += 1;
-      else if (hour >= 12 && hour < 15) hourSlots["Lunch (12-15h)"] += 1;
-      else if (hour >= 15 && hour < 18) hourSlots["Afternoon (15-18h)"] += 1;
-      else if (hour >= 18 && hour < 22) hourSlots["Dinner (18-22h)"] += 1;
-      else hourSlots["Night (22-08h)"] += 1;
-    });
-
-    const paymentData = Object.entries(paymentMap).map(([name, value]) => ({ name, value }));
-
-    const topDishes = Object.entries(dishMap)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-
-    const categorySales = Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
-
-    const peakHours = Object.entries(hourSlots).map(([name, count]) => ({
-      name,
-      count,
-    }));
-
-    const deliveryOrders = activeOrders.filter((o) => o.orderType === "delivery");
-    const deliveryRevenue = deliveryOrders.reduce((acc, o) => acc + (o.deliveryFeeAmount ?? 0), 0);
-    const deliveryOrdersCount = deliveryOrders.length;
-    const pickupOrdersCount = activeOrders.filter((o) => o.orderType === "pickup" || !o.orderType).length;
-    const averageDeliveryFee = deliveryOrdersCount > 0 ? deliveryRevenue / deliveryOrdersCount : 0;
-    const deliveryRevenuePercentage = totalSales > 0 ? (deliveryRevenue / totalSales) * 100 : 0;
-
+  const totals = useMemo(() => {
+    const active = filtered.filter((s) => s.status !== "CANCELLED");
     return {
-      totalSales,
-      totalCollected,
-      count: activeOrders.length,
-      paymentData,
-      topDishes,
-      categorySales,
-      peakHours,
-      deliveryRevenue,
-      deliveryOrdersCount,
-      pickupOrdersCount,
-      averageDeliveryFee,
-      deliveryRevenuePercentage,
+      count: active.length,
+      revenue: active.reduce((a, s) => a + s.total, 0),
+      collected: active.reduce((a, s) => a + s.paidAmount, 0),
+      outstanding: active.reduce((a, s) => a + s.balance, 0),
     };
-  }, [orders, dishCategoryMap]);
+  }, [filtered]);
 
-  // Aggregation of trend chart data dynamically based on date range
-  const trendData = React.useMemo(() => {
-    if (!orders) return [];
-
-    const activeOrders = orders.filter((o) => o.status !== "Cancelled");
-    const isSingleDay = dateRange.end - dateRange.start <= 86400000;
-    const groups: Record<string, { revenue: number; count: number }> = {};
-
-    activeOrders.forEach((o) => {
-      const date = new Date(o.createdAt);
-      const key = isSingleDay ? format(date, "HH:00") : format(date, "MMM dd");
-      if (!groups[key]) {
-        groups[key] = { revenue: 0, count: 0 };
-      }
-      groups[key].revenue += o.total;
-      groups[key].count += 1;
-    });
-
-    const list = Object.entries(groups).map(([label, val]) => ({
-      label,
-      Revenue: val.revenue,
-      Orders: val.count,
-      AOV: val.count > 0 ? Math.round(val.revenue / val.count) : 0,
-    }));
-
-    // Sort appropriately
-    if (isSingleDay) {
-      return list.sort((a, b) => a.label.localeCompare(b.label));
-    }
-    return list.reverse();
-  }, [orders, dateRange]);
-
-  const hasFiltersActive =
-    searchTerm !== "" ||
-    statusFilter !== "All" ||
-    methodFilter !== "All" ||
-    fulfillmentFilter !== "All" ||
-    sellerFilter !== "All" ||
-    dateRange.label !== "Today" ||
-    sortField !== null;
-
-  const handleResetFilters = () => {
-    setSearchTerm("");
-    setStatusFilter("All");
-    setMethodFilter("All");
-    setFulfillmentFilter("All");
-    setSellerFilter("All");
-    setSortField(null);
-    setSortOrder("asc");
-    setDateRange({
-      start: startOfDay(new Date()).getTime(),
-      end: endOfDay(new Date()).getTime(),
-      label: "Today",
-    });
-  };
-
-  const exportToCSV = () => {
-    if (!filteredOrders || filteredOrders.length === 0) return;
-
-    const headers = [
-      "Order Code",
-      "Date",
-      "Time",
-      "Customer",
-      "Items",
-      "Payment Method(s)",
-      "Payment Breakdown",
-      "Status",
-      "Gross Total",
-      "Amount Paid",
-    ];
-
-    const rows = filteredOrders.map((o) => {
-      const orderCode = o.orderCode ?? `#${o._id.slice(-6)}`;
-      const dateStr = format(o.createdAt, "yyyy-MM-dd");
-      const timeStr = format(o.createdAt, "HH:mm");
-      const customerName = (o as any).customer?.name || "Generic Client";
-
-      const itemsList = o.items.map((item: any) => `${item.dishName} (x${item.quantity})`).join(", ");
-
-      const methods =
-        o.payments && o.payments.length > 0
-          ? o.payments.map((p: any) => p.method).join(" + ")
-          : o.paymentMethod || "Cash";
-
-      const breakdown =
-        o.payments && o.payments.length > 0
-          ? o.payments.map((p: any) => `${p.method}: $${p.amount.toFixed(2)}`).join(" | ")
-          : `Paid: $${o.amountPaid.toFixed(2)}`;
-
-      return [
-        orderCode,
-        dateStr,
-        timeStr,
-        customerName,
-        itemsList,
-        methods,
-        breakdown,
-        o.status,
-        o.total.toFixed(2),
-        o.amountPaid.toFixed(2),
-      ];
-    });
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) =>
-        row
-          .map((val) => {
-            const str = String(val ?? "");
-            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-              return `"${str.replace(/"/g, '""')}"`;
-            }
-            return str;
-          })
-          .join(",")
-      ),
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `sales_export_${format(new Date(), "yyyyMMdd_HHmmss")}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const exportCsv = () => {
+    const header = "sale,date,customer,status,subtotal,discount,tax,total,paid,balance";
+    const body = filtered
+      .map((s) =>
+        [
+          s.saleNumber,
+          new Date(s.createdAt).toISOString(),
+          (s.customerName ?? "").replace(/,/g, " "),
+          s.status,
+          s.subtotal,
+          s.discount,
+          s.tax,
+          s.total,
+          s.paidAmount,
+          s.balance,
+        ].join(",")
+      )
+      .join("\n");
+    const blob = new Blob([`${header}\n${body}`], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `sales-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
   };
 
   return (
-    <PageLayout 
-      title="Sales Dashboard" 
-      subtitle="Complete Sales Analytics & Workspace" 
-      isFullWidth={true}
-    >
-      <div className="space-y-6 pb-12">
-        {/* Header Actions */}
-        <div className="flex justify-end items-center gap-4">
-          <button
-            onClick={exportToCSV}
-            disabled={!filteredOrders || filteredOrders.length === 0}
-            className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-primary text-on-primary border-2 border-outline rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-secondary active:scale-95 transition-all disabled:opacity-50 shadow-hard cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            Export Reports
-          </button>
-        </div>
-
-        {/* Top KPI & Delivery Metrics */}
-        <SalesMetrics metrics={metrics} />
-
-        {/* Sticky Filters Ribbon */}
-        <SalesFilterBar
-          statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          methodFilter={methodFilter}
-          setMethodFilter={setMethodFilter}
-          fulfillmentFilter={fulfillmentFilter}
-          setFulfillmentFilter={setFulfillmentFilter}
-          sellerFilter={sellerFilter}
-          setSellerFilter={setSellerFilter}
-          uniqueSellers={uniqueSellers}
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-          onReset={handleResetFilters}
-          hasFiltersActive={hasFiltersActive}
-        />
-
-        {/* Main Section Grid: LEFT (70%), RIGHT (30%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-stretch">
-          {/* LEFT COLUMN: Charts (70% width on large screens) */}
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            <SalesTrendChart
-              trendData={trendData}
-              chartMode={chartMode}
-              setChartMode={setChartMode}
-            />
-
-            <CategorySalesChart categorySales={metrics.categorySales} />
-          </div>
-
-          {/* RIGHT COLUMN: Sidebar (30% width on large screens) */}
-          <div className="lg:col-span-1 space-y-6">
-            <PaymentSplitChart paymentData={metrics.paymentData} />
-
-            <TopDishesList topDishes={metrics.topDishes} />
-
-            <PeakHoursList peakHours={metrics.peakHours} />
-          </div>
-        </div>
-
-        {/* BOTTOM SECTION: Full Sales Table */}
-        <SalesTable
-          filteredOrders={filteredOrders}
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-          ROWS_PER_PAGE={ROWS_PER_PAGE}
-          sortField={sortField}
-          sortOrder={sortOrder}
-          handleSort={handleSort}
-          onDeleteOrder={setOrderToDelete}
-          onManagePayments={setOrderToManagePayments}
+    <PageLayout title="Sales" subtitle="Transactions & receivables">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard label="Sales" value={totals.count} />
+        <StatCard label="Revenue" value={fmt(totals.revenue)} />
+        <StatCard label="Collected" value={fmt(totals.collected)} accent="success" />
+        <StatCard
+          label="Outstanding"
+          value={fmt(totals.outstanding)}
+          accent={totals.outstanding > 0 ? "error" : "primary"}
         />
       </div>
 
-      {/* Manage Payments Modal */}
-      {orderToManagePayments && (
-        <ManagePaymentsModal
-          order={orderToManagePayments}
-          onClose={() => setOrderToManagePayments(null)}
-        />
-      )}
+      <Toolbar>
+        <Select value={range} onChange={(e) => setRange(e.target.value)} className="w-36">
+          {RANGES.map((r) => (
+            <option key={r.key} value={r.key}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-44"
+        >
+          <option value="">All statuses</option>
+          {Object.keys(STATUS_TONE).map((s) => (
+            <option key={s} value={s}>
+              {s.replace(/_/g, " ")}
+            </option>
+          ))}
+        </Select>
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+          <input
+            className={`${inputClass} pl-9 w-52`}
+            placeholder="Sale # or customer"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="ml-auto" />
+        <Button variant="secondary" onClick={exportCsv} disabled={filtered.length === 0}>
+          <Download className="w-3.5 h-3.5" /> CSV
+        </Button>
+      </Toolbar>
 
-      {/* Cancel Order Modal */}
-      {orderToDelete && (
-        <CancelOrderModal
-          orderToDelete={orderToDelete}
-          onClose={() => setOrderToDelete(null)}
-          onConfirm={async () => {
-            await removeOrder({ id: orderToDelete._id });
-            toast.success("Transaction cancelled and inventory restored!");
-            setOrderToDelete(null);
-          }}
-        />
+      <Card>
+        {sales === undefined ? (
+          <Spinner />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No sales in range" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Sale</Th>
+                <Th>Date</Th>
+                <Th>Customer</Th>
+                <Th className="text-right">Total</Th>
+                <Th className="text-right">Balance</Th>
+                <Th>Status</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => (
+                <tr
+                  key={s._id}
+                  className="hover:bg-surface-container-low cursor-pointer"
+                  onClick={() => setDetailId(s._id)}
+                >
+                  <Td className="font-mono text-[11px] font-bold">{s.saleNumber}</Td>
+                  <Td className="text-on-surface-variant text-xs">
+                    {new Date(s.createdAt).toLocaleString()}
+                  </Td>
+                  <Td>{s.customerName ?? "Walk-in"}</Td>
+                  <Td className="text-right font-bold">{fmt(s.total)}</Td>
+                  <Td className={`text-right ${s.balance > 0 ? "text-error font-bold" : ""}`}>
+                    {fmt(s.balance)}
+                  </Td>
+                  <Td>
+                    <Badge tone={STATUS_TONE[s.status]}>{s.status.replace(/_/g, " ")}</Badge>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {detailId && (
+        <SaleDetail token={token} id={detailId} fmt={fmt} onClose={() => setDetailId(null)} />
       )}
     </PageLayout>
+  );
+}
+
+function SaleDetail({
+  token,
+  id,
+  fmt,
+  onClose,
+}: {
+  token: string;
+  id: Id<"sales">;
+  fmt: (n: number) => string;
+  onClose: () => void;
+}) {
+  const sale = useQuery(api.sales.get, { id });
+  const addPayment = useMutation(api.payments.add);
+  const cancelSale = useMutation(api.sales.cancel);
+  const [method, setMethod] = useState("Cash");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
+
+  const pay = async () => {
+    if (!amount || Number(amount) <= 0) return toast.error("Enter an amount.");
+    setBusy(true);
+    try {
+      await addPayment({ token, saleId: id, method, amount: Number(amount) });
+      toast.success("Payment recorded");
+      setAmount("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        size="lg"
+        title={sale ? `Sale ${sale.saleNumber}` : "Sale"}
+        subtitle={sale ? `${sale.customerName ?? "Walk-in"} · ${new Date(sale.createdAt).toLocaleString()}` : undefined}
+        footer={
+          sale && (
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => setShowReceipt(true)}>
+                Receipt
+              </Button>
+              {sale.status !== "CANCELLED" &&
+                sale.status !== "REFUNDED" &&
+                sale.status !== "PARTIALLY_REFUNDED" && (
+                  <Button variant="danger" onClick={() => setConfirmCancel(true)}>
+                    Cancel sale
+                  </Button>
+                )}
+            </div>
+          )
+        }
+      >
+        {!sale ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-outline divide-y divide-outline/30">
+              {sale.items.map((it) => (
+                <div key={it._id} className="flex justify-between px-3 py-2 text-xs">
+                  <span>
+                    {it.quantity}× {it.productName}{" "}
+                    <span className="text-on-surface-variant">({it.variantLabel})</span>
+                  </span>
+                  <span className="font-bold">{fmt(it.total)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+              <Line label="Subtotal" value={fmt(sale.subtotal)} />
+              <Line label="Discount" value={fmt(sale.discount)} />
+              <Line label="Tax" value={fmt(sale.tax)} />
+              <Line label="Total" value={fmt(sale.total)} bold />
+              <Line label="Paid" value={fmt(sale.paidAmount)} />
+              <Line label="Balance" value={fmt(sale.balance)} bold />
+            </div>
+
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
+                Payments
+              </p>
+              <div className="rounded-xl border border-outline divide-y divide-outline/30">
+                {sale.payments.map((p) => (
+                  <div key={p._id} className="flex justify-between px-3 py-2 text-xs">
+                    <span>
+                      {p.kind === "refund" ? "Refund · " : ""}
+                      {p.method}
+                    </span>
+                    <span className={p.amount < 0 ? "text-error font-bold" : "font-bold"}>
+                      {fmt(p.amount)}
+                    </span>
+                  </div>
+                ))}
+                {sale.payments.length === 0 && (
+                  <p className="px-3 py-2 text-xs text-on-surface-variant">No payments</p>
+                )}
+              </div>
+            </div>
+
+            {sale.balance > 0 && sale.status !== "CANCELLED" && (
+              <Card className="p-3 bg-surface-container-low">
+                <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
+                  Collect payment
+                </p>
+                <div className="flex items-end gap-2">
+                  <Field label="Method">
+                    <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+                      {["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"].map((m) => (
+                        <option key={m}>{m}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Amount">
+                    <TextInput
+                      type="number"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="w-28"
+                    />
+                  </Field>
+                  <Button onClick={pay} loading={busy}>
+                    Record
+                  </Button>
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmCancel}
+        onClose={() => setConfirmCancel(false)}
+        title="Cancel sale"
+        message="This reverses stock and refunds any cash taken. The sale record is kept for audit."
+        danger
+        confirmLabel="Cancel sale"
+        onConfirm={async () => {
+          try {
+            await cancelSale({ token, saleId: id, reason: "Cancelled from sales screen" });
+            toast.success("Sale cancelled");
+            setConfirmCancel(false);
+            onClose();
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed");
+          }
+        }}
+      />
+
+      {showReceipt && <ReceiptModal saleId={id} onClose={() => setShowReceipt(false)} />}
+    </>
+  );
+}
+
+function Line({
+  label,
+  value,
+  bold,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-on-surface-variant uppercase tracking-wider">{label}</span>
+      <span className={bold ? "font-black" : "font-bold"}>{value}</span>
+    </div>
   );
 }

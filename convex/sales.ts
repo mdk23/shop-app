@@ -323,7 +323,7 @@ export async function performSale(
         .filter((p) => isCash(p.method))
         .reduce((s, p) => s + p.amount, 0);
       if (cashTotal > 0) {
-        await ctx.runMutation(internal.caixa.recordCashSale, {
+        await ctx.runMutation(internal.cashRegister.recordCashSale, {
           sessionId: session._id,
           userId: actor._id,
           username: actor.username,

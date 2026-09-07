@@ -227,7 +227,7 @@ export const create = mutation({
         createdAt: now,
       });
       if (args.refundMethod === "CASH" && session) {
-        await ctx.runMutation(internal.caixa.recordCashRefund, {
+        await ctx.runMutation(internal.cashRegister.recordCashRefund, {
           sessionId: session._id,
           userId: actor._id,
           username: actor.username,
