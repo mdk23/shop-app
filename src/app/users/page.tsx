@@ -1,348 +1,438 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useMutation, useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
 import { AuthGuard } from "@/components/AuthGuard";
-import { useAuth } from "@/contexts/AuthContext";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../convex/_generated/api";
-import { Id } from "../../../convex/_generated/dataModel";
-import { toast } from "sonner";
-import { motion } from "framer-motion";
+import { useAuth, UserRole } from "@/contexts/AuthContext";
 import {
-  Plus,
-  UserCheck,
-  UserX,
-  Search,
-  Users as UsersIcon,
-  Trash2,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+  Card,
+  Button,
+  Field,
+  Select,
+  TextInput,
+  Modal,
+  Table,
+  Th,
+  Td,
+  Badge,
+  EmptyState,
+  Spinner,
+  Toolbar,
+  StatCard,
+  ConfirmDialog,
+  inputClass,
+} from "@/components/ui";
+import { useToken } from "@/lib/useShop";
+import { toast } from "sonner";
+import { Plus, Search, Pencil, KeyRound } from "lucide-react";
 
-// Extracted Sub-components
-import { Role, ROLE_CONFIG, LoadingSpinner } from "@/components/users/Shared";
-import { UserFormModal } from "@/components/users/UserFormModal";
-import { ResetPasswordModal } from "@/components/users/ResetPasswordModal";
-import { ActivityModal } from "@/components/users/ActivityModal";
-import { UserTable } from "@/components/users/UserTable";
-import { ActiveSessionsTable } from "@/components/users/ActiveSessionsTable";
+type User = {
+  _id: Id<"users">;
+  name: string;
+  username: string;
+  role: UserRole;
+  status: "active" | "disabled";
+  lastLogin?: number;
+};
 
-function UsersPageContent() {
-  const { currentUser, token } = useAuth();
+function Content() {
+  const { currentUser } = useAuth();
+  const token = useToken();
   const users = useQuery(api.users.list);
   const setStatus = useMutation(api.users.setStatus);
+  const sessions = useQuery(api.auth.listActiveSessions, { token });
+  const terminate = useMutation(api.auth.terminateSession);
 
-  const [activeTab, setActiveTab] = useState<"users" | "sessions">("users");
+  const [tab, setTab] = useState<"users" | "sessions">("users");
   const [search, setSearch] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<any>(null);
-  const [resetPasswordUser, setResetPasswordUser] = useState<any>(null);
-  const [activityUser, setActivityUser] = useState<any>(null);
-  const [confirmDisable, setConfirmDisable] = useState<any>(null);
-  const [confirmTerminate, setConfirmTerminate] = useState<any>(null);
+  const [modalUser, setModalUser] = useState<User | "new" | null>(null);
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const [confirmToggle, setConfirmToggle] = useState<User | null>(null);
+  const [confirmKill, setConfirmKill] =
+    useState<{ sessionId: Id<"userSessions">; username: string } | null>(null);
 
-  const activeSessions = useQuery(api.auth.listActiveSessions, { token: token! });
-  const terminateSession = useMutation(api.auth.terminateSession);
+  const isManager = currentUser?.role === "manager";
 
-  if (!currentUser) return null;
-
-  const actingUser = {
-    userId: currentUser.userId,
-    username: currentUser.username,
-    role: currentUser.role as Role,
-  };
-
-  const filteredUsers = (users ?? []).filter((u) => {
-    // Managers only see pos_sellers
-    if (currentUser.role === "manager" && u.role !== "pos_seller") return false;
+  const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return (
-      u.name.toLowerCase().includes(q) ||
-      u.username.toLowerCase().includes(q) ||
-      u.role.includes(q)
+    return ((users ?? []) as User[]).filter(
+      (u) =>
+        (!isManager || u.role === "pos_seller") &&
+        (u.name.toLowerCase().includes(q) ||
+          u.username.toLowerCase().includes(q) ||
+          u.role.includes(q))
     );
-  });
+  }, [users, search, isManager]);
 
-  const handleToggleStatus = async (user: any) => {
-    const newStatus = user.status === "active" ? "disabled" : "active";
-    try {
-      await setStatus({
-        token: token!,
-        id: user._id,
-        status: newStatus,
-      });
-      toast.success(
-        `User "${user.username}" ${newStatus === "active" ? "enabled" : "disabled"}`
-      );
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to update status");
+  const counts = useMemo(() => {
+    const c = { admin: 0, manager: 0, pos_seller: 0, disabled: 0 };
+    for (const u of (users ?? []) as User[]) {
+      c[u.role] += 1;
+      if (u.status === "disabled") c.disabled += 1;
     }
-    setConfirmDisable(null);
-  };
+    return c;
+  }, [users]);
 
-  const handleTerminateSession = async (sessionId: Id<"userSessions">, username: string) => {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard label="Admins" value={counts.admin} />
+        <StatCard label="Managers" value={counts.manager} />
+        <StatCard label="POS sellers" value={counts.pos_seller} />
+        <StatCard label="Disabled" value={counts.disabled} accent={counts.disabled ? "error" : "primary"} />
+      </div>
+
+      <Toolbar>
+        {(["users", "sessions"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={
+              "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors " +
+              (tab === t
+                ? "bg-primary text-on-primary border-primary"
+                : "bg-surface-container-low text-on-surface-variant border-outline")
+            }
+          >
+            {t === "users" ? "Users" : "Active sessions"}
+          </button>
+        ))}
+        {tab === "users" && (
+          <>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+              <input
+                className={`${inputClass} pl-9 w-56`}
+                placeholder="Search users…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="ml-auto" />
+            <Button onClick={() => setModalUser("new")}>
+              <Plus className="w-3.5 h-3.5" /> New User
+            </Button>
+          </>
+        )}
+      </Toolbar>
+
+      <Card>
+        {tab === "users" ? (
+          users === undefined ? (
+            <Spinner />
+          ) : filtered.length === 0 ? (
+            <EmptyState title="No users" />
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Username</Th>
+                  <Th>Role</Th>
+                  <Th>Status</Th>
+                  <Th>Last login</Th>
+                  <Th className="w-32" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((u) => (
+                  <tr key={u._id} className="hover:bg-surface-container-low">
+                    <Td className="font-bold">{u.name}</Td>
+                    <Td className="text-on-surface-variant">@{u.username}</Td>
+                    <Td>
+                      <Badge tone="info">{u.role.replace("_", " ")}</Badge>
+                    </Td>
+                    <Td>
+                      <button onClick={() => setConfirmToggle(u)}>
+                        <Badge tone={u.status === "active" ? "success" : "error"}>
+                          {u.status}
+                        </Badge>
+                      </button>
+                    </Td>
+                    <Td className="text-xs text-on-surface-variant">
+                      {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : "—"}
+                    </Td>
+                    <Td>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setModalUser(u)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setResetUser(u)}>
+                          <KeyRound className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )
+        ) : sessions === undefined ? (
+          <Spinner />
+        ) : sessions.length === 0 ? (
+          <EmptyState title="No active sessions" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>User</Th>
+                <Th>Role</Th>
+                <Th>Device</Th>
+                <Th>Last activity</Th>
+                <Th className="w-24" />
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.sessionId} className="hover:bg-surface-container-low">
+                  <Td className="font-bold">
+                    {s.name}{" "}
+                    {s.isCurrent && <Badge tone="info">this device</Badge>}
+                  </Td>
+                  <Td>{s.role.replace("_", " ")}</Td>
+                  <Td className="text-on-surface-variant text-xs">
+                    {s.browser} · {s.device}
+                  </Td>
+                  <Td className="text-xs text-on-surface-variant">
+                    {new Date(s.lastActivity).toLocaleString()}
+                  </Td>
+                  <Td>
+                    {!s.isCurrent && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setConfirmKill({ sessionId: s.sessionId, username: s.username })
+                        }
+                      >
+                        Force out
+                      </Button>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {modalUser && (
+        <UserModal
+          token={token}
+          isManager={isManager}
+          user={modalUser === "new" ? null : modalUser}
+          onClose={() => setModalUser(null)}
+        />
+      )}
+      {resetUser && (
+        <ResetModal
+          token={token}
+          user={resetUser}
+          onClose={() => setResetUser(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={!!confirmToggle}
+        onClose={() => setConfirmToggle(null)}
+        title={confirmToggle?.status === "active" ? "Disable user" : "Enable user"}
+        message={
+          confirmToggle?.status === "active"
+            ? `@${confirmToggle?.username} will be logged out immediately.`
+            : `@${confirmToggle?.username} will be able to log in again.`
+        }
+        danger={confirmToggle?.status === "active"}
+        confirmLabel={confirmToggle?.status === "active" ? "Disable" : "Enable"}
+        onConfirm={async () => {
+          if (!confirmToggle) return;
+          try {
+            await setStatus({
+              token,
+              id: confirmToggle._id,
+              status: confirmToggle.status === "active" ? "disabled" : "active",
+            });
+            toast.success("Updated");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed");
+          }
+          setConfirmToggle(null);
+        }}
+      />
+      <ConfirmDialog
+        open={!!confirmKill}
+        onClose={() => setConfirmKill(null)}
+        title="Force logout"
+        message={`Terminate the session for @${confirmKill?.username}?`}
+        danger
+        confirmLabel="Terminate"
+        onConfirm={async () => {
+          if (!confirmKill) return;
+          try {
+            await terminate({ token, sessionId: confirmKill.sessionId });
+            toast.success("Session terminated");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed");
+          }
+          setConfirmKill(null);
+        }}
+      />
+    </>
+  );
+}
+
+function UserModal({
+  token,
+  user,
+  isManager,
+  onClose,
+}: {
+  token: string;
+  user: User | null;
+  isManager: boolean;
+  onClose: () => void;
+}) {
+  const createUser = useAction(api.usersActions.createUser);
+  const updateUser = useMutation(api.users.update);
+  const [name, setName] = useState(user?.name ?? "");
+  const [username, setUsername] = useState(user?.username ?? "");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<UserRole>(user?.role ?? "pos_seller");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return toast.error("Name is required.");
+    setBusy(true);
     try {
-      await terminateSession({
-        token: token!,
-        sessionId,
-      });
-      toast.success(`Session terminated for @${username}`);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to terminate session");
+      if (user) {
+        await updateUser({ token, id: user._id, name, role });
+      } else {
+        if (!username.trim() || password.length < 4)
+          return toast.error("Username and a 4+ char password are required.");
+        await createUser({ token, name, username, password, role });
+      }
+      toast.success("Saved");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header Actions */}
-      <div className="flex justify-end items-center gap-4">
-        {activeTab === "users" && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-primary text-on-primary rounded-xl font-black text-xs uppercase tracking-widest hover:bg-secondary transition-colors shadow-hard cursor-pointer"
-            id="create-user-btn"
-          >
-            <Plus className="w-4 h-4" />
-            New User
-          </button>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 border-b-2 border-outline pb-2">
-        <button
-          onClick={() => setActiveTab("users")}
-          className={cn(
-            "px-4 py-2 font-black text-xs uppercase tracking-widest border-2 rounded-xl transition-all",
-            activeTab === "users"
-              ? "bg-surface border-primary text-primary shadow-hard-sm"
-              : "bg-surface-container-low border-transparent text-on-surface-variant hover:text-on-surface"
-          )}
-        >
-          Users
-        </button>
-        <button
-          onClick={() => setActiveTab("sessions")}
-          className={cn(
-            "px-4 py-2 font-black text-xs uppercase tracking-widest border-2 rounded-xl transition-all",
-            activeTab === "sessions"
-              ? "bg-surface border-primary text-primary shadow-hard-sm"
-              : "bg-surface-container-low border-transparent text-on-surface-variant hover:text-on-surface"
-          )}
-        >
-          Active Sessions
-        </button>
-      </div>
-
-      {activeTab === "users" ? (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={user ? "Edit User" : "New User"}
+      footer={
         <>
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, username or role..."
-              className="w-full pl-10 pr-4 py-3 bg-surface border-2 border-outline rounded-xl font-bold text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary transition-all"
-              id="user-search"
-            />
-          </div>
-
-          {/* Stats cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {(["admin", "manager", "pos_seller"] as Role[]).map((role) => {
-              const count = (users ?? []).filter((u) => u.role === role).length;
-              const cfg = ROLE_CONFIG[role];
-              return (
-                <div
-                  key={role}
-                  className={cn(
-                    "p-4 rounded-2xl border-2 flex items-center gap-3",
-                    cfg.bg,
-                    cfg.border
-                  )}
-                >
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", cfg.bg)}>
-                    <UsersIcon className={cn("w-5 h-5", cfg.color)} />
-                  </div>
-                  <div>
-                    <p className={cn("text-2xl font-display", cfg.color)}>{count}</p>
-                    <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                      {cfg.label}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="p-4 rounded-2xl border-2 border-outline bg-surface-container-low flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center">
-                <UserX className="w-5 h-5 text-on-surface-variant" />
-              </div>
-              <div>
-                <p className="text-2xl font-display text-on-surface">
-                  {(users ?? []).filter((u) => u.status === "disabled").length}
-                </p>
-                <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-                  Disabled
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Users Table */}
-          <UserTable
-            users={users}
-            filteredUsers={filteredUsers}
-            currentUser={currentUser}
-            onEdit={setEditingUser}
-            onResetPassword={setResetPasswordUser}
-            onActivity={setActivityUser}
-            onToggleStatus={setConfirmDisable}
-          />
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy}>
+            Save
+          </Button>
         </>
-      ) : (
-        /* Active Sessions Table */
-        <ActiveSessionsTable
-          activeSessions={activeSessions}
-          onTerminateSession={setConfirmTerminate}
-        />
+      }
+    >
+      <Field label="Full name" required>
+        <TextInput value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      {!user && (
+        <>
+          <Field label="Username" required>
+            <TextInput
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </Field>
+          <Field label="Password" required hint="At least 4 characters">
+            <TextInput
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+        </>
       )}
+      <Field label="Role">
+        <Select
+          value={role}
+          onChange={(e) => setRole(e.target.value as UserRole)}
+          disabled={isManager}
+        >
+          {(isManager ? (["pos_seller"] as const) : (["admin", "manager", "pos_seller"] as const)).map(
+            (r) => (
+              <option key={r} value={r}>
+                {r.replace("_", " ")}
+              </option>
+            )
+          )}
+        </Select>
+      </Field>
+    </Modal>
+  );
+}
 
-      {/* Modals */}
-      {showCreateModal && (
-        <UserFormModal
-          onClose={() => setShowCreateModal(false)}
-          actingUser={actingUser}
-        />
-      )}
-      {editingUser && (
-        <UserFormModal
-          user={editingUser}
-          onClose={() => setEditingUser(null)}
-          actingUser={actingUser}
-        />
-      )}
-      {resetPasswordUser && (
-        <ResetPasswordModal
-          userId={resetPasswordUser._id}
-          username={resetPasswordUser.username}
-          onClose={() => setResetPasswordUser(null)}
-          actingUser={actingUser}
-        />
-      )}
-      {activityUser && (
-        <ActivityModal
-          userId={activityUser._id}
-          username={activityUser.username}
-          onClose={() => setActivityUser(null)}
-        />
-      )}
-
-      {/* Confirm disable/enable */}
-      {confirmDisable && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-surface border-2 border-outline rounded-2xl p-6 max-w-sm w-full shadow-hard-lg"
+function ResetModal({
+  token,
+  user,
+  onClose,
+}: {
+  token: string;
+  user: User;
+  onClose: () => void;
+}) {
+  const reset = useAction(api.usersActions.resetPassword);
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={`Reset password · @${user.username}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              if (pw.length < 4) return toast.error("At least 4 characters.");
+              setBusy(true);
+              try {
+                await reset({ token, id: user._id, newPassword: pw });
+                toast.success("Password reset");
+                onClose();
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Failed");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            loading={busy}
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
-                {confirmDisable.status === "active" ? (
-                  <UserX className="w-6 h-6 text-error" />
-                ) : (
-                  <UserCheck className="w-6 h-6 text-emerald-500" />
-                )}
-              </div>
-              <div>
-                <p className="font-black text-on-surface">
-                  {confirmDisable.status === "active" ? "Disable" : "Enable"} User?
-                </p>
-                <p className="text-sm text-on-surface-variant font-bold">
-                  @{confirmDisable.username}
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-on-surface-variant mb-6">
-              {confirmDisable.status === "active"
-                ? "This user will be immediately logged out and won't be able to access the system."
-                : "This user will be able to log in again."}
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmDisable(null)}
-                className="flex-1 py-3 rounded-xl border-2 border-outline font-black text-xs uppercase tracking-widest text-on-surface-variant hover:bg-surface-container-high transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleToggleStatus(confirmDisable)}
-                className={cn(
-                  "flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all",
-                  confirmDisable.status === "active"
-                    ? "bg-error text-on-error hover:opacity-90"
-                    : "bg-emerald-500 text-white hover:opacity-90"
-                )}
-              >
-                {confirmDisable.status === "active" ? "Disable" : "Enable"}
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Confirm terminate session */}
-      {confirmTerminate && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-surface border-2 border-outline rounded-2xl p-6 max-w-sm w-full shadow-hard-lg"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
-                <Trash2 className="w-6 h-6 text-error" />
-              </div>
-              <div>
-                <p className="font-black text-on-surface">Force Logout?</p>
-                <p className="text-sm text-on-surface-variant font-bold">
-                  @{confirmTerminate.username}
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-on-surface-variant mb-6">
-              Are you sure you want to terminate this session remotely? The user will be instantly logged out.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmTerminate(null)}
-                className="flex-1 py-3 rounded-xl border-2 border-outline font-black text-xs uppercase tracking-widest text-on-surface-variant hover:bg-surface-container-high transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  handleTerminateSession(confirmTerminate.sessionId, confirmTerminate.username);
-                  setConfirmTerminate(null);
-                }}
-                className="flex-1 py-3 rounded-xl bg-error text-on-error font-black text-xs uppercase tracking-widest transition-all hover:opacity-90"
-              >
-                Terminate
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </div>
+            Reset
+          </Button>
+        </>
+      }
+    >
+      <Field label="New password" required>
+        <TextInput type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
+      </Field>
+    </Modal>
   );
 }
 
 export default function UsersPage() {
   return (
     <AuthGuard requiredRoles={["admin", "manager"]}>
-      <PageLayout title="User Management" subtitle="System Users & Active Sessions">
-        <UsersPageContent />
+      <PageLayout title="Users" subtitle="Administration · accounts & sessions">
+        <Content />
       </PageLayout>
     </AuthGuard>
   );
