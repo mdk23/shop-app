@@ -131,9 +131,18 @@ export function Sidebar() {
     .map((g) => ({ ...g, items: g.items.filter(canSee) }))
     .filter((g) => g.items.length > 0);
 
-  const isActive = (href: string) =>
-    pathname === href ||
-    (href !== "/cash-register" && pathname.startsWith(href + "/"));
+  // Pick the single most-specific href that matches the current path, so a
+  // parent route (e.g. "/products") doesn't also light up when a sibling
+  // sub-route (e.g. "/products/categories") is the actual active page.
+  const allHrefs = [
+    ...topMenuItems,
+    ...menuGroups.flatMap((g) => g.items),
+  ].map((item) => item.href);
+  const bestMatch = allHrefs
+    .filter((href) => pathname === href || pathname.startsWith(href + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+
+  const isActive = (href: string) => href === bestMatch;
 
   return (
     <>

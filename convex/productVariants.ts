@@ -265,3 +265,39 @@ export const update = mutation({
     });
   },
 });
+
+/** Hard delete: only allowed when the variant has never been sold. */
+export const remove = mutation({
+  args: { token: v.string(), id: v.id("productVariants") },
+  handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "products.delete");
+    const existing = await ctx.db.get(args.id);
+    if (!existing) throw new Error("Variant not found.");
+
+    const soldLine = await ctx.db
+      .query("saleItems")
+      .withIndex("by_variant", (q) => q.eq("productVariantId", args.id))
+      .first();
+    if (soldLine) {
+      throw new Error(
+        "This variant has sales history and cannot be deleted. Deactivate it instead."
+      );
+    }
+
+    const stockRows = await ctx.db
+      .query("variantStock")
+      .withIndex("by_variant", (q) => q.eq("productVariantId", args.id))
+      .collect();
+    for (const s of stockRows) await ctx.db.delete(s._id);
+
+    await ctx.db.delete(args.id);
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "variant.deleted",
+      entityType: "productVariant",
+      entityId: args.id,
+      details: `Deleted variant ${existing.sku}`,
+    });
+  },
+});

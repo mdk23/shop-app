@@ -427,6 +427,18 @@ function ProductModal({
 // Variant manager (list + inline edit + matrix generator)
 // ─────────────────────────────────────────────
 
+type VariantRowData = {
+  _id: Id<"productVariants">;
+  sku: string;
+  barcode?: string;
+  size?: string;
+  color?: string;
+  costPrice: number;
+  sellingPrice: number;
+  reorderLevel: number;
+  active: boolean;
+};
+
 function VariantManager({
   token,
   productId,
@@ -443,12 +455,37 @@ function VariantManager({
   const availableColors = useQuery(api.colors.list, {});
   const generate = useMutation(api.productVariants.generateMatrix);
   const updateVariant = useMutation(api.productVariants.update);
+  const removeVariant = useMutation(api.productVariants.remove);
 
   const [sizes, setSizes] = useState<string[]>([]);
   const [colors, setColors] = useState<string[]>([]);
   const [reorder, setReorder] = useState("0");
   const [busy, setBusy] = useState(false);
+  const [deletingVariant, setDeletingVariant] = useState<VariantRowData | null>(null);
+  const [deleteVariantBusy, setDeleteVariantBusy] = useState(false);
+  const [deactivateVariantInstead, setDeactivateVariantInstead] =
+    useState<VariantRowData | null>(null);
   const variantPage = useClientPage(product?.variants ?? []);
+
+  const confirmDeleteVariant = async () => {
+    if (!deletingVariant) return;
+    setDeleteVariantBusy(true);
+    try {
+      await removeVariant({ token, id: deletingVariant._id });
+      toast.success(`${deletingVariant.sku} deleted`);
+      setDeletingVariant(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to delete";
+      if (message.includes("sales history")) {
+        setDeletingVariant(null);
+        setDeactivateVariantInstead(deletingVariant);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setDeleteVariantBusy(false);
+    }
+  };
 
   const toggle = (list: string[], set: (v: string[]) => void, value: string) =>
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -571,6 +608,7 @@ function VariantManager({
                 <Th className="text-right w-28">Price</Th>
                 <Th className="text-right w-20">Reorder</Th>
                 <Th className="w-20">Active</Th>
+                <Th className="w-10" />
               </tr>
             </thead>
             <tbody>
@@ -581,6 +619,7 @@ function VariantManager({
                   variant={v}
                   fmt={fmt}
                   onSave={updateVariant}
+                  onDelete={() => setDeletingVariant(v)}
                 />
               ))}
             </tbody>
@@ -598,6 +637,39 @@ function VariantManager({
           />
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deletingVariant}
+        onClose={() => setDeletingVariant(null)}
+        title="Delete variant"
+        message={`Delete "${deletingVariant?.sku}"? This cannot be undone. Variants with sales history can't be deleted — deactivate them instead.`}
+        danger
+        confirmLabel="Delete"
+        loading={deleteVariantBusy}
+        onConfirm={confirmDeleteVariant}
+      />
+
+      <ConfirmDialog
+        open={!!deactivateVariantInstead}
+        onClose={() => setDeactivateVariantInstead(null)}
+        title="Can't delete — deactivate instead?"
+        message={`"${deactivateVariantInstead?.sku}" has sales history, so it can't be deleted. Deactivating hides it from the catalog and POS while keeping past sales intact.`}
+        confirmLabel="Deactivate"
+        onConfirm={async () => {
+          if (!deactivateVariantInstead) return;
+          try {
+            await updateVariant({
+              token,
+              id: deactivateVariantInstead._id,
+              active: false,
+            });
+            toast.success(`"${deactivateVariantInstead.sku}" deactivated`);
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to deactivate");
+          }
+          setDeactivateVariantInstead(null);
+        }}
+      />
     </Modal>
   );
 }
@@ -607,21 +679,13 @@ function VariantRow({
   variant,
   fmt,
   onSave,
+  onDelete,
 }: {
   token: string;
-  variant: {
-    _id: Id<"productVariants">;
-    sku: string;
-    barcode?: string;
-    size?: string;
-    color?: string;
-    costPrice: number;
-    sellingPrice: number;
-    reorderLevel: number;
-    active: boolean;
-  };
+  variant: VariantRowData;
   fmt: (n: number) => string;
   onSave: ReturnType<typeof useMutation>;
+  onDelete: () => void;
 }) {
   const [price, setPrice] = useState(String(variant.sellingPrice));
   const [cost, setCost] = useState(String(variant.costPrice));
@@ -672,6 +736,11 @@ function VariantRow({
             {variant.active ? "Active" : "Off"}
           </Badge>
         )}
+      </Td>
+      <Td>
+        <Button variant="ghost" size="sm" onClick={onDelete}>
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
       </Td>
     </tr>
   );

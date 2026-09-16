@@ -20,11 +20,12 @@ import {
   Pagination,
   Spinner,
   Toolbar,
+  ConfirmDialog,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 
 type Row = {
   _id: Id<"categories">;
@@ -32,6 +33,7 @@ type Row = {
   description?: string;
   active: boolean;
   sortOrder?: number;
+  productCount?: number;
 };
 
 export default function CategoriesPage() {
@@ -40,6 +42,7 @@ export default function CategoriesPage() {
   const page = useClientPage(rows ?? []);
   const create = useMutation(api.categories.create);
   const update = useMutation(api.categories.update);
+  const remove = useMutation(api.categories.remove);
 
   const [editing, setEditing] = useState<Row | null>(null);
   const [open, setOpen] = useState(false);
@@ -47,6 +50,10 @@ export default function CategoriesPage() {
   const [description, setDescription] = useState("");
   const [sortOrder, setSortOrder] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<Row | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deactivateInstead, setDeactivateInstead] = useState<Row | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<Row | null>(null);
 
   const openNew = () => {
     setEditing(null);
@@ -94,10 +101,35 @@ export default function CategoriesPage() {
   };
 
   const toggleActive = async (r: Row) => {
+    if (r.active && (r.productCount ?? 0) > 0) {
+      setConfirmDeactivate(r);
+      return;
+    }
     try {
       await update({ token, id: r._id, active: !r.active });
+      toast.success(r.active ? "Category deactivated" : "Category activated");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await remove({ token, id: deleting._id });
+      toast.success(`"${deleting.name}" deleted`);
+      setDeleting(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to delete";
+      if (message.includes("products assigned")) {
+        setDeleting(null);
+        setDeactivateInstead(deleting);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -126,8 +158,9 @@ export default function CategoriesPage() {
                 <Th>Name</Th>
                 <Th>Description</Th>
                 <Th className="w-24">Order</Th>
+                <Th className="w-24">Products</Th>
                 <Th className="w-24">Status</Th>
-                <Th className="w-28" />
+                <Th className="w-36" />
               </tr>
             </thead>
             <tbody>
@@ -136,6 +169,7 @@ export default function CategoriesPage() {
                   <Td className="font-bold">{r.name}</Td>
                   <Td className="text-on-surface-variant">{r.description ?? "—"}</Td>
                   <Td>{r.sortOrder ?? "—"}</Td>
+                  <Td>{r.productCount ?? 0}</Td>
                   <Td>
                     <button onClick={() => toggleActive(r as Row)}>
                       <Badge tone={r.active ? "success" : "neutral"}>
@@ -144,9 +178,14 @@ export default function CategoriesPage() {
                     </button>
                   </Td>
                   <Td>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(r as Row)}>
-                      <Pencil className="w-3.5 h-3.5" /> Edit
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(r as Row)}>
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleting(r as Row)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -195,6 +234,58 @@ export default function CategoriesPage() {
           />
         </Field>
       </Modal>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title="Delete category"
+        message={`Delete "${deleting?.name}"? This cannot be undone. Categories with products assigned can't be deleted — deactivate them instead.`}
+        danger
+        confirmLabel="Delete"
+        loading={deleteBusy}
+        onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeactivate}
+        onClose={() => setConfirmDeactivate(null)}
+        title="Deactivate category"
+        message={`"${confirmDeactivate?.name}" has ${confirmDeactivate?.productCount ?? 0} product(s). Deactivating it will also deactivate all of them (and their variants), hiding them from the catalog and POS.`}
+        danger
+        confirmLabel="Deactivate"
+        onConfirm={async () => {
+          if (!confirmDeactivate) return;
+          try {
+            const res = await update({ token, id: confirmDeactivate._id, active: false });
+            toast.success(
+              res.cascadedCount > 0
+                ? `Category deactivated — ${res.cascadedCount} product(s) deactivated too`
+                : "Category deactivated"
+            );
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed");
+          }
+          setConfirmDeactivate(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deactivateInstead}
+        onClose={() => setDeactivateInstead(null)}
+        title="Can't delete — deactivate instead?"
+        message={`"${deactivateInstead?.name}" has products assigned to it, so it can't be deleted. Deactivating hides it from new product forms while keeping existing products intact.`}
+        confirmLabel="Deactivate"
+        onConfirm={async () => {
+          if (!deactivateInstead) return;
+          try {
+            await update({ token, id: deactivateInstead._id, active: false });
+            toast.success(`"${deactivateInstead.name}" deactivated`);
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to deactivate");
+          }
+          setDeactivateInstead(null);
+        }}
+      />
     </PageLayout>
   );
 }
