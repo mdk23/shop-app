@@ -30,11 +30,20 @@ import { toast } from "sonner";
 import { Plus, Search, Pencil, Boxes, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+type Gender = "women" | "men" | "unisex";
+
+const GENDER_LABEL: Record<Gender, string> = {
+  women: "Women",
+  men: "Men",
+  unisex: "Unisex",
+};
+
 type ProductRow = {
   _id: Id<"products">;
   name: string;
   categoryId: Id<"categories">;
   categoryName: string;
+  gender?: Gender;
   defaultCostPrice: number;
   defaultSellingPrice: number;
   active: boolean;
@@ -153,6 +162,7 @@ export default function ProductsPage() {
               <tr>
                 <Th>Product</Th>
                 <Th>Category</Th>
+                <Th className="w-20">Gender</Th>
                 <Th className="text-right">Cost</Th>
                 <Th className="text-right">Price</Th>
                 <Th className="w-24">Variants</Th>
@@ -165,6 +175,9 @@ export default function ProductsPage() {
                 <tr key={p._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{p.name}</Td>
                   <Td className="text-on-surface-variant">{p.categoryName}</Td>
+                  <Td>
+                    <Badge tone="info">{GENDER_LABEL[p.gender ?? "unisex"]}</Badge>
+                  </Td>
                   <Td className="text-right">{fmt(p.defaultCostPrice)}</Td>
                   <Td className="text-right font-bold">{fmt(p.defaultSellingPrice)}</Td>
                   <Td>
@@ -300,6 +313,7 @@ function ProductModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [gender, setGender] = useState<Gender>("unisex");
   const [cost, setCost] = useState("");
   const [price, setPrice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -309,6 +323,7 @@ function ProductModal({
     setName(existing.name);
     setDescription(existing.description ?? "");
     setCategoryId(existing.categoryId);
+    setGender((existing.gender as Gender | undefined) ?? "unisex");
     setCost(String(existing.defaultCostPrice));
     setPrice(String(existing.defaultSellingPrice));
     setHydrated(true);
@@ -325,6 +340,7 @@ function ProductModal({
           name,
           description: description || undefined,
           categoryId: categoryId as Id<"categories">,
+          gender,
           defaultCostPrice: Number(cost) || 0,
           defaultSellingPrice: Number(price) || 0,
         });
@@ -336,6 +352,7 @@ function ProductModal({
           name,
           description: description || undefined,
           categoryId: categoryId as Id<"categories">,
+          gender,
           defaultCostPrice: Number(cost) || 0,
           defaultSellingPrice: Number(price) || 0,
         });
@@ -372,16 +389,25 @@ function ProductModal({
           placeholder="e.g. Classic Polo Shirt"
         />
       </Field>
-      <Field label="Category" required>
-        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">Select…</option>
-          {categories.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Category" required>
+          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <option value="">Select…</option>
+            {categories.map((c) => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Gender" required>
+          <Select value={gender} onChange={(e) => setGender(e.target.value as Gender)}>
+            <option value="unisex">Unisex</option>
+            <option value="women">Women</option>
+            <option value="men">Men</option>
+          </Select>
+        </Field>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Default cost price">
           <TextInput type="number" value={cost} onChange={(e) => setCost(e.target.value)} />

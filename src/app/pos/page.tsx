@@ -14,6 +14,14 @@ import { toast } from "sonner";
 import { Search, Plus, Minus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+type Gender = "women" | "men" | "unisex";
+
+const GENDER_LABEL: Record<Gender, string> = {
+  women: "Women",
+  men: "Men",
+  unisex: "Unisex",
+};
+
 type CartLine = {
   variantId: Id<"productVariants">;
   productName: string;
@@ -42,6 +50,7 @@ export default function PosPage() {
   const [saleDiscount, setSaleDiscount] = useState(0);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [gender, setGender] = useState("");
   const [size, setSize] = useState("");
   const [color, setColor] = useState("");
   const [expanded, setExpanded] = useState<Id<"products"> | null>(null);
@@ -51,12 +60,14 @@ export default function PosPage() {
 
   const taxRate = Number(taxSetting?.value ?? "0") || 0;
 
-  const { categories, sizes, colors } = useMemo(() => {
+  const { categories, genders, sizes, colors } = useMemo(() => {
     const c = new Set<string>();
+    const g = new Set<string>();
     const s = new Set<string>();
     const col = new Set<string>();
     for (const p of catalog ?? []) {
       c.add(p.categoryName);
+      g.add(p.gender ?? "unisex");
       for (const v of p.variants) {
         if (v.size) s.add(v.size);
         if (v.color) col.add(v.color);
@@ -64,6 +75,7 @@ export default function PosPage() {
     }
     return {
       categories: [...c].sort(),
+      genders: [...g].sort(),
       sizes: [...s].sort(),
       colors: [...col].sort(),
     };
@@ -84,11 +96,12 @@ export default function PosPage() {
         (p) =>
           p.variants.length > 0 &&
           (!category || p.categoryName === category) &&
+          (!gender || (p.gender ?? "unisex") === gender) &&
           (!term ||
             p.name.toLowerCase().includes(term) ||
             p.variants.some((v) => v.sku.toLowerCase().includes(term)))
       );
-  }, [catalog, search, category, size, color]);
+  }, [catalog, search, category, gender, size, color]);
 
   const addLine = (v: {
     _id: Id<"productVariants">;
@@ -219,6 +232,18 @@ export default function PosPage() {
                 </option>
               ))}
             </Select>
+            <Select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="w-28"
+            >
+              <option value="">All genders</option>
+              {genders.map((g) => (
+                <option key={g} value={g}>
+                  {GENDER_LABEL[g as Gender] ?? g}
+                </option>
+              ))}
+            </Select>
             <Select value={size} onChange={(e) => setSize(e.target.value)} className="w-24">
               <option value="">All sizes</option>
               {sizes.map((s) => (
@@ -237,7 +262,7 @@ export default function PosPage() {
             </Select>
           </div>
 
-          {(category || size || color) && (
+          {(category || gender || size || color) && (
             <div className="flex flex-wrap items-center gap-1.5 mb-3">
               <span className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant">
                 Filters:
@@ -245,11 +270,18 @@ export default function PosPage() {
               {category && (
                 <ActiveFilterTag label={category} onClear={() => setCategory("")} />
               )}
+              {gender && (
+                <ActiveFilterTag
+                  label={GENDER_LABEL[gender as Gender] ?? gender}
+                  onClear={() => setGender("")}
+                />
+              )}
               {size && <ActiveFilterTag label={size} onClear={() => setSize("")} />}
               {color && <ActiveFilterTag label={color} onClear={() => setColor("")} />}
               <button
                 onClick={() => {
                   setCategory("");
+                  setGender("");
                   setSize("");
                   setColor("");
                 }}

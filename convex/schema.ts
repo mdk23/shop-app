@@ -53,6 +53,7 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     categoryId: v.id("categories"),
+    gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
     defaultCostPrice: v.number(),
     defaultSellingPrice: v.number(),
     primaryImageId: v.optional(v.id("_storage")),

@@ -184,6 +184,7 @@ export const listForPos = query({
         name: p.name,
         categoryId: p.categoryId,
         categoryName: catName.get(p.categoryId) ?? "—",
+        gender: p.gender ?? "unisex",
         defaultSellingPrice: p.defaultSellingPrice,
         variants: activeVariants,
       });
@@ -202,6 +203,7 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     categoryId: v.id("categories"),
+    gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
     defaultCostPrice: v.number(),
     defaultSellingPrice: v.number(),
     variants: v.optional(
@@ -228,6 +230,7 @@ export const create = mutation({
       name,
       description: args.description,
       categoryId: args.categoryId,
+      gender: args.gender ?? "unisex",
       defaultCostPrice: args.defaultCostPrice,
       defaultSellingPrice: args.defaultSellingPrice,
       active: true,
@@ -273,6 +276,7 @@ export const update = mutation({
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     categoryId: v.optional(v.id("categories")),
+    gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
     defaultCostPrice: v.optional(v.number()),
     defaultSellingPrice: v.optional(v.number()),
     primaryImageId: v.optional(v.union(v.id("_storage"), v.null())),
@@ -294,6 +298,7 @@ export const update = mutation({
     if (args.name !== undefined) patch.name = args.name.trim();
     if (args.description !== undefined) patch.description = args.description;
     if (args.categoryId !== undefined) patch.categoryId = args.categoryId;
+    if (args.gender !== undefined) patch.gender = args.gender;
     if (args.defaultCostPrice !== undefined)
       patch.defaultCostPrice = args.defaultCostPrice;
     if (args.defaultSellingPrice !== undefined)
