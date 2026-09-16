@@ -80,7 +80,8 @@ export const getDashboardMetrics = query({
     const methods: Record<string, { amount: number; count: number }> = {};
     const productQty: Record<string, number> = {};
     const categoryQty: Record<string, number> = {};
-    const brandQty: Record<string, number> = {};
+    const sizeQty: Record<string, number> = {};
+    const colorQty: Record<string, number> = {};
 
     for (const sale of current) {
       grossRevenue += sale.total;
@@ -121,12 +122,11 @@ export const getDashboardMetrics = query({
           if (category)
             categoryQty[category.name] =
               (categoryQty[category.name] ?? 0) + it.quantity;
-          if (product.brandId) {
-            const brand = await ctx.db.get(product.brandId);
-            if (brand)
-              brandQty[brand.name] = (brandQty[brand.name] ?? 0) + it.quantity;
-          }
         }
+        if (variant?.size)
+          sizeQty[variant.size] = (sizeQty[variant.size] ?? 0) + it.quantity;
+        if (variant?.color)
+          colorQty[variant.color] = (colorQty[variant.color] ?? 0) + it.quantity;
       }
     }
 
@@ -188,7 +188,8 @@ export const getDashboardMetrics = query({
       paymentMethodsBreakdown: methods,
       topProducts: top(productQty, 5),
       topCategories: top(categoryQty, 5),
-      topBrands: top(brandQty, 5),
+      topSizes: top(sizeQty, 5),
+      topColors: top(colorQty, 5),
       branchLeaderboard: Object.values(branchBoard).sort(
         (a, b) => b.revenue - a.revenue
       ),
@@ -268,7 +269,6 @@ export const salesBreakdown = query({
       (s) => s.status !== "CANCELLED"
     );
     const cat: Record<string, { qty: number; revenue: number }> = {};
-    const brand: Record<string, { qty: number; revenue: number }> = {};
     const size: Record<string, { qty: number; revenue: number }> = {};
     const color: Record<string, { qty: number; revenue: number }> = {};
     const product: Record<string, { qty: number; revenue: number; profit: number }> = {};
@@ -302,10 +302,6 @@ export const salesBreakdown = query({
           if (p) {
             const c = await ctx.db.get(p.categoryId);
             if (c) bump(cat, c.name, it.quantity, it.total);
-            if (p.brandId) {
-              const b = await ctx.db.get(p.brandId);
-              if (b) bump(brand, b.name, it.quantity, it.total);
-            }
           }
         }
       }
@@ -318,7 +314,6 @@ export const salesBreakdown = query({
 
     return {
       byCategory: toRows(cat),
-      byBrand: toRows(brand),
       bySize: toRows(size),
       byColor: toRows(color),
       byProduct: toRows(product),

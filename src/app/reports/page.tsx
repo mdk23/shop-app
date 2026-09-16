@@ -22,7 +22,6 @@ import { Download } from "lucide-react";
 
 const TABS = [
   "Category",
-  "Brand",
   "Size",
   "Color",
   "Product",
@@ -64,8 +63,6 @@ export default function ReportsPage() {
       switch (tab) {
         case "Category":
           return breakdown.byCategory;
-        case "Brand":
-          return breakdown.byBrand;
         case "Size":
           return breakdown.bySize;
         case "Color":

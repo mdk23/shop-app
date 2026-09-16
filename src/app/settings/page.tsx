@@ -22,7 +22,7 @@ import { useToken } from "@/lib/useShop";
 import { useTheme, THEME_OPTIONS } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Check, Plus, Pencil, FileClock, Truck } from "lucide-react";
+import { Check, Plus, Pencil, FileClock, Truck, Ruler, Palette } from "lucide-react";
 
 const TOGGLE_KEYS = [
   "allowNegativeStock",
@@ -100,7 +100,17 @@ export default function SettingsPage() {
 
   return (
     <PageLayout title="Settings" subtitle="Business configuration">
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4">
+        <Link href="/settings/sizes">
+          <Button variant="secondary">
+            <Ruler className="w-3.5 h-3.5" /> Sizes
+          </Button>
+        </Link>
+        <Link href="/settings/colors">
+          <Button variant="secondary">
+            <Palette className="w-3.5 h-3.5" /> Colors
+          </Button>
+        </Link>
         <Link href="/settings/audit-logs">
           <Button variant="secondary">
             <FileClock className="w-3.5 h-3.5" /> Audit Logs

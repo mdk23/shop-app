@@ -142,7 +142,6 @@ export async function performSale(
       size?: string;
       color?: string;
       categoryName: string;
-      brandName: string | null;
     }[] = [];
 
     for (const item of args.items) {
@@ -153,7 +152,6 @@ export async function performSale(
       const product = await ctx.db.get(variant.productId);
       if (!product) throw new Error("Parent product missing for a variant.");
       const category = await ctx.db.get(product.categoryId);
-      const brand = product.brandId ? await ctx.db.get(product.brandId) : null;
 
       const unitPrice = item.unitPrice ?? variant.sellingPrice;
       const lineDiscount = item.discount ?? 0;
@@ -185,7 +183,6 @@ export async function performSale(
         size: variant.size,
         color: variant.color,
         categoryName: category?.name ?? "Uncategorised",
-        brandName: brand?.name ?? null,
       });
     }
 
@@ -372,7 +369,6 @@ export async function performSale(
       customerId: customer.isGeneric ? undefined : args.customerId,
       paymentMethods: {},
       categorySales: {},
-      brandSales: {},
       productSales: {},
       sizeSales: {},
       colorSales: {},
@@ -386,9 +382,6 @@ export async function performSale(
     for (const l of lines) {
       deltas.categorySales![sanitizeKey(l.categoryName)] =
         (deltas.categorySales![sanitizeKey(l.categoryName)] ?? 0) + l.quantity;
-      if (l.brandName)
-        deltas.brandSales![sanitizeKey(l.brandName)] =
-          (deltas.brandSales![sanitizeKey(l.brandName)] ?? 0) + l.quantity;
       deltas.productSales![sanitizeKey(l.productName)] =
         (deltas.productSales![sanitizeKey(l.productName)] ?? 0) + l.quantity;
       if (l.size)

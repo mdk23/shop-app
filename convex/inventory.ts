@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import {
   internalMutation,
   mutation,
@@ -247,6 +248,52 @@ export const listMovements = query({
       rows = rows.filter((m) => m.referenceType === args.referenceType);
 
     return rows.slice(0, limit);
+  },
+});
+
+/**
+ * Cursor-paginated ledger feed for the Stock Ledger table, indexed by date
+ * (or by variant when filtering to one). `movementType`/`branchId` are applied
+ * on top of the page since they aren't part of that index, so a page can come
+ * back with fewer than a full page of rows when either is set — `listMovements`
+ * above remains the one used for "export everything matching this filter" (CSV).
+ */
+export const listMovementsPaged = query({
+  args: {
+    start: v.optional(v.number()),
+    end: v.optional(v.number()),
+    movementType: v.optional(v.string()),
+    productVariantId: v.optional(v.id("productVariants")),
+    branchId: v.optional(v.id("branches")),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const result = args.productVariantId
+      ? await ctx.db
+          .query("inventoryMovements")
+          .withIndex("by_variant", (q) =>
+            q.eq("productVariantId", args.productVariantId!)
+          )
+          .order("desc")
+          .paginate(args.paginationOpts)
+      : await ctx.db
+          .query("inventoryMovements")
+          .withIndex("by_date", (q) => {
+            if (args.start !== undefined && args.end !== undefined)
+              return q.gte("movementDate", args.start).lte("movementDate", args.end);
+            if (args.start !== undefined) return q.gte("movementDate", args.start);
+            if (args.end !== undefined) return q.lte("movementDate", args.end);
+            return q;
+          })
+          .order("desc")
+          .paginate(args.paginationOpts);
+
+    let page = result.page;
+    if (args.movementType && args.movementType !== "All")
+      page = page.filter((m) => m.movementType === args.movementType);
+    if (args.branchId) page = page.filter((m) => m.branchId === args.branchId);
+
+    return { ...result, page };
   },
 });
 

@@ -36,9 +36,11 @@ export default function InventoryPage() {
   const effectiveBranch = (pickBranch || branchId) as Id<"branches"> | undefined;
 
   const categories = useQuery(api.categories.list, {});
-  const brands = useQuery(api.brands.list, {});
+  const sizes = useQuery(api.sizes.list, {});
+  const colors = useQuery(api.colors.list, {});
   const [categoryId, setCategoryId] = useState("");
-  const [brandId, setBrandId] = useState("");
+  const [size, setSize] = useState("");
+  const [color, setColor] = useState("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
 
@@ -48,7 +50,8 @@ export default function InventoryPage() {
       ? {
           branchId: effectiveBranch,
           categoryId: (categoryId || undefined) as Id<"categories"> | undefined,
-          brandId: (brandId || undefined) as Id<"brands"> | undefined,
+          size: size || undefined,
+          color: color || undefined,
           status: (status || undefined) as
             | "IN_STOCK"
             | "LOW_STOCK"
@@ -117,11 +120,19 @@ export default function InventoryPage() {
             </option>
           ))}
         </Select>
-        <Select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="w-32">
-          <option value="">All brands</option>
-          {(brands ?? []).map((b) => (
-            <option key={b._id} value={b._id}>
-              {b.name}
+        <Select value={size} onChange={(e) => setSize(e.target.value)} className="w-28">
+          <option value="">All sizes</option>
+          {(sizes ?? []).map((s) => (
+            <option key={s._id} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+        </Select>
+        <Select value={color} onChange={(e) => setColor(e.target.value)} className="w-32">
+          <option value="">All colors</option>
+          {(colors ?? []).map((c) => (
+            <option key={c._id} value={c.name}>
+              {c.name}
             </option>
           ))}
         </Select>

@@ -13,7 +13,8 @@ import {
   Users,
   Shirt,
   Tags,
-  Award,
+  Ruler,
+  Palette,
   Package,
   SlidersHorizontal,
   ArrowLeftRight,
@@ -68,7 +69,8 @@ const menuGroups: MenuGroup[] = [
     items: [
       { name: "Products", href: "/products", icon: Shirt, allowedRoles: MANAGER },
       { name: "Categories", href: "/products/categories", icon: Tags, allowedRoles: MANAGER },
-      { name: "Brands", href: "/products/brands", icon: Award, allowedRoles: MANAGER },
+      { name: "Sizes", href: "/settings/sizes", icon: Ruler, allowedRoles: MANAGER },
+      { name: "Colors", href: "/settings/colors", icon: Palette, allowedRoles: MANAGER },
     ],
   },
   {

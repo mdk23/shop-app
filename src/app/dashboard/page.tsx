@@ -155,10 +155,11 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <TopList title="Top products" rows={metrics.topProducts} />
             <TopList title="Top categories" rows={metrics.topCategories} />
-            <TopList title="Top brands" rows={metrics.topBrands} />
+            <TopList title="Top sizes" rows={metrics.topSizes} />
+            <TopList title="Top colors" rows={metrics.topColors} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
@@ -18,11 +18,13 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useResolvedBranch } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 
@@ -39,7 +41,8 @@ export default function AdjustmentsPage() {
   const token = useToken();
   const { branchId, branchName, branches } = useResolvedBranch();
   const create = useMutation(api.stockAdjustments.create);
-  const rows = useQuery(api.stockAdjustments.listRecent, { limit: 100 });
+  const { rows, isLoading, pageIndex, pageSize, hasPrev, hasNext, goPrev, goNext } =
+    usePagedQuery(api.stockAdjustments.listPaged, {});
 
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<PickedVariant | null>(null);
@@ -90,7 +93,7 @@ export default function AdjustmentsPage() {
       </Toolbar>
 
       <Card>
-        {rows === undefined ? (
+        {isLoading ? (
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState title="No adjustments yet" />
@@ -136,6 +139,17 @@ export default function AdjustmentsPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && rows.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={rows.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
 

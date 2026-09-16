@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { X, Loader2, AlertTriangle, Inbox } from "lucide-react";
+import { X, Loader2, AlertTriangle, Inbox, ChevronLeft, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import React from "react";
 
@@ -405,5 +405,51 @@ export function Td({
     >
       {children}
     </td>
+  );
+}
+
+/**
+ * Prev/Next pager footer shared by every paginated table — pairs with either
+ * `usePagedQuery` (real Convex cursor pagination) or `useClientPage`
+ * (in-memory slicing of an already-bounded list) from `@/lib/pagination`.
+ */
+export function Pagination({
+  pageIndex,
+  rowCount,
+  pageSize,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+  loading,
+}: {
+  pageIndex: number;
+  rowCount: number;
+  pageSize: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  loading?: boolean;
+}) {
+  const start = rowCount === 0 ? 0 : pageIndex * pageSize + 1;
+  const end = pageIndex * pageSize + rowCount;
+  return (
+    <div className="flex items-center justify-between px-3 py-2.5 border-t border-outline/40">
+      <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+        {loading ? "Loading…" : rowCount === 0 ? "No rows" : `Showing ${start}–${end}`}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <Button variant="ghost" size="sm" disabled={!hasPrev} onClick={onPrev}>
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </Button>
+        <span className="text-[10px] font-black text-on-surface-variant px-1">
+          Page {pageIndex + 1}
+        </span>
+        <Button variant="ghost" size="sm" disabled={!hasNext} onClick={onNext}>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -464,16 +465,21 @@ export const exchange = mutation({
 // QUERIES
 // ─────────────────────────────────────────────
 
-export const listRecent = query({
-  args: { limit: v.optional(v.number()), branchId: v.optional(v.id("branches")) },
+export const listPaged = query({
+  args: {
+    branchId: v.optional(v.id("branches")),
+    paginationOpts: paginationOptsValidator,
+  },
   handler: async (ctx, args) => {
-    let rows = await ctx.db
+    const result = await ctx.db
       .query("salesReturns")
       .withIndex("by_created_at")
       .order("desc")
-      .take((args.limit ?? 50) * (args.branchId ? 3 : 1));
-    if (args.branchId) rows = rows.filter((r) => r.branchId === args.branchId);
-    return rows.slice(0, args.limit ?? 50);
+      .paginate(args.paginationOpts);
+    const page = args.branchId
+      ? result.page.filter((r) => r.branchId === args.branchId)
+      : result.page;
+    return { ...result, page };
   },
 });
 

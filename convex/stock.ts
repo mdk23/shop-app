@@ -49,13 +49,14 @@ export const getForVariant = query({
 
 /**
  * Inventory screen feed: every active variant with this branch's stock level,
- * product/category/brand context and computed status.
+ * product/category context and computed status.
  */
 export const listInventory = query({
   args: {
     branchId: v.id("branches"),
     categoryId: v.optional(v.id("categories")),
-    brandId: v.optional(v.id("brands")),
+    size: v.optional(v.string()),
+    color: v.optional(v.string()),
     status: v.optional(
       v.union(
         v.literal("IN_STOCK"),
@@ -75,15 +76,15 @@ export const listInventory = query({
 
     const productCache = new Map<Id<"products">, Doc<"products"> | null>();
     const categoryName = new Map<string, string>();
-    const brandName = new Map<string, string>();
     for (const c of await ctx.db.query("categories").collect())
       categoryName.set(c._id, c.name);
-    for (const b of await ctx.db.query("brands").collect())
-      brandName.set(b._id, b.name);
 
     const rows = [];
     const search = args.search?.trim().toLowerCase();
     for (const variant of variants) {
+      if (args.size && variant.size !== args.size) continue;
+      if (args.color && variant.color !== args.color) continue;
+
       let product = productCache.get(variant.productId);
       if (product === undefined) {
         product = await ctx.db.get(variant.productId);
@@ -91,7 +92,6 @@ export const listInventory = query({
       }
       if (!product || !product.active) continue;
       if (args.categoryId && product.categoryId !== args.categoryId) continue;
-      if (args.brandId && product.brandId !== args.brandId) continue;
 
       const stock = await stockRowsForBranch(ctx, args.branchId, variant._id);
       const quantity = stock?.quantity ?? 0;
@@ -113,9 +113,6 @@ export const listInventory = query({
         productId: product._id,
         productName: product.name,
         categoryName: categoryName.get(product.categoryId) ?? "—",
-        brandName: product.brandId
-          ? brandName.get(product.brandId) ?? null
-          : null,
         productVariantId: variant._id,
         sku: variant.sku,
         barcode: variant.barcode ?? null,

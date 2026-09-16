@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -151,7 +152,13 @@ export const receive = mutation({
 // QUERIES
 // ─────────────────────────────────────────────
 
-export const list = query({
+/**
+ * Cursor-paginated by status when given, else by creation order. A branch
+ * filter (source OR destination) is applied in-memory on the page, since a
+ * transfer's branch role isn't a single indexed field — so that combination
+ * can return fewer than a full page, same as the status-less default.
+ */
+export const listPaged = query({
   args: {
     status: v.optional(
       v.union(
@@ -163,23 +170,25 @@ export const list = query({
       )
     ),
     branchId: v.optional(v.id("branches")),
-    limit: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    let rows = args.status
+    const result = args.status
       ? await ctx.db
           .query("stockTransfers")
           .withIndex("by_status", (q) => q.eq("status", args.status!))
           .order("desc")
-          .take((args.limit ?? 100) * 2)
-      : await ctx.db.query("stockTransfers").order("desc").take((args.limit ?? 100) * 2);
-    if (args.branchId)
-      rows = rows.filter(
-        (t) =>
-          t.sourceBranchId === args.branchId ||
-          t.destinationBranchId === args.branchId
-      );
-    return rows.slice(0, args.limit ?? 100);
+          .paginate(args.paginationOpts)
+      : await ctx.db.query("stockTransfers").order("desc").paginate(args.paginationOpts);
+
+    const page = args.branchId
+      ? result.page.filter(
+          (t) =>
+            t.sourceBranchId === args.branchId || t.destinationBranchId === args.branchId
+        )
+      : result.page;
+
+    return { ...result, page };
   },
 });
 

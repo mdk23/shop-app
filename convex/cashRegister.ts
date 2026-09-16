@@ -6,6 +6,7 @@ import {
   MutationCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { Doc, Id } from "./_generated/dataModel";
 
 import { authorize } from "./permissions";
@@ -142,31 +143,31 @@ export const getSessionWithMovements = query({
   },
 });
 
-export const listSessions = query({
+/** Cursor-paginated by status index, else by creation order; branch is a page-local filter. */
+export const listSessionsPaged = query({
   args: {
     token: v.string(),
     status: v.optional(v.union(v.literal("open"), v.literal("closed"))),
-    limit: v.optional(v.number()),
     branchId: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "cash_register.reports");
-    const limit = args.limit ?? 50;
-    let sessions = args.status
+    const result = args.status
       ? await ctx.db
           .query("cashRegisterSessions")
           .withIndex("by_status", (q) => q.eq("status", args.status!))
           .order("desc")
-          .take(limit * 2)
-      : await ctx.db.query("cashRegisterSessions").order("desc").take(limit * 2);
+          .paginate(args.paginationOpts)
+      : await ctx.db.query("cashRegisterSessions").order("desc").paginate(args.paginationOpts);
 
-    if (args.branchId && args.branchId !== "all") {
-      sessions = sessions.filter((s) => s.branchId === args.branchId);
-    }
-    sessions = sessions.slice(0, limit);
+    const filtered =
+      args.branchId && args.branchId !== "all"
+        ? result.page.filter((s) => s.branchId === args.branchId)
+        : result.page;
 
-    return await Promise.all(
-      sessions.map(async (session) => {
+    const page = await Promise.all(
+      filtered.map(async (session) => {
         const movements = await ctx.db
           .query("cashRegisterMovements")
           .withIndex("by_session", (q) => q.eq("sessionId", session._id))
@@ -186,6 +187,8 @@ export const listSessions = query({
         };
       })
     );
+
+    return { ...result, page };
   },
 });
 

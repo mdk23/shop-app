@@ -1,5 +1,6 @@
 import { internalMutation, internalQuery, mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
 
@@ -138,6 +139,18 @@ export const getAuditLogs = query({
       .query("auditLogs")
       .order("desc")
       .take(args.limit ?? 100);
+  },
+});
+
+/** Cursor-paginated, indexed by creation time — O(page size) reads per page. */
+export const getAuditLogsPaged = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("auditLogs")
+      .withIndex("by_created_at")
+      .order("desc")
+      .paginate(args.paginationOpts);
   },
 });
 

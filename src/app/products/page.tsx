@@ -8,6 +8,7 @@ import { PageLayout } from "@/components/PageLayout";
 import {
   Button,
   Card,
+  ConfirmDialog,
   Field,
   TextInput,
   Textarea,
@@ -24,15 +25,14 @@ import {
 } from "@/components/ui";
 import { useToken, useCurrency } from "@/lib/useShop";
 import { toast } from "sonner";
-import { Plus, Search, Pencil, Boxes } from "lucide-react";
+import { Plus, Search, Pencil, Boxes, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type ProductRow = {
   _id: Id<"products">;
   name: string;
   categoryId: Id<"categories">;
-  brandId?: Id<"brands"> | null;
   categoryName: string;
-  brandName: string | null;
   defaultCostPrice: number;
   defaultSellingPrice: number;
   active: boolean;
@@ -45,21 +45,53 @@ export default function ProductsPage() {
   const fmt = useCurrency();
 
   const categories = useQuery(api.categories.list, {});
-  const brands = useQuery(api.brands.list, {});
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
-  const [brandId, setBrandId] = useState<string>("");
 
   const products = useQuery(api.products.list, {
     search: search || undefined,
     categoryId: (categoryId || undefined) as Id<"categories"> | undefined,
-    brandId: (brandId || undefined) as Id<"brands"> | undefined,
     includeInactive: true,
   });
+  const updateProduct = useMutation(api.products.update);
+  const removeProduct = useMutation(api.products.remove);
+  const archiveProduct = useMutation(api.products.archive);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id<"products"> | null>(null);
   const [variantsFor, setVariantsFor] = useState<Id<"products"> | null>(null);
+  const [deleting, setDeleting] = useState<ProductRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [archiveInstead, setArchiveInstead] = useState<ProductRow | null>(null);
+
+  const toggleActive = async (p: ProductRow) => {
+    try {
+      await updateProduct({ token, id: p._id, active: !p.active });
+      toast.success(p.active ? "Product archived" : "Product restored");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update status");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await removeProduct({ token, id: deleting._id });
+      toast.success(`"${deleting.name}" deleted`);
+      setDeleting(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to delete";
+      if (message.includes("sales history")) {
+        setDeleting(null);
+        setArchiveInstead(deleting);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   return (
     <PageLayout title="Products" subtitle="Catalog · commercial items & variants">
@@ -78,14 +110,6 @@ export default function ProductsPage() {
           {(categories ?? []).map((c) => (
             <option key={c._id} value={c._id}>
               {c.name}
-            </option>
-          ))}
-        </Select>
-        <Select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="w-40">
-          <option value="">All brands</option>
-          {(brands ?? []).map((b) => (
-            <option key={b._id} value={b._id}>
-              {b.name}
             </option>
           ))}
         </Select>
@@ -119,7 +143,6 @@ export default function ProductsPage() {
               <tr>
                 <Th>Product</Th>
                 <Th>Category</Th>
-                <Th>Brand</Th>
                 <Th className="text-right">Cost</Th>
                 <Th className="text-right">Price</Th>
                 <Th className="w-24">Variants</Th>
@@ -132,16 +155,17 @@ export default function ProductsPage() {
                 <tr key={p._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{p.name}</Td>
                   <Td className="text-on-surface-variant">{p.categoryName}</Td>
-                  <Td className="text-on-surface-variant">{p.brandName ?? "—"}</Td>
                   <Td className="text-right">{fmt(p.defaultCostPrice)}</Td>
                   <Td className="text-right font-bold">{fmt(p.defaultSellingPrice)}</Td>
                   <Td>
                     {p.activeVariantCount}/{p.variantCount}
                   </Td>
                   <Td>
-                    <Badge tone={p.active ? "success" : "neutral"}>
-                      {p.active ? "Active" : "Archived"}
-                    </Badge>
+                    <button onClick={() => toggleActive(p)} title="Click to toggle status">
+                      <Badge tone={p.active ? "success" : "neutral"}>
+                        {p.active ? "Active" : "Archived"}
+                      </Badge>
+                    </button>
                   </Td>
                   <Td>
                     <div className="flex gap-1">
@@ -162,6 +186,9 @@ export default function ProductsPage() {
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleting(p)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                   </Td>
                 </tr>
@@ -176,7 +203,6 @@ export default function ProductsPage() {
           token={token}
           productId={editingId}
           categories={categories ?? []}
-          brands={brands ?? []}
           onClose={() => setModalOpen(false)}
           onSaved={(id) => {
             setModalOpen(false);
@@ -193,6 +219,35 @@ export default function ProductsPage() {
           onClose={() => setVariantsFor(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title="Delete product"
+        message={`Delete "${deleting?.name}" and all of its variants? This cannot be undone. Products with sales history can't be deleted — archive them instead.`}
+        danger
+        confirmLabel="Delete"
+        loading={deleteBusy}
+        onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={!!archiveInstead}
+        onClose={() => setArchiveInstead(null)}
+        title="Can't delete — archive instead?"
+        message={`"${archiveInstead?.name}" has sales history, so it can't be deleted. Archiving hides it (and its variants) from the catalog and POS while keeping past sales intact.`}
+        confirmLabel="Archive"
+        onConfirm={async () => {
+          if (!archiveInstead) return;
+          try {
+            await archiveProduct({ token, id: archiveInstead._id });
+            toast.success(`"${archiveInstead.name}" archived`);
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to archive");
+          }
+          setArchiveInstead(null);
+        }}
+      />
     </PageLayout>
   );
 }
@@ -205,14 +260,12 @@ function ProductModal({
   token,
   productId,
   categories,
-  brands,
   onClose,
   onSaved,
 }: {
   token: string;
   productId: Id<"products"> | null;
   categories: { _id: Id<"categories">; name: string }[];
-  brands: { _id: Id<"brands">; name: string }[];
   onClose: () => void;
   onSaved: (id: Id<"products">) => void;
 }) {
@@ -226,7 +279,6 @@ function ProductModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
-  const [brandId, setBrandId] = useState("");
   const [cost, setCost] = useState("");
   const [price, setPrice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -236,7 +288,6 @@ function ProductModal({
     setName(existing.name);
     setDescription(existing.description ?? "");
     setCategoryId(existing.categoryId);
-    setBrandId(existing.brandId ?? "");
     setCost(String(existing.defaultCostPrice));
     setPrice(String(existing.defaultSellingPrice));
     setHydrated(true);
@@ -253,7 +304,6 @@ function ProductModal({
           name,
           description: description || undefined,
           categoryId: categoryId as Id<"categories">,
-          brandId: (brandId || null) as Id<"brands"> | null,
           defaultCostPrice: Number(cost) || 0,
           defaultSellingPrice: Number(price) || 0,
         });
@@ -265,7 +315,6 @@ function ProductModal({
           name,
           description: description || undefined,
           categoryId: categoryId as Id<"categories">,
-          brandId: (brandId || undefined) as Id<"brands"> | undefined,
           defaultCostPrice: Number(cost) || 0,
           defaultSellingPrice: Number(price) || 0,
         });
@@ -302,28 +351,16 @@ function ProductModal({
           placeholder="e.g. Classic Polo Shirt"
         />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Category" required>
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">Select…</option>
-            {categories.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Brand">
-          <Select value={brandId} onChange={(e) => setBrandId(e.target.value)}>
-            <option value="">None</option>
-            {brands.map((b) => (
-              <option key={b._id} value={b._id}>
-                {b.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </div>
+      <Field label="Category" required>
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <option value="">Select…</option>
+          {categories.map((c) => (
+            <option key={c._id} value={c._id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Default cost price">
           <TextInput type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
@@ -355,31 +392,34 @@ function VariantManager({
   onClose: () => void;
 }) {
   const product = useQuery(api.products.get, { id: productId });
+  const availableSizes = useQuery(api.sizes.list, {});
+  const availableColors = useQuery(api.colors.list, {});
   const generate = useMutation(api.productVariants.generateMatrix);
   const updateVariant = useMutation(api.productVariants.update);
 
-  const [sizes, setSizes] = useState("");
-  const [colors, setColors] = useState("");
+  const [sizes, setSizes] = useState<string[]>([]);
+  const [colors, setColors] = useState<string[]>([]);
   const [reorder, setReorder] = useState("0");
   const [busy, setBusy] = useState(false);
 
+  const toggle = (list: string[], set: (v: string[]) => void, value: string) =>
+    set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+
   const runMatrix = async () => {
-    const s = sizes.split(",").map((x) => x.trim()).filter(Boolean);
-    const c = colors.split(",").map((x) => x.trim()).filter(Boolean);
-    if (s.length === 0 && c.length === 0)
-      return toast.error("Enter at least one size or colour.");
+    if (sizes.length === 0 && colors.length === 0)
+      return toast.error("Pick at least one size or colour.");
     setBusy(true);
     try {
       const res = await generate({
         token,
         productId,
-        sizes: s,
-        colors: c,
+        sizes,
+        colors,
         reorderLevel: Number(reorder) || 0,
       });
       toast.success(`${res.created} variant(s) created, ${res.skipped} skipped`);
-      setSizes("");
-      setColors("");
+      setSizes([]);
+      setColors([]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -403,13 +443,61 @@ function VariantManager({
         <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
           Generate size × colour grid
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-          <Field label="Sizes (comma separated)">
-            <TextInput value={sizes} onChange={(e) => setSizes(e.target.value)} placeholder="S, M, L, XL" />
-          </Field>
-          <Field label="Colours (comma separated)">
-            <TextInput value={colors} onChange={(e) => setColors(e.target.value)} placeholder="Black, White" />
-          </Field>
+        {(availableSizes?.length === 0 || availableColors?.length === 0) && (
+          <p className="text-xs text-on-surface-variant mb-3">
+            No sizes/colours configured yet — add them in{" "}
+            <span className="font-bold">Settings → Sizes / Colors</span> first.
+          </p>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">
+              Sizes
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {(availableSizes ?? []).map((s) => (
+                <button
+                  key={s._id}
+                  onClick={() => toggle(sizes, setSizes, s.name)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors",
+                    sizes.includes(s.name)
+                      ? "bg-primary text-on-primary border-primary"
+                      : "bg-surface border-outline text-on-surface-variant hover:border-primary/50"
+                  )}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">
+              Colours
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {(availableColors ?? []).map((c) => (
+                <button
+                  key={c._id}
+                  onClick={() => toggle(colors, setColors, c.name)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors",
+                    colors.includes(c.name)
+                      ? "bg-primary text-on-primary border-primary"
+                      : "bg-surface border-outline text-on-surface-variant hover:border-primary/50"
+                  )}
+                >
+                  <span
+                    className="w-3 h-3 rounded-full border border-outline/50"
+                    style={{ background: c.hex || "transparent" }}
+                  />
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-end gap-3 mt-3">
           <Field label="Reorder level">
             <TextInput type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} />
           </Field>
@@ -431,7 +519,6 @@ function VariantManager({
                 <Th>SKU</Th>
                 <Th>Colour</Th>
                 <Th>Size</Th>
-                <Th>Barcode</Th>
                 <Th className="text-right w-28">Cost</Th>
                 <Th className="text-right w-28">Price</Th>
                 <Th className="text-right w-20">Reorder</Th>
@@ -480,12 +567,10 @@ function VariantRow({
   const [price, setPrice] = useState(String(variant.sellingPrice));
   const [cost, setCost] = useState(String(variant.costPrice));
   const [reorder, setReorder] = useState(String(variant.reorderLevel));
-  const [barcode, setBarcode] = useState(variant.barcode ?? "");
   const dirty =
     price !== String(variant.sellingPrice) ||
     cost !== String(variant.costPrice) ||
-    reorder !== String(variant.reorderLevel) ||
-    barcode !== (variant.barcode ?? "");
+    reorder !== String(variant.reorderLevel);
 
   const save = async () => {
     try {
@@ -495,7 +580,6 @@ function VariantRow({
         sellingPrice: Number(price),
         costPrice: Number(cost),
         reorderLevel: Number(reorder),
-        barcode: barcode || undefined,
       });
       toast.success(`${variant.sku} saved`);
     } catch (e) {
@@ -510,14 +594,6 @@ function VariantRow({
       <Td className="font-mono text-[11px]">{variant.sku}</Td>
       <Td>{variant.color ?? "—"}</Td>
       <Td>{variant.size ?? "—"}</Td>
-      <Td>
-        <input
-          className={mini.replace("text-right", "text-left")}
-          value={barcode}
-          onChange={(e) => setBarcode(e.target.value)}
-          placeholder="—"
-        />
-      </Td>
       <Td>
         <input className={mini} value={cost} onChange={(e) => setCost(e.target.value)} />
       </Td>

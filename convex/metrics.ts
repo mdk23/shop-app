@@ -142,7 +142,6 @@ export interface SaleMetricDeltas {
   customerId?: string;
   paymentMethods?: MethodRecord;
   categorySales?: NumRecord;
-  brandSales?: NumRecord;
   productSales?: NumRecord;
   sizeSales?: NumRecord;
   colorSales?: NumRecord;
@@ -190,7 +189,6 @@ async function getOrCreateDailyMetrics(ctx: MutationCtx, dateString: string) {
     outstandingDebt: 0,
     paymentMethods: {},
     categorySales: {},
-    brandSales: {},
     productSales: {},
     sizeSales: {},
     colorSales: {},
@@ -243,7 +241,6 @@ export async function applyDailyMetrics(
     pendingCount: (m.pendingCount ?? 0) + d.pendingCount,
     paymentMethods: mergeMethodRecord(m.paymentMethods, d.paymentMethods),
     categorySales: mergeNumRecord(m.categorySales, d.categorySales),
-    brandSales: mergeNumRecord(m.brandSales, d.brandSales),
     productSales: mergeNumRecord(m.productSales, d.productSales),
     sizeSales: mergeNumRecord(m.sizeSales, d.sizeSales),
     colorSales: mergeNumRecord(m.colorSales, d.colorSales),

@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
-import { Button, Card, EmptyState, Spinner, inputClass } from "@/components/ui";
+import { Button, Card, EmptyState, Select, Spinner, inputClass } from "@/components/ui";
 import { CustomerSelect } from "@/components/pos/CustomerSelect";
 import { PaymentModal } from "@/components/pos/PaymentModal";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { toast } from "sonner";
-import { Search, ScanLine, Plus, Minus, Trash2, X } from "lucide-react";
+import { Search, Plus, Minus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type CartLine = {
@@ -47,7 +47,7 @@ export default function PosPage() {
   const [expanded, setExpanded] = useState<Id<"products"> | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [receiptSaleId, setReceiptSaleId] = useState<Id<"sales"> | null>(null);
-  const scanRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const taxRate = Number(taxSetting?.value ?? "0") || 0;
 
@@ -141,43 +141,6 @@ export default function PosPage() {
   const tax = Math.round(taxable * (taxRate / 100) * 100) / 100;
   const total = taxable + tax;
 
-  // Barcode / SKU quick-add: a reactive query keyed on the scanned code.
-  const [scanTerm, setScanTerm] = useState("");
-  const [pendingScan, setPendingScan] = useState(false);
-  const scanResult = useQuery(
-    api.productVariants.getBySkuOrBarcode,
-    scanTerm ? { code: scanTerm } : "skip"
-  );
-
-  useEffect(() => {
-    if (!pendingScan || scanResult === undefined) return;
-    setPendingScan(false);
-    if (!scanResult) {
-      toast.error(`No product for "${scanTerm}"`);
-    } else {
-      addLine(
-        {
-          _id: scanResult._id,
-          sku: scanResult.sku,
-          label: scanResult.label,
-          sellingPrice: scanResult.sellingPrice,
-          stock: Number.MAX_SAFE_INTEGER,
-        },
-        scanResult.product?.name ?? "Product"
-      );
-      toast.success(`Added ${scanResult.product?.name ?? scanResult.sku}`);
-    }
-    setScanTerm("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanResult, pendingScan]);
-
-  const handleScan = (raw: string) => {
-    const code = raw.trim();
-    if (!code) return;
-    setScanTerm(code);
-    setPendingScan(true);
-  };
-
   const completeSale = async (
     payments: { method: string; amount: number }[]
   ): Promise<void> => {
@@ -233,53 +196,69 @@ export default function PosPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4 h-[calc(100vh-9rem)]">
         {/* Catalog */}
         <div className="flex flex-col min-h-0">
-          <div className="flex flex-wrap gap-2 mb-3">
-            <div className="relative flex-1 min-w-48">
-              <ScanLine className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
-              <input
-                ref={scanRef}
-                className={`${inputClass} pl-9`}
-                placeholder="Scan / type SKU or barcode, then Enter"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleScan((e.target as HTMLInputElement).value);
-                    (e.target as HTMLInputElement).value = "";
-                  }
-                }}
-              />
-            </div>
-            <div className="relative flex-1 min-w-48">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="relative flex-1 min-w-56">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
               <input
+                ref={searchRef}
                 className={`${inputClass} pl-9`}
                 placeholder="Search products…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+            <Select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-36"
+            >
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+            <Select value={size} onChange={(e) => setSize(e.target.value)} className="w-24">
+              <option value="">All sizes</option>
+              {sizes.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+            <Select value={color} onChange={(e) => setColor(e.target.value)} className="w-32">
+              <option value="">All colors</option>
+              {colors.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
           </div>
 
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            <Chip active={!category} onClick={() => setCategory("")}>
-              All
-            </Chip>
-            {categories.map((c) => (
-              <Chip key={c} active={category === c} onClick={() => setCategory(c)}>
-                {c}
-              </Chip>
-            ))}
-            <span className="w-px bg-outline mx-1" />
-            {sizes.map((s) => (
-              <Chip key={s} active={size === s} onClick={() => setSize(size === s ? "" : s)}>
-                {s}
-              </Chip>
-            ))}
-            {colors.map((c) => (
-              <Chip key={c} active={color === c} onClick={() => setColor(color === c ? "" : c)}>
-                {c}
-              </Chip>
-            ))}
-          </div>
+          {(category || size || color) && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              <span className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant">
+                Filters:
+              </span>
+              {category && (
+                <ActiveFilterTag label={category} onClear={() => setCategory("")} />
+              )}
+              {size && <ActiveFilterTag label={size} onClear={() => setSize("")} />}
+              {color && <ActiveFilterTag label={color} onClear={() => setColor("")} />}
+              <button
+                onClick={() => {
+                  setCategory("");
+                  setSize("");
+                  setColor("");
+                }}
+                className="text-[9px] font-black uppercase tracking-widest text-primary hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
 
           <Card className="flex-1 overflow-y-auto p-3">
             {catalog === undefined ? (
@@ -305,7 +284,7 @@ export default function PosPage() {
                         {p.name}
                       </p>
                       <p className="text-[10px] text-on-surface-variant mt-1">
-                        {p.brandName ?? p.categoryName}
+                        {p.categoryName}
                       </p>
                       <p className="text-sm font-display text-primary mt-1">
                         {fmt(p.defaultSellingPrice)}
@@ -461,7 +440,7 @@ export default function PosPage() {
           saleId={receiptSaleId}
           onClose={() => {
             setReceiptSaleId(null);
-            scanRef.current?.focus();
+            searchRef.current?.focus();
           }}
         />
       )}
@@ -469,26 +448,14 @@ export default function PosPage() {
   );
 }
 
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+function ActiveFilterTag({ label, onClear }: { label: string; onClear: () => void }) {
   return (
     <button
-      onClick={onClick}
-      className={cn(
-        "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-colors",
-        active
-          ? "bg-primary text-on-primary border-primary"
-          : "bg-surface-container-low text-on-surface-variant border-outline hover:border-primary/50"
-      )}
+      onClick={onClear}
+      className="flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-colors"
     >
-      {children}
+      {label}
+      <X className="w-3 h-3" />
     </button>
   );
 }

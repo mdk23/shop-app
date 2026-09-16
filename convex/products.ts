@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
@@ -13,7 +14,6 @@ import { variantLabel } from "./inventory";
 export const list = query({
   args: {
     categoryId: v.optional(v.id("categories")),
-    brandId: v.optional(v.id("brands")),
     search: v.optional(v.string()),
     includeInactive: v.optional(v.boolean()),
   },
@@ -29,11 +29,6 @@ export const list = query({
         .query("products")
         .withIndex("by_category", (q) => q.eq("categoryId", args.categoryId!))
         .collect();
-    } else if (args.brandId) {
-      products = await ctx.db
-        .query("products")
-        .withIndex("by_brand", (q) => q.eq("brandId", args.brandId!))
-        .collect();
     } else {
       products = await ctx.db.query("products").order("desc").take(200);
     }
@@ -41,8 +36,6 @@ export const list = query({
     if (!args.includeInactive) products = products.filter((p) => p.active);
     if (args.categoryId)
       products = products.filter((p) => p.categoryId === args.categoryId);
-    if (args.brandId)
-      products = products.filter((p) => p.brandId === args.brandId);
 
     return await Promise.all(
       products.map(async (p) => {
@@ -51,16 +44,70 @@ export const list = query({
           .withIndex("by_product", (q) => q.eq("productId", p._id))
           .collect();
         const category = await ctx.db.get(p.categoryId);
-        const brand = p.brandId ? await ctx.db.get(p.brandId) : null;
         return {
           ...p,
           categoryName: category?.name ?? "—",
-          brandName: brand?.name ?? null,
           variantCount: variants.length,
           activeVariantCount: variants.filter((v) => v.active).length,
         };
       })
     );
+  },
+});
+
+/**
+ * Cursor-paginated feed for the Products table. Reads only `paginationOpts.numItems`
+ * documents per page via an index (or the search index when `search` is set),
+ * so browsing a large catalog costs O(page size) document reads, not O(catalog size).
+ *
+ * Note: combining `search` with `categoryId` still applies the category as an
+ * in-memory filter on top of the search page, so that one combination can return
+ * fewer than a full page of rows — everything else (default browse, category-only,
+ * search-only) returns exact pages straight from an index.
+ */
+export const listPaged = query({
+  args: {
+    categoryId: v.optional(v.id("categories")),
+    search: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const result =
+      args.search && args.search.trim()
+        ? await ctx.db
+            .query("products")
+            .withSearchIndex("search_name", (q) => q.search("name", args.search!))
+            .paginate(args.paginationOpts)
+        : args.categoryId
+          ? await ctx.db
+              .query("products")
+              .withIndex("by_category", (q) => q.eq("categoryId", args.categoryId!))
+              .order("desc")
+              .paginate(args.paginationOpts)
+          : await ctx.db.query("products").order("desc").paginate(args.paginationOpts);
+
+    let page = result.page;
+    if (args.search && args.categoryId) {
+      page = page.filter((p) => p.categoryId === args.categoryId);
+    }
+
+    const enriched = await Promise.all(
+      page.map(async (p) => {
+        const variants = await ctx.db
+          .query("productVariants")
+          .withIndex("by_product", (q) => q.eq("productId", p._id))
+          .collect();
+        const category = await ctx.db.get(p.categoryId);
+        return {
+          ...p,
+          categoryName: category?.name ?? "—",
+          variantCount: variants.length,
+          activeVariantCount: variants.filter((v) => v.active).length,
+        };
+      })
+    );
+
+    return { ...result, page: enriched };
   },
 });
 
@@ -78,7 +125,6 @@ export const get = query({
       .withIndex("by_product", (q) => q.eq("productId", args.id))
       .collect();
     const category = await ctx.db.get(product.categoryId);
-    const brand = product.brandId ? await ctx.db.get(product.brandId) : null;
     const imagesWithUrls = await Promise.all(
       images
         .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -90,7 +136,6 @@ export const get = query({
     return {
       ...product,
       category,
-      brand,
       variants: variants.sort((a, b) => a.sku.localeCompare(b.sku)),
       images: imagesWithUrls,
     };
@@ -111,9 +156,7 @@ export const listForPos = query({
       .collect();
 
     const categories = await ctx.db.query("categories").collect();
-    const brands = await ctx.db.query("brands").collect();
     const catName = new Map(categories.map((c) => [c._id, c.name]));
-    const brandName = new Map(brands.map((b) => [b._id, b.name]));
 
     const result = [];
     for (const p of products) {
@@ -141,8 +184,6 @@ export const listForPos = query({
         name: p.name,
         categoryId: p.categoryId,
         categoryName: catName.get(p.categoryId) ?? "—",
-        brandId: p.brandId ?? null,
-        brandName: p.brandId ? brandName.get(p.brandId) ?? null : null,
         defaultSellingPrice: p.defaultSellingPrice,
         variants: activeVariants,
       });
@@ -161,7 +202,6 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     categoryId: v.id("categories"),
-    brandId: v.optional(v.id("brands")),
     defaultCostPrice: v.number(),
     defaultSellingPrice: v.number(),
     variants: v.optional(
@@ -188,7 +228,6 @@ export const create = mutation({
       name,
       description: args.description,
       categoryId: args.categoryId,
-      brandId: args.brandId,
       defaultCostPrice: args.defaultCostPrice,
       defaultSellingPrice: args.defaultSellingPrice,
       active: true,
@@ -234,7 +273,6 @@ export const update = mutation({
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     categoryId: v.optional(v.id("categories")),
-    brandId: v.optional(v.union(v.id("brands"), v.null())),
     defaultCostPrice: v.optional(v.number()),
     defaultSellingPrice: v.optional(v.number()),
     primaryImageId: v.optional(v.union(v.id("_storage"), v.null())),
@@ -256,8 +294,6 @@ export const update = mutation({
     if (args.name !== undefined) patch.name = args.name.trim();
     if (args.description !== undefined) patch.description = args.description;
     if (args.categoryId !== undefined) patch.categoryId = args.categoryId;
-    if (args.brandId !== undefined)
-      patch.brandId = args.brandId ?? undefined;
     if (args.defaultCostPrice !== undefined)
       patch.defaultCostPrice = args.defaultCostPrice;
     if (args.defaultSellingPrice !== undefined)

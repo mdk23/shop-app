@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -16,7 +17,12 @@ const PO_ITEM = v.object({
 // QUERIES
 // ─────────────────────────────────────────────
 
-export const list = query({
+/**
+ * Cursor-paginated by status (or supplier) index, else by creation order.
+ * The other of {supplierId, branchId} not used to pick the index is applied
+ * to the page in-memory, so that combination can return a shorter page.
+ */
+export const listPaged = query({
   args: {
     supplierId: v.optional(v.id("suppliers")),
     branchId: v.optional(v.id("branches")),
@@ -29,34 +35,35 @@ export const list = query({
         v.literal("cancelled")
       )
     ),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    let rows;
-    if (args.status) {
-      rows = await ctx.db
-        .query("purchaseOrders")
-        .withIndex("by_status", (q) => q.eq("status", args.status!))
-        .order("desc")
-        .collect();
-    } else if (args.supplierId) {
-      rows = await ctx.db
-        .query("purchaseOrders")
-        .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId!))
-        .order("desc")
-        .collect();
-    } else {
-      rows = await ctx.db.query("purchaseOrders").order("desc").take(300);
-    }
-    if (args.supplierId)
-      rows = rows.filter((p) => p.supplierId === args.supplierId);
-    if (args.branchId) rows = rows.filter((p) => p.branchId === args.branchId);
+    const result = args.status
+      ? await ctx.db
+          .query("purchaseOrders")
+          .withIndex("by_status", (q) => q.eq("status", args.status!))
+          .order("desc")
+          .paginate(args.paginationOpts)
+      : args.supplierId
+        ? await ctx.db
+            .query("purchaseOrders")
+            .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId!))
+            .order("desc")
+            .paginate(args.paginationOpts)
+        : await ctx.db.query("purchaseOrders").order("desc").paginate(args.paginationOpts);
 
-    return await Promise.all(
-      rows.map(async (po) => {
+    let page = result.page;
+    if (args.status && args.supplierId)
+      page = page.filter((p) => p.supplierId === args.supplierId);
+    if (args.branchId) page = page.filter((p) => p.branchId === args.branchId);
+
+    const enriched = await Promise.all(
+      page.map(async (po) => {
         const supplier = await ctx.db.get(po.supplierId);
         return { ...po, supplierName: supplier?.name ?? "Unknown supplier" };
       })
     );
+    return { ...result, page: enriched };
   },
 });
 

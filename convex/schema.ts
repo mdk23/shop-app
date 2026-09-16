@@ -4,7 +4,8 @@ import { v } from "convex/values";
 /**
  * CLOTHING RETAIL MANAGEMENT SYSTEM — schema
  *
- * Core model: Category → Brand → Product → ProductVariant (the stockable SKU).
+ * Core model: Category → Product → ProductVariant (the stockable SKU), with
+ * variants drawing their size/colour from the configurable `sizes`/`colors` lists.
  * Stock is ledger-based: `inventoryMovements` is the source of truth, `variantStock`
  * is a per-branch denormalized cache updated in the same mutation as the ledger row.
  *
@@ -48,21 +49,10 @@ export default defineSchema({
     .index("by_active", ["active"])
     .searchIndex("search_name", { searchField: "name" }),
 
-  brands: defineTable({
-    name: v.string(),
-    description: v.optional(v.string()),
-    active: v.boolean(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_active", ["active"])
-    .searchIndex("search_name", { searchField: "name" }),
-
   products: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
     categoryId: v.id("categories"),
-    brandId: v.optional(v.id("brands")),
     defaultCostPrice: v.number(),
     defaultSellingPrice: v.number(),
     primaryImageId: v.optional(v.id("_storage")),
@@ -71,9 +61,28 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_category", ["categoryId"])
-    .index("by_brand", ["brandId"])
     .index("by_active", ["active"])
     .searchIndex("search_name", { searchField: "name" }),
+
+  // Configurable size taxonomy (e.g. XS, S, M, L, XL) used when creating variants —
+  // keeps size labels consistent across products instead of free text.
+  sizes: defineTable({
+    name: v.string(),
+    sortOrder: v.optional(v.number()),
+    active: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_active", ["active"]),
+
+  // Configurable colour taxonomy used when creating variants.
+  colors: defineTable({
+    name: v.string(),
+    hex: v.optional(v.string()), // swatch, e.g. "#1A2517"
+    sortOrder: v.optional(v.number()),
+    active: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_active", ["active"]),
 
   productVariants: defineTable({
     productId: v.id("products"),
@@ -603,7 +612,6 @@ export default defineSchema({
       v.record(v.string(), v.object({ amount: v.number(), count: v.number() }))
     ),
     categorySales: v.optional(v.record(v.string(), v.number())),
-    brandSales: v.optional(v.record(v.string(), v.number())),
     productSales: v.optional(v.record(v.string(), v.number())),
     sizeSales: v.optional(v.record(v.string(), v.number())),
     colorSales: v.optional(v.record(v.string(), v.number())),

@@ -17,11 +17,13 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useResolvedBranch } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 

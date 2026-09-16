@@ -10,7 +10,6 @@ import {
   Card,
   Field,
   TextInput,
-  Textarea,
   Modal,
   Table,
   Th,
@@ -19,53 +18,65 @@ import {
   EmptyState,
   Spinner,
   Toolbar,
+  ConfirmDialog,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
 import { toast } from "sonner";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 
 type Row = {
-  _id: Id<"brands">;
+  _id: Id<"sizes">;
   name: string;
-  description?: string;
   active: boolean;
+  sortOrder?: number;
 };
 
-export default function BrandsPage() {
+export default function SizesPage() {
   const token = useToken();
-  const rows = useQuery(api.brands.list, { includeInactive: true });
-  const create = useMutation(api.brands.create);
-  const update = useMutation(api.brands.update);
+  const rows = useQuery(api.sizes.list, { includeInactive: true });
+  const create = useMutation(api.sizes.create);
+  const update = useMutation(api.sizes.update);
+  const remove = useMutation(api.sizes.remove);
 
   const [editing, setEditing] = useState<Row | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [sortOrder, setSortOrder] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<Row | null>(null);
 
   const openNew = () => {
     setEditing(null);
     setName("");
-    setDescription("");
+    setSortOrder("");
     setOpen(true);
   };
   const openEdit = (r: Row) => {
     setEditing(r);
     setName(r.name);
-    setDescription(r.description ?? "");
+    setSortOrder(r.sortOrder?.toString() ?? "");
     setOpen(true);
   };
 
   const save = async () => {
-    if (!name.trim()) return toast.error("Name is required.");
+    if (!name.trim()) return toast.error("Size name is required.");
     setBusy(true);
     try {
       if (editing) {
-        await update({ token, id: editing._id, name, description: description || undefined });
-        toast.success("Brand updated");
+        await update({
+          token,
+          id: editing._id,
+          name,
+          sortOrder: sortOrder ? Number(sortOrder) : undefined,
+        });
+        toast.success("Size updated");
       } else {
-        await create({ token, name, description: description || undefined });
-        toast.success("Brand created");
+        await create({
+          token,
+          name,
+          sortOrder: sortOrder ? Number(sortOrder) : undefined,
+        });
+        toast.success("Size added");
       }
       setOpen(false);
     } catch (e) {
@@ -84,11 +95,11 @@ export default function BrandsPage() {
   };
 
   return (
-    <PageLayout title="Brands" subtitle="Product catalog · brands">
+    <PageLayout title="Sizes" subtitle="Settings · clothing size taxonomy">
       <Toolbar>
         <div className="ml-auto" />
         <Button onClick={openNew}>
-          <Plus className="w-3.5 h-3.5" /> New Brand
+          <Plus className="w-3.5 h-3.5" /> New Size
         </Button>
       </Toolbar>
 
@@ -97,25 +108,25 @@ export default function BrandsPage() {
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState
-            title="No brands yet"
-            message="Brands are optional but help with reporting and filtering."
-            action={<Button onClick={openNew}>New Brand</Button>}
+            title="No sizes yet"
+            message="Add sizes like S, M, L, XL — they'll be offered when creating product variants."
+            action={<Button onClick={openNew}>New Size</Button>}
           />
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Name</Th>
-                <Th>Description</Th>
+                <Th className="w-24">Order</Th>
                 <Th className="w-24">Status</Th>
-                <Th className="w-28" />
+                <Th className="w-32" />
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{r.name}</Td>
-                  <Td className="text-on-surface-variant">{r.description ?? "—"}</Td>
+                  <Td>{r.sortOrder ?? "—"}</Td>
                   <Td>
                     <button onClick={() => toggleActive(r as Row)}>
                       <Badge tone={r.active ? "success" : "neutral"}>
@@ -124,9 +135,14 @@ export default function BrandsPage() {
                     </button>
                   </Td>
                   <Td>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(r as Row)}>
-                      <Pencil className="w-3.5 h-3.5" /> Edit
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(r as Row)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setDeleting(r as Row)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -138,7 +154,8 @@ export default function BrandsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={editing ? "Edit Brand" : "New Brand"}
+        title={editing ? "Edit Size" : "New Size"}
+        size="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
@@ -151,12 +168,35 @@ export default function BrandsPage() {
         }
       >
         <Field label="Name" required>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Nike" />
+          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. M" />
         </Field>
-        <Field label="Description">
-          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+        <Field label="Sort order" hint="Lower numbers show first">
+          <TextInput
+            type="number"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+          />
         </Field>
       </Modal>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        title="Delete size"
+        message={`Delete "${deleting?.name}"? Existing variants keep their size label; only the taxonomy entry is removed.`}
+        danger
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          if (!deleting) return;
+          try {
+            await remove({ token, id: deleting._id });
+            toast.success("Size deleted");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed");
+          }
+          setDeleting(null);
+        }}
+      />
     </PageLayout>
   );
 }

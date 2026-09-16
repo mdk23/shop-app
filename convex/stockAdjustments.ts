@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -110,35 +111,34 @@ export const create = mutation({
   },
 });
 
-export const listRecent = query({
+/** Cursor-paginated, indexed by whichever filter is given (or by date). */
+export const listPaged = query({
   args: {
-    limit: v.optional(v.number()),
     branchId: v.optional(v.id("branches")),
     productVariantId: v.optional(v.id("productVariants")),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    let rows;
     if (args.productVariantId) {
-      rows = await ctx.db
+      return await ctx.db
         .query("stockAdjustments")
         .withIndex("by_variant", (q) =>
           q.eq("productVariantId", args.productVariantId!)
         )
         .order("desc")
-        .take(args.limit ?? 100);
-    } else if (args.branchId) {
-      rows = await ctx.db
+        .paginate(args.paginationOpts);
+    }
+    if (args.branchId) {
+      return await ctx.db
         .query("stockAdjustments")
         .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
         .order("desc")
-        .take(args.limit ?? 100);
-    } else {
-      rows = await ctx.db
-        .query("stockAdjustments")
-        .withIndex("by_created_at")
-        .order("desc")
-        .take(args.limit ?? 100);
+        .paginate(args.paginationOpts);
     }
-    return rows;
+    return await ctx.db
+      .query("stockAdjustments")
+      .withIndex("by_created_at")
+      .order("desc")
+      .paginate(args.paginationOpts);
   },
 });
