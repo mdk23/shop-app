@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePaginatedQuery, useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
@@ -17,12 +17,14 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   StatCard,
   inputClass,
 } from "@/components/ui";
 import { useToken, useCurrency } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil } from "lucide-react";
 
@@ -47,17 +49,24 @@ export default function CustomersPage() {
     api.customers.search,
     search.trim() ? { query: search } : "skip"
   );
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.customers.listPaginated,
-    {},
-    { initialNumItems: 25 }
-  );
+  const {
+    rows: pagedResults,
+    isLoading: pagedLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.customers.listPaginated, search.trim() ? "skip" : {});
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [detailId, setDetailId] = useState<Id<"customers"> | null>(null);
 
-  const list = (search.trim() ? searchResults ?? [] : results) as Customer[];
+  const isSearching = !!search.trim();
+  const list = (isSearching ? searchResults ?? [] : pagedResults) as Customer[];
+  const isLoading = isSearching ? searchResults === undefined : pagedLoading;
 
   return (
     <PageLayout title="Customers" subtitle="CRM · accounts, debt & store credit">
@@ -83,7 +92,7 @@ export default function CustomersPage() {
       </Toolbar>
 
       <Card>
-        {list.length === 0 && status !== "LoadingFirstPage" ? (
+        {list.length === 0 && !isLoading ? (
           <EmptyState title="No customers" />
         ) : (
           <Table>
@@ -133,12 +142,16 @@ export default function CustomersPage() {
             </tbody>
           </Table>
         )}
-        {!search.trim() && status === "CanLoadMore" && (
-          <div className="p-3 text-center">
-            <Button variant="ghost" onClick={() => loadMore(25)}>
-              Load more
-            </Button>
-          </div>
+        {!isSearching && !isLoading && list.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={list.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
 

@@ -11,26 +11,40 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   inputClass,
 } from "@/components/ui";
+import { usePagedQuery, useClientPage } from "@/lib/pagination";
 import { Search } from "lucide-react";
 
 export default function AuditLogsPage() {
-  const logs = useQuery(api.auth.getAuditLogs, { limit: 300 });
   const [search, setSearch] = useState("");
+  const isSearching = search.trim().length > 0;
 
+  // Default browse: real cursor pagination, indexed by creation time — reads
+  // only 15 documents per page, however deep the audit trail grows.
+  const paged = usePagedQuery(api.auth.getAuditLogsPaged, isSearching ? "skip" : {});
+
+  // Free-text filter isn't index-backed, so searching falls back to a capped
+  // scan (300 most recent) filtered + paginated client-side.
+  const scanned = useQuery(api.auth.getAuditLogs, isSearching ? { limit: 300 } : "skip");
+  const term = search.trim().toLowerCase();
   const filtered = useMemo(() => {
-    const t = search.trim().toLowerCase();
-    return (logs ?? []).filter(
+    if (!isSearching) return [];
+    return (scanned ?? []).filter(
       (l) =>
-        !t ||
-        l.action.toLowerCase().includes(t) ||
-        l.username.toLowerCase().includes(t) ||
-        (l.details ?? "").toLowerCase().includes(t)
+        l.action.toLowerCase().includes(term) ||
+        l.username.toLowerCase().includes(term) ||
+        (l.details ?? "").toLowerCase().includes(term)
     );
-  }, [logs, search]);
+  }, [scanned, term, isSearching]);
+  const clientPage = useClientPage(filtered);
+
+  const rows = isSearching ? clientPage.rows : paged.rows;
+  const isLoading = isSearching ? scanned === undefined : paged.isLoading;
+  const pager = isSearching ? clientPage : paged;
 
   return (
     <PageLayout title="Audit Logs" subtitle="Administration · activity trail">
@@ -44,12 +58,17 @@ export default function AuditLogsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {isSearching && (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+            Searching the last 300 entries
+          </span>
+        )}
       </Toolbar>
 
       <Card>
-        {logs === undefined ? (
+        {isLoading ? (
           <Spinner />
-        ) : filtered.length === 0 ? (
+        ) : rows.length === 0 ? (
           <EmptyState title="No matching entries" />
         ) : (
           <Table>
@@ -62,7 +81,7 @@ export default function AuditLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => (
+              {rows.map((l) => (
                 <tr key={l._id} className="hover:bg-surface-container-low">
                   <Td className="text-xs text-on-surface-variant whitespace-nowrap">
                     {new Date(l.createdAt).toLocaleString()}
@@ -78,6 +97,17 @@ export default function AuditLogsPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && rows.length > 0 && (
+          <Pagination
+            pageIndex={pager.pageIndex}
+            rowCount={rows.length}
+            pageSize={pager.pageSize}
+            hasPrev={pager.hasPrev}
+            hasNext={pager.hasNext}
+            onPrev={pager.goPrev}
+            onNext={pager.goNext}
+          />
         )}
       </Card>
     </PageLayout>

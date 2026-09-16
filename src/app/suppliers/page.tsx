@@ -18,12 +18,14 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   ConfirmDialog,
   inputClass,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 
@@ -48,6 +50,7 @@ export default function SuppliersPage() {
     search: search || undefined,
     status: (statusFilter || undefined) as "active" | "inactive" | undefined,
   });
+  const page = useClientPage(rows ?? []);
   const remove = useMutation(api.suppliers.remove);
 
   const [open, setOpen] = useState(false);
@@ -104,7 +107,7 @@ export default function SuppliersPage() {
               </tr>
             </thead>
             <tbody>
-              {(rows as Supplier[]).map((s) => (
+              {(page.rows as Supplier[]).map((s) => (
                 <tr key={s._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{s.name}</Td>
                   <Td className="text-on-surface-variant">{s.contactName ?? "—"}</Td>
@@ -140,6 +143,17 @@ export default function SuppliersPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {rows && rows.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
 

@@ -17,12 +17,14 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   ConfirmDialog,
   inputClass,
 } from "@/components/ui";
 import { useToken, useCurrency } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 
@@ -39,6 +41,7 @@ export default function DeliveryFeesPage() {
   const fmt = useCurrency();
   const [search, setSearch] = useState("");
   const fees = useQuery(api.deliveryFees.list, { search });
+  const page = useClientPage(fees ?? []);
   const update = useMutation(api.deliveryFees.update);
   const remove = useMutation(api.deliveryFees.remove);
 
@@ -86,7 +89,7 @@ export default function DeliveryFeesPage() {
               </tr>
             </thead>
             <tbody>
-              {(fees as Fee[]).map((f) => (
+              {(page.rows as Fee[]).map((f) => (
                 <tr key={f._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{f.name}</Td>
                   <Td className="text-right font-bold">{fmt(f.fee)}</Td>
@@ -134,6 +137,17 @@ export default function DeliveryFeesPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {fees && fees.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
 

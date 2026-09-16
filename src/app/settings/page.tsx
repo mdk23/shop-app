@@ -17,8 +17,10 @@ import {
   Td,
   Badge,
   Spinner,
+  Pagination,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { useTheme, THEME_OPTIONS } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -46,6 +48,7 @@ export default function SettingsPage() {
   const token = useToken();
   const settings = useQuery(api.settings.getAll, {});
   const branches = useQuery(api.branches.listAll, {});
+  const branchesPage = useClientPage(branches ?? []);
   const upsert = useMutation(api.settings.upsert);
   const initDefaults = useMutation(api.settings.initializeDefaults);
   const { theme, setTheme } = useTheme();
@@ -218,7 +221,7 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {(branches ?? []).map((b) => (
+                {branchesPage.rows.map((b) => (
                   <tr key={b._id}>
                     <Td className="font-bold">
                       {b.name}
@@ -253,6 +256,17 @@ export default function SettingsPage() {
                 ))}
               </tbody>
             </Table>
+            {branches && branches.length > 0 && (
+              <Pagination
+                pageIndex={branchesPage.pageIndex}
+                rowCount={branchesPage.rows.length}
+                pageSize={branchesPage.pageSize}
+                hasPrev={branchesPage.hasPrev}
+                hasNext={branchesPage.hasNext}
+                onPrev={branchesPage.goPrev}
+                onNext={branchesPage.goNext}
+              />
+            )}
           </Card>
 
           <Card className="p-4 lg:col-span-2">

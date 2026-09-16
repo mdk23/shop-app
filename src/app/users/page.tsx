@@ -19,6 +19,7 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   StatCard,
@@ -26,6 +27,7 @@ import {
   inputClass,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, KeyRound } from "lucide-react";
 
@@ -66,6 +68,9 @@ function Content() {
           u.role.includes(q))
     );
   }, [users, search, isManager]);
+
+  const usersPage = useClientPage(filtered);
+  const sessionsPage = useClientPage(sessions ?? []);
 
   const counts = useMemo(() => {
     const c = { admin: 0, manager: 0, pos_seller: 0, disabled: 0 };
@@ -138,7 +143,7 @@ function Content() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((u) => (
+                {usersPage.rows.map((u) => (
                   <tr key={u._id} className="hover:bg-surface-container-low">
                     <Td className="font-bold">{u.name}</Td>
                     <Td className="text-on-surface-variant">@{u.username}</Td>
@@ -170,7 +175,19 @@ function Content() {
               </tbody>
             </Table>
           )
-        ) : sessions === undefined ? (
+        ) : null}
+        {tab === "users" && users !== undefined && filtered.length > 0 && (
+          <Pagination
+            pageIndex={usersPage.pageIndex}
+            rowCount={usersPage.rows.length}
+            pageSize={usersPage.pageSize}
+            hasPrev={usersPage.hasPrev}
+            hasNext={usersPage.hasNext}
+            onPrev={usersPage.goPrev}
+            onNext={usersPage.goNext}
+          />
+        )}
+        {tab === "sessions" && (sessions === undefined ? (
           <Spinner />
         ) : sessions.length === 0 ? (
           <EmptyState title="No active sessions" />
@@ -186,7 +203,7 @@ function Content() {
               </tr>
             </thead>
             <tbody>
-              {sessions.map((s) => (
+              {sessionsPage.rows.map((s) => (
                 <tr key={s.sessionId} className="hover:bg-surface-container-low">
                   <Td className="font-bold">
                     {s.name}{" "}
@@ -216,6 +233,17 @@ function Content() {
               ))}
             </tbody>
           </Table>
+        ))}
+        {tab === "sessions" && sessions && sessions.length > 0 && (
+          <Pagination
+            pageIndex={sessionsPage.pageIndex}
+            rowCount={sessionsPage.rows.length}
+            pageSize={sessionsPage.pageSize}
+            hasPrev={sessionsPage.hasPrev}
+            hasNext={sessionsPage.hasNext}
+            onPrev={sessionsPage.goPrev}
+            onNext={sessionsPage.goNext}
+          />
         )}
       </Card>
 

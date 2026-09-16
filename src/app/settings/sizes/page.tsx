@@ -16,11 +16,13 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   ConfirmDialog,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
@@ -34,6 +36,7 @@ type Row = {
 export default function SizesPage() {
   const token = useToken();
   const rows = useQuery(api.sizes.list, { includeInactive: true });
+  const page = useClientPage(rows ?? []);
   const create = useMutation(api.sizes.create);
   const update = useMutation(api.sizes.update);
   const remove = useMutation(api.sizes.remove);
@@ -123,7 +126,7 @@ export default function SizesPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {page.rows.map((r) => (
                 <tr key={r._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{r.name}</Td>
                   <Td>{r.sortOrder ?? "—"}</Td>
@@ -148,6 +151,17 @@ export default function SizesPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {rows && rows.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
 

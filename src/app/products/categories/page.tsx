@@ -17,10 +17,12 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Pencil } from "lucide-react";
 
@@ -35,6 +37,7 @@ type Row = {
 export default function CategoriesPage() {
   const token = useToken();
   const rows = useQuery(api.categories.list, { includeInactive: true });
+  const page = useClientPage(rows ?? []);
   const create = useMutation(api.categories.create);
   const update = useMutation(api.categories.update);
 
@@ -128,7 +131,7 @@ export default function CategoriesPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {page.rows.map((r) => (
                 <tr key={r._id} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{r.name}</Td>
                   <Td className="text-on-surface-variant">{r.description ?? "—"}</Td>
@@ -149,6 +152,17 @@ export default function CategoriesPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {rows && rows.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
 

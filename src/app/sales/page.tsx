@@ -15,6 +15,7 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   StatCard,
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Search, Download } from "lucide-react";
 
@@ -79,6 +81,8 @@ export default function SalesPage() {
           (s.customerName ?? "").toLowerCase().includes(term))
     );
   }, [sales, statusFilter, search]);
+
+  const page = useClientPage(filtered);
 
   const totals = useMemo(() => {
     const active = filtered.filter((s) => s.status !== "CANCELLED");
@@ -181,7 +185,7 @@ export default function SalesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => (
+              {page.rows.map((s) => (
                 <tr
                   key={s._id}
                   className="hover:bg-surface-container-low cursor-pointer"
@@ -203,6 +207,17 @@ export default function SalesPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {filtered.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
 

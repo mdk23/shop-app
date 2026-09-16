@@ -15,8 +15,10 @@ import {
   Toolbar,
   StatCard,
   EmptyState,
+  Pagination,
 } from "@/components/ui";
 import { useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
 import { Download } from "lucide-react";
 
@@ -83,6 +85,8 @@ export default function ReportsPage() {
           return [];
       }
     }, [breakdown, metrics, debt, tab]);
+
+  const page = useClientPage(rows);
 
   const exportCsv = () => {
     const header = "name,qty,revenue,profit";
@@ -175,7 +179,7 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {page.rows.map((r) => (
                 <tr key={r.name} className="hover:bg-surface-container-low">
                   <Td className="font-bold">{r.name}</Td>
                   <Td className="text-right">{r.qty ?? "—"}</Td>
@@ -191,6 +195,17 @@ export default function ReportsPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {tab !== "Inventory" && rows.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
     </PageLayout>

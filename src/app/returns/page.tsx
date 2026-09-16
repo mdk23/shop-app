@@ -17,12 +17,14 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   inputClass,
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useCurrency } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 
@@ -49,7 +51,16 @@ export default function ReturnsPage() {
   const fmt = useCurrency();
   const [saleQuery, setSaleQuery] = useState("");
   const [pickedSaleId, setPickedSaleId] = useState<Id<"sales"> | null>(null);
-  const recent = useQuery_returns();
+  const {
+    rows: recent,
+    isLoading: recentLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.salesReturns.listPaged, {});
 
   const found = useQuery(
     api.sales.get,
@@ -113,8 +124,8 @@ export default function ReturnsPage() {
               Recent returns
             </p>
           </div>
-          <div className="max-h-80 overflow-y-auto">
-            {recent === undefined ? (
+          <div>
+            {recentLoading ? (
               <Spinner />
             ) : recent.length === 0 ? (
               <EmptyState title="No returns yet" />
@@ -145,6 +156,17 @@ export default function ReturnsPage() {
               </Table>
             )}
           </div>
+          {!recentLoading && recent.length > 0 && (
+            <Pagination
+              pageIndex={pageIndex}
+              rowCount={recent.length}
+              pageSize={pageSize}
+              hasPrev={hasPrev}
+              hasNext={hasNext}
+              onPrev={goPrev}
+              onNext={goNext}
+            />
+          )}
         </Card>
       </div>
 
@@ -157,10 +179,6 @@ export default function ReturnsPage() {
       )}
     </PageLayout>
   );
-}
-
-function useQuery_returns() {
-  return useQuery(api.salesReturns.listRecent, { limit: 50 });
 }
 
 function ReturnModal({

@@ -13,6 +13,7 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   StatCard,
@@ -20,6 +21,7 @@ import {
   Button,
 } from "@/components/ui";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 
 export default function CashReportsPage() {
   const token = useToken();
@@ -29,27 +31,35 @@ export default function CashReportsPage() {
   const [branch, setBranch] = useState("");
   const [openId, setOpenId] = useState<Id<"cashRegisterSessions"> | null>(null);
 
-  const sessions = useQuery(
-    api.cashRegister.listSessions,
+  const filterArgs = token
+    ? {
+        token,
+        status: (statusFilter || undefined) as "open" | "closed" | undefined,
+        branchId: branch || undefined,
+      }
+    : "skip";
+
+  const {
+    rows: sessions,
+    isLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.cashRegister.listSessionsPaged, filterArgs);
+
+  const totals = useQuery(
+    api.cashRegister.sessionTotals,
     token
       ? {
           token,
           status: (statusFilter || undefined) as "open" | "closed" | undefined,
           branchId: branch || undefined,
-          limit: 100,
         }
       : "skip"
-  );
-
-  const totals = (sessions ?? []).reduce(
-    (a, s) => ({
-      sales: a.sales + (s.cashSalesTotal ?? 0),
-      refunds: a.refunds + (s.cashRefundTotal ?? 0),
-      shortages:
-        a.shortages + (s.difference !== undefined && s.difference < 0 ? -s.difference : 0),
-    }),
-    { sales: 0, refunds: 0, shortages: 0 }
-  );
+  ) ?? { sales: 0, refunds: 0, shortages: 0 };
 
   return (
     <PageLayout title="Cash Reports" subtitle="Cash register · session history">
@@ -82,7 +92,7 @@ export default function CashReportsPage() {
       </Toolbar>
 
       <Card>
-        {sessions === undefined ? (
+        {isLoading ? (
           <Spinner />
         ) : sessions.length === 0 ? (
           <EmptyState title="No sessions" />
@@ -131,6 +141,17 @@ export default function CashReportsPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && sessions.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={sessions.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
 

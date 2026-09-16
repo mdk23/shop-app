@@ -12,12 +12,14 @@ import {
   Th,
   Td,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   inputClass,
 } from "@/components/ui";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
 import { useCurrency } from "@/lib/useShop";
+import { useClientPage } from "@/lib/pagination";
 import { Search, Printer } from "lucide-react";
 
 export default function ReceiptsPage() {
@@ -35,6 +37,7 @@ export default function ReceiptsPage() {
         (s.customerName ?? "").toLowerCase().includes(t)
     );
   }, [sales, search]);
+  const page = useClientPage(filtered);
 
   return (
     <PageLayout title="Receipts" subtitle="Settings · reprint sale receipts">
@@ -67,7 +70,7 @@ export default function ReceiptsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => (
+              {page.rows.map((s) => (
                 <tr key={s._id} className="hover:bg-surface-container-low">
                   <Td className="font-mono text-[11px] font-bold">{s.saleNumber}</Td>
                   <Td className="text-xs text-on-surface-variant">
@@ -84,6 +87,17 @@ export default function ReceiptsPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {filtered.length > 0 && (
+          <Pagination
+            pageIndex={page.pageIndex}
+            rowCount={page.rows.length}
+            pageSize={page.pageSize}
+            hasPrev={page.hasPrev}
+            hasNext={page.hasNext}
+            onPrev={page.goPrev}
+            onNext={page.goNext}
+          />
         )}
       </Card>
 

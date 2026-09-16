@@ -192,6 +192,49 @@ export const listSessionsPaged = query({
   },
 });
 
+/**
+ * Lightweight aggregate for the reports header cards — sums cash sales/refunds/
+ * shortages over matching sessions without shipping full session+movement rows
+ * to the client (the paginated `listSessionsPaged` above handles the table).
+ * Capped at 500 sessions so a very long history still costs a bounded read.
+ */
+export const sessionTotals = query({
+  args: {
+    token: v.string(),
+    status: v.optional(v.union(v.literal("open"), v.literal("closed"))),
+    branchId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "cash_register.reports");
+    let sessions = args.status
+      ? await ctx.db
+          .query("cashRegisterSessions")
+          .withIndex("by_status", (q) => q.eq("status", args.status!))
+          .order("desc")
+          .take(500)
+      : await ctx.db.query("cashRegisterSessions").order("desc").take(500);
+    if (args.branchId && args.branchId !== "all")
+      sessions = sessions.filter((s) => s.branchId === args.branchId);
+
+    let sales = 0;
+    let refunds = 0;
+    let shortages = 0;
+    for (const session of sessions) {
+      const movements = await ctx.db
+        .query("cashRegisterMovements")
+        .withIndex("by_session", (q) => q.eq("sessionId", session._id))
+        .collect();
+      sales += movements.filter((m) => m.type === "sale").reduce((s, m) => s + m.amount, 0);
+      refunds += movements
+        .filter((m) => m.type === "refund")
+        .reduce((s, m) => s + m.amount, 0);
+      if (session.difference !== undefined && session.difference < 0)
+        shortages += -session.difference;
+    }
+    return { sales, refunds, shortages };
+  },
+});
+
 // ─────────────────────────────────────────────
 // MUTATIONS
 // ─────────────────────────────────────────────

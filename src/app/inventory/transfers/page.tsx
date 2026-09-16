@@ -38,7 +38,16 @@ const TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error">
 export default function TransfersPage() {
   const token = useToken();
   const { branches } = useResolvedBranch();
-  const list = useQuery(api.stockTransfers.list, { limit: 100 });
+  const {
+    rows: list,
+    isLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.stockTransfers.listPaged, {});
   const create = useMutation(api.stockTransfers.create);
 
   const [open, setOpen] = useState(false);
@@ -92,7 +101,7 @@ export default function TransfersPage() {
       )}
 
       <Card>
-        {list === undefined ? (
+        {isLoading ? (
           <Spinner />
         ) : list.length === 0 ? (
           <EmptyState title="No transfers yet" />
@@ -131,6 +140,17 @@ export default function TransfersPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && list.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={list.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
 

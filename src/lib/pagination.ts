@@ -2,11 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "convex/react";
-import type { FunctionReference } from "convex/server";
+import type { FunctionReference, FunctionReturnType } from "convex/server";
 
 export const PAGE_SIZE = 15;
 
-type PageShape<T> = { page: T[]; isDone: boolean; continueCursor: string };
+type PagedFunction = FunctionReference<
+  "query",
+  "public",
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  { page: unknown[]; isDone: boolean; continueCursor: string }
+>;
+
+type RowOf<Query extends PagedFunction> = FunctionReturnType<Query>["page"][number];
 
 /**
  * Windowed (Prev/Next) pagination backed by a real Convex cursor-paginated
@@ -23,8 +31,8 @@ type PageShape<T> = { page: T[]; isDone: boolean; continueCursor: string };
  * Pass `"skip"` for `args` to skip the query entirely (mirrors `useQuery`).
  * Any change to `args` (compared by JSON value) resets back to page 0.
  */
-export function usePagedQuery<T>(
-  query: FunctionReference<"query">,
+export function usePagedQuery<Query extends PagedFunction>(
+  query: Query,
   args: Record<string, unknown> | "skip",
   pageSize: number = PAGE_SIZE
 ) {
@@ -47,8 +55,8 @@ export function usePagedQuery<T>(
       ? ("skip" as const)
       : { ...args, paginationOpts: { numItems: pageSize, cursor } };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = useQuery(query as any, queryArgs as any) as
-    | PageShape<T>
+  const result = useQuery(query, queryArgs as any) as
+    | FunctionReturnType<Query>
     | undefined;
 
   useEffect(() => {
@@ -63,7 +71,7 @@ export function usePagedQuery<T>(
   }, [result, pageIndex]);
 
   return {
-    rows: result?.page ?? [],
+    rows: (result?.page ?? []) as RowOf<Query>[],
     isLoading: args !== "skip" && result === undefined,
     pageIndex,
     pageSize,

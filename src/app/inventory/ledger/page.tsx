@@ -14,10 +14,12 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
 } from "@/components/ui";
 import { useResolvedBranch } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { Download } from "lucide-react";
 
 const TYPES = [
@@ -46,17 +48,34 @@ export default function LedgerPage() {
     [days]
   );
 
-  const rows = useQuery(api.inventory.listMovements, {
+  const filterArgs = {
     start,
     movementType: type || undefined,
     branchId: (branch || branchId || undefined) as Id<"branches"> | undefined,
-    limit: 1000,
+  };
+
+  // Paginated feed for on-screen browsing — only ever reads one page at a time.
+  const {
+    rows,
+    isLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.inventory.listMovementsPaged, filterArgs);
+
+  // Separate, capped fetch used only for "export everything matching this filter".
+  const exportRows = useQuery(api.inventory.listMovements, {
+    ...filterArgs,
+    limit: 2000,
   });
 
   const exportCsv = () => {
-    if (!rows) return;
+    if (!exportRows) return;
     const header = "date,type,product,variant,sku,qty,prev,new,ref,notes,user";
-    const body = rows
+    const body = exportRows
       .map((r) =>
         [
           new Date(r.movementDate).toISOString(),
@@ -108,13 +127,13 @@ export default function LedgerPage() {
           </Select>
         )}
         <div className="ml-auto" />
-        <Button variant="secondary" onClick={exportCsv} disabled={!rows?.length}>
+        <Button variant="secondary" onClick={exportCsv} disabled={!exportRows?.length}>
           <Download className="w-3.5 h-3.5" /> CSV
         </Button>
       </Toolbar>
 
       <Card>
-        {rows === undefined ? (
+        {isLoading ? (
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState title="No movements in range" />
@@ -164,6 +183,17 @@ export default function LedgerPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && rows.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={rows.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
     </PageLayout>

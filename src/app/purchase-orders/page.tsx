@@ -18,11 +18,13 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -42,7 +44,16 @@ export default function PurchaseOrdersPage() {
   const { branchId, branches } = useResolvedBranch();
   const suppliers = useQuery(api.suppliers.list, { status: "active" });
   const [statusFilter, setStatusFilter] = useState("");
-  const list = useQuery(api.purchaseOrders.list, {
+  const {
+    rows: list,
+    isLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.purchaseOrders.listPaged, {
     status: (statusFilter || undefined) as never,
   });
   const create = useMutation(api.purchaseOrders.create);
@@ -110,7 +121,7 @@ export default function PurchaseOrdersPage() {
       </Toolbar>
 
       <Card>
-        {list === undefined ? (
+        {isLoading ? (
           <Spinner />
         ) : list.length === 0 ? (
           <EmptyState title="No purchase orders" />
@@ -155,6 +166,17 @@ export default function PurchaseOrdersPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && list.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={list.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
 

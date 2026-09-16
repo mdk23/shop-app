@@ -19,11 +19,13 @@ import {
   Td,
   Badge,
   EmptyState,
+  Pagination,
   Spinner,
   Toolbar,
   inputClass,
 } from "@/components/ui";
 import { useToken, useCurrency } from "@/lib/useShop";
+import { usePagedQuery, useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Boxes, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,10 +50,18 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
 
-  const products = useQuery(api.products.list, {
+  const {
+    rows: products,
+    isLoading,
+    pageIndex,
+    pageSize,
+    hasPrev,
+    hasNext,
+    goPrev,
+    goNext,
+  } = usePagedQuery(api.products.listPaged, {
     search: search || undefined,
     categoryId: (categoryId || undefined) as Id<"categories"> | undefined,
-    includeInactive: true,
   });
   const updateProduct = useMutation(api.products.update);
   const removeProduct = useMutation(api.products.remove);
@@ -125,7 +135,7 @@ export default function ProductsPage() {
       </Toolbar>
 
       <Card>
-        {products === undefined ? (
+        {isLoading ? (
           <Spinner />
         ) : products.length === 0 ? (
           <EmptyState
@@ -195,6 +205,17 @@ export default function ProductsPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {!isLoading && products.length > 0 && (
+          <Pagination
+            pageIndex={pageIndex}
+            rowCount={products.length}
+            pageSize={pageSize}
+            hasPrev={hasPrev}
+            hasNext={hasNext}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </Card>
 
@@ -401,6 +422,7 @@ function VariantManager({
   const [colors, setColors] = useState<string[]>([]);
   const [reorder, setReorder] = useState("0");
   const [busy, setBusy] = useState(false);
+  const variantPage = useClientPage(product?.variants ?? []);
 
   const toggle = (list: string[], set: (v: string[]) => void, value: string) =>
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -526,7 +548,7 @@ function VariantManager({
               </tr>
             </thead>
             <tbody>
-              {product.variants.map((v) => (
+              {variantPage.rows.map((v) => (
                 <VariantRow
                   key={v._id}
                   token={token}
@@ -537,6 +559,17 @@ function VariantManager({
               ))}
             </tbody>
           </Table>
+        )}
+        {product && product.variants.length > 0 && (
+          <Pagination
+            pageIndex={variantPage.pageIndex}
+            rowCount={variantPage.rows.length}
+            pageSize={variantPage.pageSize}
+            hasPrev={variantPage.hasPrev}
+            hasNext={variantPage.hasNext}
+            onPrev={variantPage.goPrev}
+            onNext={variantPage.goNext}
+          />
         )}
       </div>
     </Modal>
