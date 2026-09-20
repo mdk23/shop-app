@@ -20,10 +20,12 @@ import {
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
 import { useCurrency } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { Search, Printer } from "lucide-react";
 
 export default function ReceiptsPage() {
   const fmt = useCurrency();
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<Id<"sales"> | null>(null);
   const sales = useQuery(api.sales.listRecent, { limit: 100 });
@@ -40,13 +42,13 @@ export default function ReceiptsPage() {
   const page = useClientPage(filtered);
 
   return (
-    <PageLayout title="Receipts" subtitle="Settings · reprint sale receipts">
+    <PageLayout title={t("Receipts")} subtitle={t("Settings · reprint sale receipts")}>
       <Toolbar>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-64`}
-            placeholder="Sale # or customer"
+            placeholder={t("Sale # or customer")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -57,15 +59,15 @@ export default function ReceiptsPage() {
         {sales === undefined ? (
           <Spinner />
         ) : filtered.length === 0 ? (
-          <EmptyState title="No sales" />
+          <EmptyState title={t("No sales")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Sale</Th>
-                <Th>Date</Th>
-                <Th>Customer</Th>
-                <Th className="text-right">Total</Th>
+                <Th>{t("Sale")}</Th>
+                <Th>{t("Date")}</Th>
+                <Th>{t("Customer")}</Th>
+                <Th className="text-right">{t("Total")}</Th>
                 <Th className="w-24" />
               </tr>
             </thead>
@@ -76,11 +78,11 @@ export default function ReceiptsPage() {
                   <Td className="text-xs text-on-surface-variant">
                     {new Date(s.createdAt).toLocaleString()}
                   </Td>
-                  <Td>{s.customerName ?? "Walk-in"}</Td>
+                  <Td>{s.customerName ?? t("Walk-in")}</Td>
                   <Td className="text-right font-bold">{fmt(s.total)}</Td>
                   <Td>
                     <Button variant="ghost" size="sm" onClick={() => setOpenId(s._id)}>
-                      <Printer className="w-3.5 h-3.5" /> Print
+                      <Printer className="w-3.5 h-3.5" /> {t("Print")}
                     </Button>
                   </Td>
                 </tr>

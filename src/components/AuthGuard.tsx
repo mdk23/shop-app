@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth, UserRole, Permission } from "@/contexts/AuthContext";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ interface AuthGuardProps {
  * and shows an Access Denied screen if the role doesn't match.
  */
 export function AuthGuard({ children, requiredRoles, requiredPermission }: AuthGuardProps) {
+  const { t } = useTranslation();
   const { currentUser, isLoading, hasRole, canAccess } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -33,7 +35,7 @@ export function AuthGuard({ children, requiredRoles, requiredPermission }: AuthG
       <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-background">
         <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
         <p className="text-on-surface-variant font-bold text-sm uppercase tracking-widest animate-pulse">
-          Authenticating...
+          {t("Authenticating...")}
         </p>
       </div>
     );
@@ -58,6 +60,7 @@ export function AuthGuard({ children, requiredRoles, requiredPermission }: AuthG
 }
 
 function AccessDenied() {
+  const { t } = useTranslation();
   const router = useRouter();
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center gap-6 bg-background p-8">
@@ -65,16 +68,16 @@ function AccessDenied() {
         <span className="text-4xl">🔒</span>
       </div>
       <div className="text-center">
-        <h1 className="text-3xl font-display text-on-surface mb-2">Access Denied</h1>
+        <h1 className="text-3xl font-display text-on-surface mb-2">{t("Access Denied")}</h1>
         <p className="text-on-surface-variant font-bold text-sm">
-          You don't have permission to view this page.
+          {t("You don't have permission to view this page.")}
         </p>
       </div>
       <button
         onClick={() => router.back()}
         className="px-6 py-3 bg-primary text-on-primary rounded-xl font-black text-xs uppercase tracking-widest hover:bg-secondary transition-colors"
       >
-        Go Back
+        {t("Go Back")}
       </button>
     </div>
   );

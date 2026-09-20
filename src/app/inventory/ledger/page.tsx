@@ -19,6 +19,7 @@ import {
   Toolbar,
 } from "@/components/ui";
 import { useResolvedBranch } from "@/lib/useShop";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { usePagedQuery } from "@/lib/pagination";
 import { Download } from "lucide-react";
 
@@ -38,6 +39,7 @@ const TYPES = [
 ];
 
 export default function LedgerPage() {
+  const { t } = useTranslation();
   const { branchId, branches } = useResolvedBranch();
   const [type, setType] = useState("");
   const [branch, setBranch] = useState("");
@@ -100,25 +102,25 @@ export default function LedgerPage() {
   };
 
   return (
-    <PageLayout title="Stock Ledger" subtitle="Inventory · immutable movement history">
+    <PageLayout title={t("Stock Ledger")} subtitle={t("Inventory · immutable movement history")}>
       <Toolbar>
         <Select value={days} onChange={(e) => setDays(e.target.value)} className="w-32">
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
+          <option value="7">{t("Last 7 days")}</option>
+          <option value="30">{t("Last 30 days")}</option>
+          <option value="90">{t("Last 90 days")}</option>
+          <option value="365">{t("Last year")}</option>
         </Select>
         <Select value={type} onChange={(e) => setType(e.target.value)} className="w-44">
-          <option value="">All types</option>
-          {TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t.replace(/_/g, " ")}
+          <option value="">{t("All types")}</option>
+          {TYPES.map((ty) => (
+            <option key={ty} value={ty}>
+              {t(ty.replace(/_/g, " "))}
             </option>
           ))}
         </Select>
         {branches.length > 1 && (
           <Select value={branch} onChange={(e) => setBranch(e.target.value)} className="w-40">
-            <option value="">All branches</option>
+            <option value="">{t("All branches")}</option>
             {branches.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
@@ -136,19 +138,19 @@ export default function LedgerPage() {
         {isLoading ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyState title="No movements in range" />
+          <EmptyState title={t("No movements in range")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>When</Th>
-                <Th>Type</Th>
-                <Th>Product</Th>
-                <Th>Variant</Th>
-                <Th className="text-right">Qty</Th>
-                <Th className="text-right">Prev → New</Th>
-                <Th>Ref</Th>
-                <Th>By</Th>
+                <Th>{t("When")}</Th>
+                <Th>{t("Type")}</Th>
+                <Th>{t("Product")}</Th>
+                <Th>{t("Variant")}</Th>
+                <Th className="text-right">{t("Qty")}</Th>
+                <Th className="text-right">{t("Prev → New")}</Th>
+                <Th>{t("Ref")}</Th>
+                <Th>{t("By")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -159,7 +161,7 @@ export default function LedgerPage() {
                   </Td>
                   <Td>
                     <Badge tone={r.quantity >= 0 ? "success" : "error"}>
-                      {r.movementType.replace(/_/g, " ")}
+                      {t(r.movementType.replace(/_/g, " "))}
                     </Badge>
                   </Td>
                   <Td className="font-bold">{r.productName ?? "—"}</Td>

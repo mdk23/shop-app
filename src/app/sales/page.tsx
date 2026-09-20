@@ -29,6 +29,8 @@ import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Search, Download } from "lucide-react";
+import { useTranslation } from "@/contexts/LanguageContext";
+import { SALE_STATUS_LABEL } from "@/lib/badgeTones";
 
 const RANGES = [
   { key: "today", label: "Today" },
@@ -47,6 +49,7 @@ const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "
 };
 
 export default function SalesPage() {
+  const { t } = useTranslation();
   const fmt = useCurrency();
   const token = useToken();
   const { branchId, isAll } = useResolvedBranch();
@@ -120,13 +123,13 @@ export default function SalesPage() {
   };
 
   return (
-    <PageLayout title="Sales" subtitle="Transactions & receivables">
+    <PageLayout title={t("Sales")} subtitle={t("Transactions & receivables")}>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard label="Sales" value={totals.count} />
-        <StatCard label="Revenue" value={fmt(totals.revenue)} />
-        <StatCard label="Collected" value={fmt(totals.collected)} accent="success" />
+        <StatCard label={t("Sales")} value={totals.count} />
+        <StatCard label={t("Revenue")} value={fmt(totals.revenue)} />
+        <StatCard label={t("Collected")} value={fmt(totals.collected)} accent="success" />
         <StatCard
-          label="Outstanding"
+          label={t("Outstanding")}
           value={fmt(totals.outstanding)}
           accent={totals.outstanding > 0 ? "error" : "primary"}
         />
@@ -136,7 +139,7 @@ export default function SalesPage() {
         <Select value={range} onChange={(e) => setRange(e.target.value)} className="w-36">
           {RANGES.map((r) => (
             <option key={r.key} value={r.key}>
-              {r.label}
+              {t(r.label)}
             </option>
           ))}
         </Select>
@@ -145,10 +148,10 @@ export default function SalesPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="w-44"
         >
-          <option value="">All statuses</option>
+          <option value="">{t("All statuses")}</option>
           {Object.keys(STATUS_TONE).map((s) => (
             <option key={s} value={s}>
-              {s.replace(/_/g, " ")}
+              {t(SALE_STATUS_LABEL[s as keyof typeof SALE_STATUS_LABEL])}
             </option>
           ))}
         </Select>
@@ -156,14 +159,14 @@ export default function SalesPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-52`}
-            placeholder="Sale # or customer"
+            placeholder={t("Sale # or customer")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <div className="ml-auto" />
         <Button variant="secondary" onClick={exportCsv} disabled={filtered.length === 0}>
-          <Download className="w-3.5 h-3.5" /> CSV
+          <Download className="w-3.5 h-3.5" /> {t("CSV")}
         </Button>
       </Toolbar>
 
@@ -171,17 +174,17 @@ export default function SalesPage() {
         {sales === undefined ? (
           <Spinner />
         ) : filtered.length === 0 ? (
-          <EmptyState title="No sales in range" />
+          <EmptyState title={t("No sales in range")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Sale</Th>
-                <Th>Date</Th>
-                <Th>Customer</Th>
-                <Th className="text-right">Total</Th>
-                <Th className="text-right">Balance</Th>
-                <Th>Status</Th>
+                <Th>{t("Sale")}</Th>
+                <Th>{t("Date")}</Th>
+                <Th>{t("Customer")}</Th>
+                <Th className="text-right">{t("Total")}</Th>
+                <Th className="text-right">{t("Balance")}</Th>
+                <Th>{t("Status")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -195,13 +198,15 @@ export default function SalesPage() {
                   <Td className="text-on-surface-variant text-xs">
                     {new Date(s.createdAt).toLocaleString()}
                   </Td>
-                  <Td>{s.customerName ?? "Walk-in"}</Td>
+                  <Td>{s.customerName ?? t("Walk-in")}</Td>
                   <Td className="text-right font-bold">{fmt(s.total)}</Td>
                   <Td className={`text-right ${s.balance > 0 ? "text-error font-bold" : ""}`}>
                     {fmt(s.balance)}
                   </Td>
                   <Td>
-                    <Badge tone={STATUS_TONE[s.status]}>{s.status.replace(/_/g, " ")}</Badge>
+                    <Badge tone={STATUS_TONE[s.status]}>
+                      {t(SALE_STATUS_LABEL[s.status as keyof typeof SALE_STATUS_LABEL])}
+                    </Badge>
                   </Td>
                 </tr>
               ))}
@@ -239,6 +244,7 @@ function SaleDetail({
   fmt: (n: number) => string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const sale = useQuery(api.sales.get, { id });
   const addPayment = useMutation(api.payments.add);
   const cancelSale = useMutation(api.sales.cancel);
@@ -249,14 +255,14 @@ function SaleDetail({
   const [showReceipt, setShowReceipt] = useState(false);
 
   const pay = async () => {
-    if (!amount || Number(amount) <= 0) return toast.error("Enter an amount.");
+    if (!amount || Number(amount) <= 0) return toast.error(t("Enter an amount."));
     setBusy(true);
     try {
       await addPayment({ token, saleId: id, method, amount: Number(amount) });
-      toast.success("Payment recorded");
+      toast.success(t("Payment recorded"));
       setAmount("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -268,19 +274,19 @@ function SaleDetail({
         open
         onClose={onClose}
         size="lg"
-        title={sale ? `Sale ${sale.saleNumber}` : "Sale"}
-        subtitle={sale ? `${sale.customerName ?? "Walk-in"} · ${new Date(sale.createdAt).toLocaleString()}` : undefined}
+        title={sale ? t("Sale {number}", { number: sale.saleNumber }) : t("Sale")}
+        subtitle={sale ? `${sale.customerName ?? t("Walk-in")} · ${new Date(sale.createdAt).toLocaleString()}` : undefined}
         footer={
           sale && (
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => setShowReceipt(true)}>
-                Receipt
+                {t("Receipt")}
               </Button>
               {sale.status !== "CANCELLED" &&
                 sale.status !== "REFUNDED" &&
                 sale.status !== "PARTIALLY_REFUNDED" && (
                   <Button variant="danger" onClick={() => setConfirmCancel(true)}>
-                    Cancel sale
+                    {t("Cancel sale")}
                   </Button>
                 )}
             </div>
@@ -303,23 +309,23 @@ function SaleDetail({
               ))}
             </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
-              <Line label="Subtotal" value={fmt(sale.subtotal)} />
-              <Line label="Discount" value={fmt(sale.discount)} />
-              <Line label="Tax" value={fmt(sale.tax)} />
-              <Line label="Total" value={fmt(sale.total)} bold />
-              <Line label="Paid" value={fmt(sale.paidAmount)} />
-              <Line label="Balance" value={fmt(sale.balance)} bold />
+              <Line label={t("Subtotal")} value={fmt(sale.subtotal)} />
+              <Line label={t("Discount")} value={fmt(sale.discount)} />
+              <Line label={t("Tax")} value={fmt(sale.tax)} />
+              <Line label={t("Total")} value={fmt(sale.total)} bold />
+              <Line label={t("Paid")} value={fmt(sale.paidAmount)} />
+              <Line label={t("Balance")} value={fmt(sale.balance)} bold />
             </div>
 
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-                Payments
+                {t("Payments")}
               </p>
               <div className="rounded-xl border border-outline divide-y divide-outline/30">
                 {sale.payments.map((p) => (
                   <div key={p._id} className="flex justify-between px-3 py-2 text-xs">
                     <span>
-                      {p.kind === "refund" ? "Refund · " : ""}
+                      {p.kind === "refund" ? `${t("Refund")} · ` : ""}
                       {p.method}
                     </span>
                     <span className={p.amount < 0 ? "text-error font-bold" : "font-bold"}>
@@ -328,7 +334,7 @@ function SaleDetail({
                   </div>
                 ))}
                 {sale.payments.length === 0 && (
-                  <p className="px-3 py-2 text-xs text-on-surface-variant">No payments</p>
+                  <p className="px-3 py-2 text-xs text-on-surface-variant">{t("No payments")}</p>
                 )}
               </div>
             </div>
@@ -336,17 +342,17 @@ function SaleDetail({
             {sale.balance > 0 && sale.status !== "CANCELLED" && (
               <Card className="p-3 bg-surface-container-low">
                 <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-                  Collect payment
+                  {t("Collect payment")}
                 </p>
                 <div className="flex items-end gap-2">
-                  <Field label="Method">
+                  <Field label={t("Method")}>
                     <Select value={method} onChange={(e) => setMethod(e.target.value)}>
                       {["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"].map((m) => (
                         <option key={m}>{m}</option>
                       ))}
                     </Select>
                   </Field>
-                  <Field label="Amount">
+                  <Field label={t("Amount")}>
                     <TextInput
                       type="number"
                       value={amount}
@@ -355,7 +361,7 @@ function SaleDetail({
                     />
                   </Field>
                   <Button onClick={pay} loading={busy}>
-                    Record
+                    {t("Record")}
                   </Button>
                 </div>
               </Card>
@@ -367,18 +373,18 @@ function SaleDetail({
       <ConfirmDialog
         open={confirmCancel}
         onClose={() => setConfirmCancel(false)}
-        title="Cancel sale"
-        message="This reverses stock and refunds any cash taken. The sale record is kept for audit."
+        title={t("Cancel sale")}
+        message={t("This reverses stock and refunds any cash taken. The sale record is kept for audit.")}
         danger
-        confirmLabel="Cancel sale"
+        confirmLabel={t("Cancel sale")}
         onConfirm={async () => {
           try {
             await cancelSale({ token, saleId: id, reason: "Cancelled from sales screen" });
-            toast.success("Sale cancelled");
+            toast.success(t("Sale cancelled"));
             setConfirmCancel(false);
             onClose();
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed");
+            toast.error(e instanceof Error ? e.message : t("Failed"));
           }
         }}
       />

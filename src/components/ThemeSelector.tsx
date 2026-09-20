@@ -4,8 +4,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { useTheme, THEME_OPTIONS, ThemeKey } from "@/contexts/ThemeContext";
 import { Palette, Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 export function ThemeSelector({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
   const { theme, setTheme, currentThemeOption } = useTheme();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -29,7 +31,7 @@ export function ThemeSelector({ compact = false }: { compact?: boolean }) {
           "flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-surface border border-outline/30 hover:bg-surface-container hover:border-outline/50 transition-all cursor-pointer shadow-sm",
           compact && "p-2"
         )}
-        title="Switch Color Theme"
+        title={t("Switch Color Theme")}
       >
         <div className="flex items-center gap-1.5">
           <Palette className="w-4 h-4 text-primary" />
@@ -63,10 +65,10 @@ export function ThemeSelector({ compact = false }: { compact?: boolean }) {
         <div className="absolute right-0 top-full mt-2 w-72 bg-surface/95 backdrop-blur-xl border border-outline/30 rounded-2xl shadow-xl z-[100] overflow-hidden p-2 space-y-1.5">
           <div className="px-3 py-2 border-b border-outline/20 mb-1">
             <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-              SELECT COLOR THEME
+              {t("SELECT COLOR THEME")}
             </p>
             <p className="text-xs text-on-surface font-semibold">
-              Full interface color transformation
+              {t("Full interface color transformation")}
             </p>
           </div>
 

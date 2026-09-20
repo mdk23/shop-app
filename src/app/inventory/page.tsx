@@ -20,6 +20,7 @@ import {
   Button,
 } from "@/components/ui";
 import { useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { Search } from "lucide-react";
 import Link from "next/link";
 
@@ -30,6 +31,7 @@ const STATUS_TONE = {
 } as const;
 
 export default function InventoryPage() {
+  const { t } = useTranslation();
   const fmt = useCurrency();
   const { branchId, branchName, branches } = useResolvedBranch();
   const [pickBranch, setPickBranch] = useState<string>("");
@@ -68,22 +70,24 @@ export default function InventoryPage() {
 
   return (
     <PageLayout
-      title="Stock"
-      subtitle={`Inventory · ${branches.find((b) => b._id === effectiveBranch)?.name ?? branchName}`}
+      title={t("Stock")}
+      subtitle={t("Inventory · {branch}", {
+        branch: branches.find((b) => b._id === effectiveBranch)?.name ?? branchName,
+      })}
     >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard label="Stock units" value={valuation?.units ?? "—"} />
+        <StatCard label={t("Stock units")} value={valuation?.units ?? "—"} />
         <StatCard
-          label="Stock value (cost)"
+          label={t("Stock value (cost)")}
           value={valuation ? fmt(valuation.costValue) : "—"}
         />
         <StatCard
-          label="Low stock"
+          label={t("Low stock")}
           value={valuation?.lowStockCount ?? "—"}
           accent="primary"
         />
         <StatCard
-          label="Out of stock"
+          label={t("Out of stock")}
           value={valuation?.outOfStockCount ?? "—"}
           accent="error"
         />
@@ -94,7 +98,7 @@ export default function InventoryPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-52`}
-            placeholder="Product / SKU / barcode"
+            placeholder={t("Product / SKU / barcode")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -113,7 +117,7 @@ export default function InventoryPage() {
           </Select>
         )}
         <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-36">
-          <option value="">All categories</option>
+          <option value="">{t("All categories")}</option>
           {(categories ?? []).map((c) => (
             <option key={c._id} value={c._id}>
               {c.name}
@@ -121,7 +125,7 @@ export default function InventoryPage() {
           ))}
         </Select>
         <Select value={size} onChange={(e) => setSize(e.target.value)} className="w-28">
-          <option value="">All sizes</option>
+          <option value="">{t("All sizes")}</option>
           {(sizes ?? []).map((s) => (
             <option key={s._id} value={s.name}>
               {s.name}
@@ -129,7 +133,7 @@ export default function InventoryPage() {
           ))}
         </Select>
         <Select value={color} onChange={(e) => setColor(e.target.value)} className="w-32">
-          <option value="">All colors</option>
+          <option value="">{t("All colors")}</option>
           {(colors ?? []).map((c) => (
             <option key={c._id} value={c.name}>
               {c.name}
@@ -137,14 +141,14 @@ export default function InventoryPage() {
           ))}
         </Select>
         <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-32">
-          <option value="">Any status</option>
-          <option value="IN_STOCK">In stock</option>
-          <option value="LOW_STOCK">Low stock</option>
-          <option value="OUT_OF_STOCK">Out of stock</option>
+          <option value="">{t("Any status")}</option>
+          <option value="IN_STOCK">{t("In stock")}</option>
+          <option value="LOW_STOCK">{t("Low stock")}</option>
+          <option value="OUT_OF_STOCK">{t("Out of stock")}</option>
         </Select>
         <div className="ml-auto" />
         <Link href="/inventory/adjustments">
-          <Button variant="secondary">Adjust stock</Button>
+          <Button variant="secondary">{t("Adjust stock")}</Button>
         </Link>
       </Toolbar>
 
@@ -152,20 +156,20 @@ export default function InventoryPage() {
         {rows === undefined ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyState title="No matching stock" />
+          <EmptyState title={t("No matching stock")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Product</Th>
-                <Th>Variant</Th>
-                <Th>SKU</Th>
-                <Th>Category</Th>
-                <Th className="text-right">On hand</Th>
-                <Th className="text-right">Reorder</Th>
-                <Th className="text-right">Cost</Th>
-                <Th className="text-right">Price</Th>
-                <Th>Status</Th>
+                <Th>{t("Product")}</Th>
+                <Th>{t("Variant")}</Th>
+                <Th>{t("SKU")}</Th>
+                <Th>{t("Category")}</Th>
+                <Th className="text-right">{t("On hand")}</Th>
+                <Th className="text-right">{t("Reorder")}</Th>
+                <Th className="text-right">{t("Cost")}</Th>
+                <Th className="text-right">{t("Price")}</Th>
+                <Th>{t("Status")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -181,7 +185,7 @@ export default function InventoryPage() {
                   <Td className="text-right">{fmt(r.sellingPrice)}</Td>
                   <Td>
                     <Badge tone={STATUS_TONE[r.status]}>
-                      {r.status.replace("_", " ")}
+                      {t(r.status.replace("_", " "))}
                     </Badge>
                   </Td>
                 </tr>

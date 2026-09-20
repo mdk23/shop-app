@@ -21,6 +21,7 @@ import { useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
 import { Download } from "lucide-react";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 const TABS = [
   "Category",
@@ -33,6 +34,7 @@ const TABS = [
 ] as const;
 
 export default function ReportsPage() {
+  const { t } = useTranslation();
   const fmt = useCurrency();
   const { branchId, isAll } = useResolvedBranch();
   const [range, setRange] = useState("30");
@@ -101,44 +103,44 @@ export default function ReportsPage() {
   };
 
   return (
-    <PageLayout title="Reports" subtitle="Analytics across sales, stock & customers">
+    <PageLayout title={t("Reports")} subtitle={t("Analytics across sales, stock & customers")}>
       <Toolbar>
         <Select value={range} onChange={(e) => setRange(e.target.value)} className="w-36">
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
+          <option value="7">{t("Last 7 days")}</option>
+          <option value="30">{t("Last 30 days")}</option>
+          <option value="90">{t("Last 90 days")}</option>
+          <option value="365">{t("Last year")}</option>
         </Select>
         <div className="ml-auto" />
         {tab !== "Inventory" && (
           <Button variant="secondary" onClick={exportCsv} disabled={rows.length === 0}>
-            <Download className="w-3.5 h-3.5" /> CSV
+            <Download className="w-3.5 h-3.5" /> {t("CSV")}
           </Button>
         )}
       </Toolbar>
 
       {metrics && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <StatCard label="Revenue" value={fmt(metrics.grossRevenue)} />
-          <StatCard label="Gross profit" value={fmt(metrics.grossProfit)} />
-          <StatCard label="Items sold" value={metrics.itemsSold} />
-          <StatCard label="Returns" value={metrics.returnsCount} sub={fmt(metrics.refundAmount)} />
+          <StatCard label={t("Revenue")} value={fmt(metrics.grossRevenue)} />
+          <StatCard label={t("Gross profit")} value={fmt(metrics.grossProfit)} />
+          <StatCard label={t("Items sold")} value={metrics.itemsSold} />
+          <StatCard label={t("Returns")} value={metrics.returnsCount} sub={fmt(metrics.refundAmount)} />
         </div>
       )}
 
       <div className="flex flex-wrap gap-1.5 mb-4">
-        {TABS.map((t) => (
+        {TABS.map((tabName) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tabName}
+            onClick={() => setTab(tabName)}
             className={cn(
               "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
-              tab === t
+              tab === tabName
                 ? "bg-primary text-on-primary border-primary"
                 : "bg-surface-container-low text-on-surface-variant border-outline"
             )}
           >
-            {t}
+            {t(tabName)}
           </button>
         ))}
       </div>
@@ -149,33 +151,33 @@ export default function ReportsPage() {
             <Spinner />
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-4">
-              <StatCard label="Units on hand" value={valuation.units} />
-              <StatCard label="Value at cost" value={fmt(valuation.costValue)} />
-              <StatCard label="Value at retail" value={fmt(valuation.retailValue)} />
-              <StatCard label="Low stock" value={valuation.lowStockCount} accent="primary" />
-              <StatCard label="Out of stock" value={valuation.outOfStockCount} accent="error" />
+              <StatCard label={t("Units on hand")} value={valuation.units} />
+              <StatCard label={t("Value at cost")} value={fmt(valuation.costValue)} />
+              <StatCard label={t("Value at retail")} value={fmt(valuation.retailValue)} />
+              <StatCard label={t("Low stock")} value={valuation.lowStockCount} accent="primary" />
+              <StatCard label={t("Out of stock")} value={valuation.outOfStockCount} accent="error" />
             </div>
           )
         ) : breakdown === undefined && tab !== "Payment methods" && tab !== "Customer debt" ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyState title="No data for this report" />
+          <EmptyState title={t("No data for this report")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>{tab === "Customer debt" ? "Customer" : "Name"}</Th>
+                <Th>{tab === "Customer debt" ? t("Customer") : t("Name")}</Th>
                 <Th className="text-right">
                   {tab === "Payment methods"
-                    ? "Count"
+                    ? t("Count")
                     : tab === "Customer debt"
-                      ? "Open sales"
-                      : "Units"}
+                      ? t("Open sales")
+                      : t("Units")}
                 </Th>
                 <Th className="text-right">
-                  {tab === "Customer debt" ? "Balance" : "Revenue"}
+                  {tab === "Customer debt" ? t("Balance") : t("Revenue")}
                 </Th>
-                {tab === "Product" && <Th className="text-right">Profit</Th>}
+                {tab === "Product" && <Th className="text-right">{t("Profit")}</Th>}
               </tr>
             </thead>
             <tbody>

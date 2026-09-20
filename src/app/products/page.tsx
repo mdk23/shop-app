@@ -29,12 +29,13 @@ import { usePagedQuery, useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Boxes, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 type Gender = "women" | "men" | "unisex";
 
 const GENDER_LABEL: Record<Gender, string> = {
-  women: "Women",
-  men: "Men",
+  women: "Woman",
+  men: "Man",
   unisex: "Unisex",
 };
 
@@ -52,6 +53,7 @@ type ProductRow = {
 };
 
 export default function ProductsPage() {
+  const { t } = useTranslation();
   const token = useToken();
   const fmt = useCurrency();
 
@@ -86,9 +88,9 @@ export default function ProductsPage() {
   const toggleActive = async (p: ProductRow) => {
     try {
       await updateProduct({ token, id: p._id, active: !p.active });
-      toast.success(p.active ? "Product archived" : "Product restored");
+      toast.success(p.active ? t("Product archived") : t("Product restored"));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update status");
+      toast.error(e instanceof Error ? e.message : t("Failed to update status"));
     }
   };
 
@@ -97,10 +99,10 @@ export default function ProductsPage() {
     setDeleteBusy(true);
     try {
       await removeProduct({ token, id: deleting._id });
-      toast.success(`"${deleting.name}" deleted`);
+      toast.success(t('"{name}" deleted', { name: deleting.name }));
       setDeleting(null);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to delete";
+      const message = e instanceof Error ? e.message : t("Failed to delete");
       if (message.includes("sales history")) {
         setDeleting(null);
         setArchiveInstead(deleting);
@@ -113,19 +115,19 @@ export default function ProductsPage() {
   };
 
   return (
-    <PageLayout title="Products" subtitle="Catalog · commercial items & variants">
+    <PageLayout title={t("Products")} subtitle={t("Catalog · commercial items & variants")}>
       <Toolbar>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-56`}
-            placeholder="Search products…"
+            placeholder={t("Search products…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-40">
-          <option value="">All categories</option>
+          <option value="">{t("All categories")}</option>
           {(categories ?? []).map((c) => (
             <option key={c._id} value={c._id}>
               {c.name}
@@ -139,7 +141,7 @@ export default function ProductsPage() {
             setModalOpen(true);
           }}
         >
-          <Plus className="w-3.5 h-3.5" /> New Product
+          <Plus className="w-3.5 h-3.5" /> {t("New Product")}
         </Button>
       </Toolbar>
 
@@ -148,11 +150,11 @@ export default function ProductsPage() {
           <Spinner />
         ) : products.length === 0 ? (
           <EmptyState
-            title="No products"
-            message="Create a product, then generate its size / colour variants."
+            title={t("No products")}
+            message={t("Create a product, then generate its size / color variants.")}
             action={
               <Button onClick={() => setModalOpen(true)}>
-                <Plus className="w-3.5 h-3.5" /> New Product
+                <Plus className="w-3.5 h-3.5" /> {t("New Product")}
               </Button>
             }
           />
@@ -160,13 +162,13 @@ export default function ProductsPage() {
           <Table>
             <thead>
               <tr>
-                <Th>Product</Th>
-                <Th>Category</Th>
-                <Th className="w-20">Gender</Th>
-                <Th className="text-right">Cost</Th>
-                <Th className="text-right">Price</Th>
-                <Th className="w-24">Variants</Th>
-                <Th className="w-20">Status</Th>
+                <Th>{t("Product")}</Th>
+                <Th>{t("Category")}</Th>
+                <Th className="w-20">{t("Gender")}</Th>
+                <Th className="text-right">{t("Cost")}</Th>
+                <Th className="text-right">{t("Price")}</Th>
+                <Th className="w-24">{t("Variants")}</Th>
+                <Th className="w-20">{t("Status")}</Th>
                 <Th className="w-40" />
               </tr>
             </thead>
@@ -176,7 +178,7 @@ export default function ProductsPage() {
                   <Td className="font-bold">{p.name}</Td>
                   <Td className="text-on-surface-variant">{p.categoryName}</Td>
                   <Td>
-                    <Badge tone="info">{GENDER_LABEL[p.gender ?? "unisex"]}</Badge>
+                    <Badge tone="info">{t(GENDER_LABEL[p.gender ?? "unisex"])}</Badge>
                   </Td>
                   <Td className="text-right">{fmt(p.defaultCostPrice)}</Td>
                   <Td className="text-right font-bold">{fmt(p.defaultSellingPrice)}</Td>
@@ -184,9 +186,9 @@ export default function ProductsPage() {
                     {p.activeVariantCount}/{p.variantCount}
                   </Td>
                   <Td>
-                    <button onClick={() => toggleActive(p)} title="Click to toggle status">
+                    <button onClick={() => toggleActive(p)} title={t("Click to toggle status")}>
                       <Badge tone={p.active ? "success" : "neutral"}>
-                        {p.active ? "Active" : "Archived"}
+                        {p.active ? t("Active") : t("Archived")}
                       </Badge>
                     </button>
                   </Td>
@@ -197,7 +199,7 @@ export default function ProductsPage() {
                         size="sm"
                         onClick={() => setVariantsFor(p._id)}
                       >
-                        <Boxes className="w-3.5 h-3.5" /> Variants
+                        <Boxes className="w-3.5 h-3.5" /> {t("Variants")}
                       </Button>
                       <Button
                         variant="ghost"
@@ -257,10 +259,13 @@ export default function ProductsPage() {
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete product"
-        message={`Delete "${deleting?.name}" and all of its variants? This cannot be undone. Products with sales history can't be deleted — archive them instead.`}
+        title={t("Delete product")}
+        message={t(
+          "Delete \"{name}\" and all of its variants? This cannot be undone. Products with sales history can't be deleted — archive them instead.",
+          { name: deleting?.name ?? "" }
+        )}
         danger
-        confirmLabel="Delete"
+        confirmLabel={t("Delete")}
         loading={deleteBusy}
         onConfirm={confirmDelete}
       />
@@ -268,16 +273,19 @@ export default function ProductsPage() {
       <ConfirmDialog
         open={!!archiveInstead}
         onClose={() => setArchiveInstead(null)}
-        title="Can't delete — archive instead?"
-        message={`"${archiveInstead?.name}" has sales history, so it can't be deleted. Archiving hides it (and its variants) from the catalog and POS while keeping past sales intact.`}
-        confirmLabel="Archive"
+        title={t("Can't delete — archive instead?")}
+        message={t(
+          "\"{name}\" has sales history, so it can't be deleted. Archiving hides it (and its variants) from the catalog and POS while keeping past sales intact.",
+          { name: archiveInstead?.name ?? "" }
+        )}
+        confirmLabel={t("Archive")}
         onConfirm={async () => {
           if (!archiveInstead) return;
           try {
             await archiveProduct({ token, id: archiveInstead._id });
-            toast.success(`"${archiveInstead.name}" archived`);
+            toast.success(t('"{name}" archived', { name: archiveInstead.name }));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed to archive");
+            toast.error(e instanceof Error ? e.message : t("Failed to archive"));
           }
           setArchiveInstead(null);
         }}
@@ -303,6 +311,7 @@ function ProductModal({
   onClose: () => void;
   onSaved: (id: Id<"products">) => void;
 }) {
+  const { t } = useTranslation();
   const existing = useQuery(
     api.products.get,
     productId ? { id: productId } : "skip"
@@ -330,7 +339,7 @@ function ProductModal({
   }
 
   const save = async () => {
-    if (!name.trim() || !categoryId) return toast.error("Name and category are required.");
+    if (!name.trim() || !categoryId) return toast.error(t("Name and category are required."));
     setBusy(true);
     try {
       if (productId) {
@@ -344,7 +353,7 @@ function ProductModal({
           defaultCostPrice: Number(cost) || 0,
           defaultSellingPrice: Number(price) || 0,
         });
-        toast.success("Product updated");
+        toast.success(t("Product updated"));
         onSaved(productId);
       } else {
         const id = await create({
@@ -356,11 +365,11 @@ function ProductModal({
           defaultCostPrice: Number(cost) || 0,
           defaultSellingPrice: Number(price) || 0,
         });
-        toast.success("Product created — now add its variants");
+        toast.success(t("Product created — now add its variants"));
         onSaved(id);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t("Failed to save"));
     } finally {
       setBusy(false);
     }
@@ -370,29 +379,29 @@ function ProductModal({
     <Modal
       open
       onClose={onClose}
-      title={productId ? "Edit Product" : "New Product"}
+      title={productId ? t("Edit Product") : t("New Product")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={save} loading={busy}>
-            Save
+            {t("Save")}
           </Button>
         </>
       }
     >
-      <Field label="Product name" required>
+      <Field label={t("Product name")} required>
         <TextInput
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Classic Polo Shirt"
+          placeholder={t("e.g. Classic Polo Shirt")}
         />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Category" required>
+        <Field label={t("Category")} required>
           <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">Select…</option>
+            <option value="">{t("Select…")}</option>
             {categories.map((c) => (
               <option key={c._id} value={c._id}>
                 {c.name}
@@ -400,23 +409,23 @@ function ProductModal({
             ))}
           </Select>
         </Field>
-        <Field label="Gender" required>
+        <Field label={t("Gender")} required>
           <Select value={gender} onChange={(e) => setGender(e.target.value as Gender)}>
-            <option value="unisex">Unisex</option>
-            <option value="women">Women</option>
-            <option value="men">Men</option>
+            <option value="unisex">{t("Unisex")}</option>
+            <option value="women">{t("Woman")}</option>
+            <option value="men">{t("Man")}</option>
           </Select>
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Default cost price">
+        <Field label={t("Default cost price")}>
           <TextInput type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
         </Field>
-        <Field label="Default selling price">
+        <Field label={t("Default selling price")}>
           <TextInput type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
       </div>
-      <Field label="Description">
+      <Field label={t("Description")}>
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
     </Modal>
@@ -450,6 +459,7 @@ function VariantManager({
   fmt: (n: number) => string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const product = useQuery(api.products.get, { id: productId });
   const availableSizes = useQuery(api.sizes.list, {});
   const availableColors = useQuery(api.colors.list, {});
@@ -472,10 +482,10 @@ function VariantManager({
     setDeleteVariantBusy(true);
     try {
       await removeVariant({ token, id: deletingVariant._id });
-      toast.success(`${deletingVariant.sku} deleted`);
+      toast.success(t("{sku} deleted", { sku: deletingVariant.sku }));
       setDeletingVariant(null);
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to delete";
+      const message = e instanceof Error ? e.message : t("Failed to delete");
       if (message.includes("sales history")) {
         setDeletingVariant(null);
         setDeactivateVariantInstead(deletingVariant);
@@ -492,7 +502,7 @@ function VariantManager({
 
   const runMatrix = async () => {
     if (sizes.length === 0 && colors.length === 0)
-      return toast.error("Pick at least one size or colour.");
+      return toast.error(t("Pick at least one size or color."));
     setBusy(true);
     try {
       const res = await generate({
@@ -502,11 +512,16 @@ function VariantManager({
         colors,
         reorderLevel: Number(reorder) || 0,
       });
-      toast.success(`${res.created} variant(s) created, ${res.skipped} skipped`);
+      toast.success(
+        t("{created} variant(s) created, {skipped} skipped", {
+          created: res.created,
+          skipped: res.skipped,
+        })
+      );
       setSizes([]);
       setColors([]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -517,27 +532,27 @@ function VariantManager({
       open
       onClose={onClose}
       size="xl"
-      title={product ? `Variants · ${product.name}` : "Variants"}
+      title={product ? t("Variants · {name}", { name: product.name }) : t("Variants")}
       footer={
         <Button variant="ghost" onClick={onClose}>
-          Done
+          {t("Done")}
         </Button>
       }
     >
       <Card className="p-4 bg-surface-container-low">
         <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-          Generate size × colour grid
+          {t("Generate size × color grid")}
         </p>
         {(availableSizes?.length === 0 || availableColors?.length === 0) && (
           <p className="text-xs text-on-surface-variant mb-3">
-            No sizes/colours configured yet — add them in{" "}
-            <span className="font-bold">Settings → Sizes / Colors</span> first.
+            {t("No sizes/colors configured yet — add them in")}{" "}
+            <span className="font-bold">{t("Settings → Sizes / Colors")}</span> {t("first.")}
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">
-              Sizes
+              {t("Sizes")}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {(availableSizes ?? []).map((s) => (
@@ -558,7 +573,7 @@ function VariantManager({
           </div>
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">
-              Colours
+              {t("Colors")}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {(availableColors ?? []).map((c) => (
@@ -583,11 +598,11 @@ function VariantManager({
           </div>
         </div>
         <div className="flex items-end gap-3 mt-3">
-          <Field label="Reorder level">
+          <Field label={t("Reorder level")}>
             <TextInput type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} />
           </Field>
           <Button onClick={runMatrix} loading={busy}>
-            Generate
+            {t("Generate")}
           </Button>
         </div>
       </Card>
@@ -596,18 +611,18 @@ function VariantManager({
         {!product ? (
           <Spinner />
         ) : product.variants.length === 0 ? (
-          <EmptyState title="No variants yet" message="Use the generator above." />
+          <EmptyState title={t("No variants yet")} message={t("Use the generator above.")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>SKU</Th>
-                <Th>Colour</Th>
-                <Th>Size</Th>
-                <Th className="text-right w-28">Cost</Th>
-                <Th className="text-right w-28">Price</Th>
-                <Th className="text-right w-20">Reorder</Th>
-                <Th className="w-20">Active</Th>
+                <Th>{t("SKU")}</Th>
+                <Th>{t("Color")}</Th>
+                <Th>{t("Size")}</Th>
+                <Th className="text-right w-28">{t("Cost")}</Th>
+                <Th className="text-right w-28">{t("Price")}</Th>
+                <Th className="text-right w-20">{t("Reorder")}</Th>
+                <Th className="w-20">{t("Active")}</Th>
                 <Th className="w-10" />
               </tr>
             </thead>
@@ -641,10 +656,13 @@ function VariantManager({
       <ConfirmDialog
         open={!!deletingVariant}
         onClose={() => setDeletingVariant(null)}
-        title="Delete variant"
-        message={`Delete "${deletingVariant?.sku}"? This cannot be undone. Variants with sales history can't be deleted — deactivate them instead.`}
+        title={t("Delete variant")}
+        message={t(
+          "Delete \"{sku}\"? This cannot be undone. Variants with sales history can't be deleted — deactivate them instead.",
+          { sku: deletingVariant?.sku ?? "" }
+        )}
         danger
-        confirmLabel="Delete"
+        confirmLabel={t("Delete")}
         loading={deleteVariantBusy}
         onConfirm={confirmDeleteVariant}
       />
@@ -652,9 +670,12 @@ function VariantManager({
       <ConfirmDialog
         open={!!deactivateVariantInstead}
         onClose={() => setDeactivateVariantInstead(null)}
-        title="Can't delete — deactivate instead?"
-        message={`"${deactivateVariantInstead?.sku}" has sales history, so it can't be deleted. Deactivating hides it from the catalog and POS while keeping past sales intact.`}
-        confirmLabel="Deactivate"
+        title={t("Can't delete — deactivate instead?")}
+        message={t(
+          "\"{sku}\" has sales history, so it can't be deleted. Deactivating hides it from the catalog and POS while keeping past sales intact.",
+          { sku: deactivateVariantInstead?.sku ?? "" }
+        )}
+        confirmLabel={t("Deactivate")}
         onConfirm={async () => {
           if (!deactivateVariantInstead) return;
           try {
@@ -663,9 +684,9 @@ function VariantManager({
               id: deactivateVariantInstead._id,
               active: false,
             });
-            toast.success(`"${deactivateVariantInstead.sku}" deactivated`);
+            toast.success(t('"{sku}" deactivated', { sku: deactivateVariantInstead.sku }));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed to deactivate");
+            toast.error(e instanceof Error ? e.message : t("Failed to deactivate"));
           }
           setDeactivateVariantInstead(null);
         }}
@@ -687,6 +708,7 @@ function VariantRow({
   onSave: ReturnType<typeof useMutation>;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const [price, setPrice] = useState(String(variant.sellingPrice));
   const [cost, setCost] = useState(String(variant.costPrice));
   const [reorder, setReorder] = useState(String(variant.reorderLevel));
@@ -704,9 +726,9 @@ function VariantRow({
         costPrice: Number(cost),
         reorderLevel: Number(reorder),
       });
-      toast.success(`${variant.sku} saved`);
+      toast.success(t("{sku} saved", { sku: variant.sku }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     }
   };
 
@@ -729,11 +751,11 @@ function VariantRow({
       <Td>
         {dirty ? (
           <Button size="sm" onClick={save}>
-            Save
+            {t("Save")}
           </Button>
         ) : (
           <Badge tone={variant.active ? "success" : "neutral"}>
-            {variant.active ? "Active" : "Off"}
+            {variant.active ? t("Active") : t("Off")}
           </Badge>
         )}
       </Td>

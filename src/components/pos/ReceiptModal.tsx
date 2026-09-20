@@ -5,7 +5,10 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Modal, Button, Spinner } from "@/components/ui";
 import { useCurrency } from "@/lib/useShop";
-import { Printer } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
+import { getReceiptChannel } from "@/lib/receipts";
+import { useTranslation } from "@/contexts/LanguageContext";
+import { Printer, MessageCircle } from "lucide-react";
 
 export function ReceiptModal({
   saleId,
@@ -15,6 +18,7 @@ export function ReceiptModal({
   onClose: () => void;
 }) {
   const fmt = useCurrency();
+  const { t } = useTranslation();
   const sale = useQuery(api.sales.get, { id: saleId });
   const settings = useQuery(api.settings.getAll, {});
 
@@ -36,7 +40,7 @@ export function ReceiptModal({
     const pays = sale.payments
       .map(
         (p) =>
-          `<tr><td>${p.kind === "refund" ? "Refund " : ""}${p.method}</td><td style="text-align:right">${fmt(
+          `<tr><td>${p.kind === "refund" ? "Reembolso " : ""}${p.method}</td><td style="text-align:right">${fmt(
             p.amount
           )}</td></tr>`
       )
@@ -52,26 +56,26 @@ export function ReceiptModal({
         td{padding:2px 0;vertical-align:top}
         .tot td{font-weight:bold;font-size:13px}
       </style></head><body onload="window.print();window.close()">
-      <h1>${s("businessName") || "Store"}</h1>
+      <h1>${s("businessName") || "Loja"}</h1>
       <div class="muted">${s("businessAddress")}</div>
       <div class="muted">${s("businessPhone")}</div>
       <hr/>
-      <div>Receipt: <b>${sale.saleNumber}</b></div>
-      <div>${new Date(sale.createdAt).toLocaleString()}</div>
-      <div>Customer: ${sale.customerName ?? "Walk-in"}</div>
-      <div>Served by: ${sale.username ?? "—"}</div>
+      <div>Recibo: <b>${sale.saleNumber}</b></div>
+      <div>${formatDateTime(sale.createdAt)}</div>
+      <div>Cliente: ${sale.customerName ?? "Cliente Geral"}</div>
+      <div>Atendido por: ${sale.username ?? "—"}</div>
       <hr/>
       <table>${rows}</table>
       <hr/>
       <table>
         <tr><td>Subtotal</td><td style="text-align:right">${fmt(sale.subtotal)}</td></tr>
-        ${sale.discount ? `<tr><td>Discount</td><td style="text-align:right">-${fmt(sale.discount)}</td></tr>` : ""}
-        ${sale.tax ? `<tr><td>Tax</td><td style="text-align:right">${fmt(sale.tax)}</td></tr>` : ""}
+        ${sale.discount ? `<tr><td>Desconto</td><td style="text-align:right">-${fmt(sale.discount)}</td></tr>` : ""}
+        ${sale.tax ? `<tr><td>Imposto</td><td style="text-align:right">${fmt(sale.tax)}</td></tr>` : ""}
         <tr class="tot"><td>Total</td><td style="text-align:right">${fmt(sale.total)}</td></tr>
       </table>
       <hr/>
       <table>${pays}
-        <tr><td>Balance</td><td style="text-align:right">${fmt(sale.balance)}</td></tr>
+        <tr><td>Saldo</td><td style="text-align:right">${fmt(sale.balance)}</td></tr>
       </table>
       <hr/>
       <div class="muted">${s("receiptFooter")}</div>
@@ -79,19 +83,38 @@ export function ReceiptModal({
     w.document.close();
   };
 
+  const canWhatsapp = !!sale?.customer && !sale.customer.isGeneric && !!sale.customer.phone1;
+  const sendWhatsApp = () => {
+    if (!sale?.customer) return;
+    getReceiptChannel().send(sale, sale.customer.phone1, {
+      businessName: s("businessName") || "Loja",
+      businessPhone: s("businessPhone") || undefined,
+      footer: s("receiptFooter") || undefined,
+      currencySymbol: s("currencySymbol") || "MT",
+    });
+  };
+
   return (
     <Modal
       open
       onClose={onClose}
-      title="Sale Complete"
+      title={t("Sale Completed")}
       size="sm"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            New Sale
+            {t("New Sale")}
           </Button>
+          {canWhatsapp && (
+            <Button
+              variant={sale?.customer?.whatsappOptIn ? "primary" : "secondary"}
+              onClick={sendWhatsApp}
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+            </Button>
+          )}
           <Button onClick={print} disabled={!sale}>
-            <Printer className="w-3.5 h-3.5" /> Print Receipt
+            <Printer className="w-3.5 h-3.5" /> {t("Print Receipt")}
           </Button>
         </>
       }
@@ -102,7 +125,7 @@ export function ReceiptModal({
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-on-surface-variant uppercase tracking-wider text-xs">
-              Receipt
+              {t("Receipt")}
             </span>
             <span className="font-mono font-bold">{sale.saleNumber}</span>
           </div>
@@ -118,16 +141,16 @@ export function ReceiptModal({
             ))}
           </div>
           <div className="space-y-1 text-xs">
-            <Line label="Subtotal" value={fmt(sale.subtotal)} />
-            {sale.discount > 0 && <Line label="Discount" value={`-${fmt(sale.discount)}`} />}
-            {sale.tax > 0 && <Line label="Tax" value={fmt(sale.tax)} />}
+            <Line label={t("Subtotal")} value={fmt(sale.subtotal)} />
+            {sale.discount > 0 && <Line label={t("Discount")} value={`-${fmt(sale.discount)}`} />}
+            {sale.tax > 0 && <Line label={t("Tax")} value={fmt(sale.tax)} />}
             <div className="flex justify-between pt-1 border-t border-outline/40 text-sm font-black">
-              <span>Total</span>
+              <span>{t("Total")}</span>
               <span className="text-primary">{fmt(sale.total)}</span>
             </div>
-            <Line label="Paid" value={fmt(sale.paidAmount)} />
+            <Line label={t("Paid")} value={fmt(sale.paidAmount)} />
             {sale.balance > 0 && (
-              <Line label="Balance due" value={fmt(sale.balance)} />
+              <Line label={t("Balance due")} value={fmt(sale.balance)} />
             )}
           </div>
         </div>

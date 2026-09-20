@@ -25,6 +25,7 @@ import {
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { usePagedQuery } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -39,6 +40,7 @@ const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "
 type Line = PickedVariant & { quantityOrdered: number; unitCost: number };
 
 export default function PurchaseOrdersPage() {
+  const { t } = useTranslation();
   const token = useToken();
   const fmt = useCurrency();
   const { branchId, branches } = useResolvedBranch();
@@ -71,8 +73,8 @@ export default function PurchaseOrdersPage() {
 
   const submit = async () => {
     const b = (poBranch || branchId) as Id<"branches"> | undefined;
-    if (!supplierId || !b) return toast.error("Supplier and branch required.");
-    if (lines.length === 0) return toast.error("Add at least one line.");
+    if (!supplierId || !b) return toast.error(t("Supplier and branch required."));
+    if (lines.length === 0) return toast.error(t("Add at least one line."));
     setBusy(true);
     try {
       await create({
@@ -87,36 +89,36 @@ export default function PurchaseOrdersPage() {
           unitCost: l.unitCost,
         })),
       });
-      toast.success("Purchase order created");
+      toast.success(t("Purchase order created"));
       setOpen(false);
       setLines([]);
       setSupplierId("");
       setNotes("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <PageLayout title="Purchase Orders" subtitle="Purchasing · restock from suppliers">
+    <PageLayout title={t("Purchase Orders")} subtitle={t("Purchasing · restock from suppliers")}>
       <Toolbar>
         <Select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="w-44"
         >
-          <option value="">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="sent">Sent</option>
-          <option value="partially_received">Partially received</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
+          <option value="">{t("All statuses")}</option>
+          <option value="draft">{t("Draft")}</option>
+          <option value="sent">{t("Sent")}</option>
+          <option value="partially_received">{t("Partially received")}</option>
+          <option value="completed">{t("Completed")}</option>
+          <option value="cancelled">{t("Cancelled")}</option>
         </Select>
         <div className="ml-auto" />
         <Button onClick={() => setOpen(true)}>
-          <Plus className="w-3.5 h-3.5" /> New PO
+          <Plus className="w-3.5 h-3.5" /> {t("New PO")}
         </Button>
       </Toolbar>
 
@@ -124,17 +126,17 @@ export default function PurchaseOrdersPage() {
         {isLoading ? (
           <Spinner />
         ) : list.length === 0 ? (
-          <EmptyState title="No purchase orders" />
+          <EmptyState title={t("No purchase orders")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Code</Th>
-                <Th>Supplier</Th>
-                <Th>Date</Th>
-                <Th className="text-right">Total</Th>
-                <Th>Status</Th>
-                <Th>Payment</Th>
+                <Th>{t("Code")}</Th>
+                <Th>{t("Supplier")}</Th>
+                <Th>{t("Date")}</Th>
+                <Th className="text-right">{t("Total")}</Th>
+                <Th>{t("Status")}</Th>
+                <Th>{t("Payment")}</Th>
                 <Th />
               </tr>
             </thead>
@@ -159,7 +161,7 @@ export default function PurchaseOrdersPage() {
                   </Td>
                   <Td>
                     <Button variant="ghost" size="sm" onClick={() => setDetailId(po._id)}>
-                      Open
+                      {t("Open")}
                     </Button>
                   </Td>
                 </tr>
@@ -184,22 +186,22 @@ export default function PurchaseOrdersPage() {
         open={open}
         onClose={() => setOpen(false)}
         size="lg"
-        title="New Purchase Order"
+        title={t("New Purchase Order")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={submit} loading={busy}>
-              Create ({fmt(total)})
+              {t("Create ({total})", { total: fmt(total) })}
             </Button>
           </>
         }
       >
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Supplier" required>
+          <Field label={t("Supplier")} required>
             <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">Select…</option>
+              <option value="">{t("Select…")}</option>
               {(suppliers ?? []).map((s) => (
                 <option key={s._id} value={s._id}>
                   {s.name}
@@ -207,7 +209,7 @@ export default function PurchaseOrdersPage() {
               ))}
             </Select>
           </Field>
-          <Field label="Receive into branch" required>
+          <Field label={t("Receive into branch")} required>
             <Select
               value={poBranch || branchId || ""}
               onChange={(e) => setPoBranch(e.target.value)}
@@ -221,7 +223,7 @@ export default function PurchaseOrdersPage() {
           </Field>
         </div>
 
-        <Field label="Add items">
+        <Field label={t("Add items")}>
           <VariantPicker
             onPick={(v) =>
               setLines((p) =>
@@ -237,10 +239,10 @@ export default function PurchaseOrdersPage() {
           <Table>
             <thead>
               <tr>
-                <Th>Item</Th>
-                <Th className="text-right w-20">Qty</Th>
-                <Th className="text-right w-28">Unit cost</Th>
-                <Th className="text-right w-28">Line</Th>
+                <Th>{t("Item")}</Th>
+                <Th className="text-right w-20">{t("Qty")}</Th>
+                <Th className="text-right w-28">{t("Unit cost")}</Th>
+                <Th className="text-right w-28">{t("Line")}</Th>
                 <Th className="w-8" />
               </tr>
             </thead>
@@ -294,7 +296,7 @@ export default function PurchaseOrdersPage() {
             </tbody>
           </Table>
         )}
-        <Field label="Notes">
+        <Field label={t("Notes")}>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       </Modal>
@@ -317,6 +319,7 @@ function PODetail({
   fmt: (n: number) => string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const po = useQuery(api.purchaseOrders.get, { id });
   const updateStatus = useMutation(api.purchaseOrders.updateStatus);
   const receiveItems = useMutation(api.purchaseOrders.receiveItems);
@@ -331,7 +334,7 @@ function PODetail({
       await fn();
       toast.success(msg);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -344,8 +347,11 @@ function PODetail({
         quantityReceived: Number(q) || 0,
       }))
       .filter((x) => x.quantityReceived > 0);
-    if (items.length === 0) return toast.error("Enter received quantities.");
-    run(() => receiveItems({ token, id, items }).then(() => setReceiving({})), "Stock received");
+    if (items.length === 0) return toast.error(t("Enter received quantities."));
+    run(
+      () => receiveItems({ token, id, items }).then(() => setReceiving({})),
+      t("Stock received")
+    );
   };
 
   return (
@@ -353,7 +359,7 @@ function PODetail({
       open
       onClose={onClose}
       size="lg"
-      title={po ? `PO ${po.orderCode}` : "Purchase Order"}
+      title={po ? t("PO {code}", { code: po.orderCode }) : t("Purchase Order")}
       subtitle={po ? `${po.supplierName}${po.branchName ? ` → ${po.branchName}` : ""}` : undefined}
       footer={
         po && (
@@ -364,27 +370,27 @@ function PODetail({
                   variant="danger"
                   loading={busy}
                   onClick={() =>
-                    run(() => removePo({ token, id }).then(onClose), "Deleted")
+                    run(() => removePo({ token, id }).then(onClose), t("Deleted"))
                   }
                 >
-                  Delete
+                  {t("Delete")}
                 </Button>
                 <Button
                   loading={busy}
                   onClick={() =>
                     run(
                       () => updateStatus({ token, id, status: "sent" }),
-                      "Marked as sent"
+                      t("Marked as sent")
                     )
                   }
                 >
-                  Mark sent
+                  {t("Mark sent")}
                 </Button>
               </>
             )}
             {(po.status === "sent" || po.status === "partially_received") && (
               <Button loading={busy} onClick={doReceive}>
-                Receive entered qty
+                {t("Receive entered qty")}
               </Button>
             )}
             {po.paymentStatus !== "paid" && po.status !== "cancelled" && (
@@ -394,11 +400,11 @@ function PODetail({
                 onClick={() =>
                   run(
                     () => updatePayment({ token, id, paymentStatus: "paid" }),
-                    "Marked paid"
+                    t("Marked paid")
                   )
                 }
               >
-                Mark paid
+                {t("Mark paid")}
               </Button>
             )}
           </div>
@@ -411,12 +417,12 @@ function PODetail({
         <Table>
           <thead>
             <tr>
-              <Th>Item</Th>
-              <Th className="text-right">Ordered</Th>
-              <Th className="text-right">Received</Th>
-              <Th className="text-right">Unit cost</Th>
+              <Th>{t("Item")}</Th>
+              <Th className="text-right">{t("Ordered")}</Th>
+              <Th className="text-right">{t("Received")}</Th>
+              <Th className="text-right">{t("Unit cost")}</Th>
               {(po.status === "sent" || po.status === "partially_received") && (
-                <Th className="text-right w-24">Receive</Th>
+                <Th className="text-right w-24">{t("Receive")}</Th>
               )}
             </tr>
           </thead>

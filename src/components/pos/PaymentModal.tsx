@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Modal, Button, Select } from "@/components/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/contexts/LanguageContext";
 
+// Payment method identifiers — stored as-is on `payments.method` and matched
+// against elsewhere (e.g. `sales.ts`'s `isCash` cash-register logic), so these
+// are data values, not UI copy: they stay in English/brand form rather than
+// being translated.
 const METHODS = ["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"];
 
 export function PaymentModal({
@@ -12,14 +17,19 @@ export function PaymentModal({
   fmt,
   onClose,
   onComplete,
-  title = "Take Payment",
+  title,
+  extraFields,
 }: {
   total: number;
   fmt: (n: number) => string;
   onClose: () => void;
   onComplete: (payments: { method: string; amount: number }[]) => void | Promise<void>;
   title?: string;
+  /** Rendered below the payment rows, above the paid/change summary — e.g. the
+   *  anonymous-sale phone capture field. Keeps this modal about payments. */
+  extraFields?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<{ method: string; amount: string }[]>([
     { method: "Cash", amount: total.toFixed(2) },
   ]);
@@ -41,8 +51,8 @@ export function PaymentModal({
     <Modal
       open
       onClose={onClose}
-      title={title}
-      subtitle={`Amount due ${fmt(total)}`}
+      title={title ?? t("Receive Payment")}
+      subtitle={t("Amount due {amount}", { amount: fmt(total) })}
       footer={
         <>
           <Button
@@ -50,7 +60,7 @@ export function PaymentModal({
             onClick={() => submit([])}
             loading={busy}
           >
-            Save as pending
+            {t("Save as pending")}
           </Button>
           <Button
             onClick={() =>
@@ -62,7 +72,7 @@ export function PaymentModal({
             }
             loading={busy}
           >
-            Complete Sale
+            {t("Complete Sale")}
           </Button>
         </>
       }
@@ -114,14 +124,16 @@ export function PaymentModal({
           }
           className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-primary"
         >
-          <Plus className="w-3.5 h-3.5" /> Split payment
+          <Plus className="w-3.5 h-3.5" /> {t("Split payment")}
         </button>
       </div>
 
+      {extraFields}
+
       <div className="mt-4 pt-3 border-t border-outline/40 space-y-1.5 text-sm">
-        <Line label="Paid" value={fmt(paid)} />
+        <Line label={t("Paid")} value={fmt(paid)} />
         <Line
-          label={change >= 0 ? "Change" : "Balance due"}
+          label={change >= 0 ? t("Change") : t("Balance due")}
           value={fmt(Math.abs(change))}
           className={cn(change < 0 ? "text-error" : "text-success", "font-bold")}
         />

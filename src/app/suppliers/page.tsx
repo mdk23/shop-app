@@ -28,6 +28,7 @@ import { useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 type Supplier = {
   _id: Id<"suppliers">;
@@ -43,6 +44,7 @@ type Supplier = {
 };
 
 export default function SuppliersPage() {
+  const { t } = useTranslation();
   const token = useToken();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -58,13 +60,13 @@ export default function SuppliersPage() {
   const [deleting, setDeleting] = useState<Supplier | null>(null);
 
   return (
-    <PageLayout title="Suppliers" subtitle="Purchasing · vendor directory">
+    <PageLayout title={t("Suppliers")} subtitle={t("Purchasing · vendor directory")}>
       <Toolbar>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-56`}
-            placeholder="Search suppliers…"
+            placeholder={t("Search suppliers…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -74,9 +76,9 @@ export default function SuppliersPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="w-32"
         >
-          <option value="">Any status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
+          <option value="">{t("Any status")}</option>
+          <option value="active">{t("Active")}</option>
+          <option value="inactive">{t("Inactive")}</option>
         </Select>
         <div className="ml-auto" />
         <Button
@@ -85,7 +87,7 @@ export default function SuppliersPage() {
             setOpen(true);
           }}
         >
-          <Plus className="w-3.5 h-3.5" /> New Supplier
+          <Plus className="w-3.5 h-3.5" /> {t("New Supplier")}
         </Button>
       </Toolbar>
 
@@ -93,16 +95,16 @@ export default function SuppliersPage() {
         {rows === undefined ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyState title="No suppliers" />
+          <EmptyState title={t("No suppliers")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Name</Th>
-                <Th>Contact</Th>
-                <Th>Phone</Th>
-                <Th>Terms</Th>
-                <Th>Status</Th>
+                <Th>{t("Name")}</Th>
+                <Th>{t("Contact")}</Th>
+                <Th>{t("Phone")}</Th>
+                <Th>{t("Terms")}</Th>
+                <Th>{t("Status")}</Th>
                 <Th className="w-28" />
               </tr>
             </thead>
@@ -115,7 +117,7 @@ export default function SuppliersPage() {
                   <Td className="text-on-surface-variant">{s.paymentTerms ?? "—"}</Td>
                   <Td>
                     <Badge tone={s.status === "active" ? "success" : "neutral"}>
-                      {s.status}
+                      {t(s.status === "active" ? "Active" : "Inactive")}
                     </Badge>
                   </Td>
                   <Td>
@@ -168,17 +170,17 @@ export default function SuppliersPage() {
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete supplier"
-        message={`Delete "${deleting?.name}"? This cannot be undone.`}
+        title={t("Delete supplier")}
+        message={t('Delete "{name}"? This cannot be undone.', { name: deleting?.name ?? "" })}
         danger
-        confirmLabel="Delete"
+        confirmLabel={t("Delete")}
         onConfirm={async () => {
           if (!deleting) return;
           try {
             await remove({ token, id: deleting._id });
-            toast.success("Supplier deleted");
+            toast.success(t("Supplier deleted"));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed");
+            toast.error(e instanceof Error ? e.message : t("Failed"));
           }
           setDeleting(null);
         }}
@@ -196,6 +198,7 @@ function SupplierModal({
   existing: Supplier | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const create = useMutation(api.suppliers.create);
   const update = useMutation(api.suppliers.update);
   const [f, setF] = useState({
@@ -213,7 +216,7 @@ function SupplierModal({
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   const save = async () => {
-    if (!f.name.trim()) return toast.error("Name is required.");
+    if (!f.name.trim()) return toast.error(t("Name is required."));
     setBusy(true);
     try {
       const payload = {
@@ -230,10 +233,10 @@ function SupplierModal({
       };
       if (existing) await update({ ...payload, id: existing._id });
       else await create(payload);
-      toast.success("Saved");
+      toast.success(t("Saved"));
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -243,56 +246,56 @@ function SupplierModal({
     <Modal
       open
       onClose={onClose}
-      title={existing ? "Edit Supplier" : "New Supplier"}
+      title={existing ? t("Edit Supplier") : t("New Supplier")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={save} loading={busy}>
-            Save
+            {t("Save")}
           </Button>
         </>
       }
     >
-      <Field label="Name" required>
+      <Field label={t("Name")} required>
         <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Contact person">
+        <Field label={t("Contact person")}>
           <TextInput value={f.contactName} onChange={(e) => set("contactName", e.target.value)} />
         </Field>
-        <Field label="Phone">
+        <Field label={t("Phone")}>
           <TextInput value={f.phone} onChange={(e) => set("phone", e.target.value)} />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Email">
+        <Field label={t("Email")}>
           <TextInput value={f.email} onChange={(e) => set("email", e.target.value)} />
         </Field>
-        <Field label="Tax number">
+        <Field label={t("Tax number")}>
           <TextInput value={f.taxNumber} onChange={(e) => set("taxNumber", e.target.value)} />
         </Field>
       </div>
-      <Field label="Address">
+      <Field label={t("Address")}>
         <TextInput value={f.address} onChange={(e) => set("address", e.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Payment terms">
+        <Field label={t("Payment terms")}>
           <TextInput
             value={f.paymentTerms}
             onChange={(e) => set("paymentTerms", e.target.value)}
-            placeholder="e.g. Net 30"
+            placeholder={t("e.g. Net 30")}
           />
         </Field>
-        <Field label="Status">
+        <Field label={t("Status")}>
           <Select value={f.status} onChange={(e) => set("status", e.target.value)}>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+            <option value="active">{t("Active")}</option>
+            <option value="inactive">{t("Inactive")}</option>
           </Select>
         </Field>
       </div>
-      <Field label="Notes">
+      <Field label={t("Notes")}>
         <Textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} />
       </Field>
     </Modal>

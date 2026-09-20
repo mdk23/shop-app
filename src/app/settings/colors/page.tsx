@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
@@ -36,6 +37,7 @@ type Row = {
 
 export default function ColorsPage() {
   const token = useToken();
+  const { t } = useTranslation();
   const rows = useQuery(api.colors.list, { includeInactive: true });
   const page = useClientPage(rows ?? []);
   const create = useMutation(api.colors.create);
@@ -66,7 +68,7 @@ export default function ColorsPage() {
   };
 
   const save = async () => {
-    if (!name.trim()) return toast.error("Color name is required.");
+    if (!name.trim()) return toast.error(t("Color name is required."));
     setBusy(true);
     try {
       if (editing) {
@@ -77,7 +79,7 @@ export default function ColorsPage() {
           hex,
           sortOrder: sortOrder ? Number(sortOrder) : undefined,
         });
-        toast.success("Color updated");
+        toast.success(t("Color updated"));
       } else {
         await create({
           token,
@@ -85,11 +87,11 @@ export default function ColorsPage() {
           hex,
           sortOrder: sortOrder ? Number(sortOrder) : undefined,
         });
-        toast.success("Color added");
+        toast.success(t("Color added"));
       }
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t("Failed to save"));
     } finally {
       setBusy(false);
     }
@@ -99,16 +101,16 @@ export default function ColorsPage() {
     try {
       await update({ token, id: r._id, active: !r.active });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     }
   };
 
   return (
-    <PageLayout title="Colors" subtitle="Settings · color taxonomy">
+    <PageLayout title={t("Colors")} subtitle={t("Settings · color taxonomy")}>
       <Toolbar>
         <div className="ml-auto" />
         <Button onClick={openNew}>
-          <Plus className="w-3.5 h-3.5" /> New Color
+          <Plus className="w-3.5 h-3.5" /> {t("New Color")}
         </Button>
       </Toolbar>
 
@@ -117,18 +119,18 @@ export default function ColorsPage() {
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState
-            title="No colors yet"
-            message="Add colors like Black, White, Navy — they'll be offered when creating product variants."
-            action={<Button onClick={openNew}>New Color</Button>}
+            title={t("No colors yet")}
+            message={t("Add colors like Black, White, Navy — they'll be offered when creating product variants.")}
+            action={<Button onClick={openNew}>{t("New Color")}</Button>}
           />
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th className="w-10" />
-                <Th>Name</Th>
-                <Th className="w-24">Order</Th>
-                <Th className="w-24">Status</Th>
+                <Th>{t("Name")}</Th>
+                <Th className="w-24">{t("Order")}</Th>
+                <Th className="w-24">{t("Status")}</Th>
                 <Th className="w-32" />
               </tr>
             </thead>
@@ -146,7 +148,7 @@ export default function ColorsPage() {
                   <Td>
                     <button onClick={() => toggleActive(r as Row)}>
                       <Badge tone={r.active ? "success" : "neutral"}>
-                        {r.active ? "Active" : "Inactive"}
+                        {r.active ? t("Active") : t("Inactive")}
                       </Badge>
                     </button>
                   </Td>
@@ -181,23 +183,23 @@ export default function ColorsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={editing ? "Edit Color" : "New Color"}
+        title={editing ? t("Edit Color") : t("New Color")}
         size="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={save} loading={busy}>
-              Save
+              {t("Save")}
             </Button>
           </>
         }
       >
-        <Field label="Name" required>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Black" />
+        <Field label={t("Name")} required>
+          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Black")} />
         </Field>
-        <Field label="Swatch">
+        <Field label={t("Swatch")}>
           <div className="flex items-center gap-2">
             <input
               type="color"
@@ -208,7 +210,7 @@ export default function ColorsPage() {
             <TextInput value={hex} onChange={(e) => setHex(e.target.value)} className="flex-1" />
           </div>
         </Field>
-        <Field label="Sort order" hint="Lower numbers show first">
+        <Field label={t("Sort order")} hint={t("Lower numbers show first")}>
           <TextInput
             type="number"
             value={sortOrder}
@@ -220,17 +222,17 @@ export default function ColorsPage() {
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete color"
-        message={`Delete "${deleting?.name}"? Existing variants keep their color label; only the taxonomy entry is removed.`}
+        title={t("Delete color")}
+        message={t('Delete "{name}"? Existing variants keep their color label; only the taxonomy entry is removed.', { name: deleting?.name ?? "" })}
         danger
-        confirmLabel="Delete"
+        confirmLabel={t("Delete")}
         onConfirm={async () => {
           if (!deleting) return;
           try {
             await remove({ token, id: deleting._id });
-            toast.success("Color deleted");
+            toast.success(t("Color deleted"));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed");
+            toast.error(e instanceof Error ? e.message : t("Failed"));
           }
           setDeleting(null);
         }}

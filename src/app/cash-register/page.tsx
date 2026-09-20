@@ -20,6 +20,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { ArrowDownCircle, ArrowUpCircle, Lock } from "lucide-react";
 
@@ -36,6 +37,7 @@ export default function CashRegisterPage() {
   const token = useToken();
   const fmt = useCurrency();
   const { branchId, branchName } = useResolvedBranch();
+  const { t } = useTranslation();
 
   const session = useQuery(
     api.cashRegister.getActiveSession,
@@ -69,11 +71,11 @@ export default function CashRegisterPage() {
         notes: openNotes || undefined,
         branchId: branchId ?? undefined,
       });
-      toast.success("Register opened");
+      toast.success(t("Register opened"));
       setOpening("");
       setOpenNotes("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -81,8 +83,8 @@ export default function CashRegisterPage() {
 
   const doMove = async () => {
     if (!session || !moveOpen) return;
-    if (!moveAmount || Number(moveAmount) <= 0) return toast.error("Enter amount.");
-    if (!moveDesc.trim()) return toast.error("Enter a description.");
+    if (!moveAmount || Number(moveAmount) <= 0) return toast.error(t("Enter amount."));
+    if (!moveDesc.trim()) return toast.error(t("Enter a description."));
     setBusy(true);
     try {
       await addMovement({
@@ -92,12 +94,12 @@ export default function CashRegisterPage() {
         amount: Number(moveAmount),
         description: moveDesc,
       });
-      toast.success("Recorded");
+      toast.success(t("Recorded"));
       setMoveOpen(null);
       setMoveAmount("");
       setMoveDesc("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -114,60 +116,60 @@ export default function CashRegisterPage() {
         notes: closeNotes || undefined,
       });
       toast.success(
-        `Closed · difference ${fmt(res.difference)}`
+        t("Closed · difference {diff}", { diff: fmt(res.difference) })
       );
       setCloseOpen(false);
       setActualCash("");
       setCloseNotes("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <PageLayout title="Cash Register" subtitle={`Session · ${branchName}`}>
+    <PageLayout title={t("Cash Register")} subtitle={t("Session · {branch}", { branch: branchName })}>
       {session === undefined ? (
         <Spinner />
       ) : !session ? (
         <Card className="max-w-md mx-auto p-6">
           <h3 className="text-sm font-black uppercase tracking-wider mb-1">
-            Open the register
+            {t("Open the register")}
           </h3>
           <p className="text-xs text-on-surface-variant mb-4">
-            No open session for {branchName}. Enter the starting cash float.
+            {t("No open session for {branch}. Enter the starting cash float.", { branch: branchName })}
           </p>
-          <Field label="Opening amount" required>
+          <Field label={t("Opening amount")} required>
             <TextInput
               type="number"
               value={opening}
               onChange={(e) => setOpening(e.target.value)}
             />
           </Field>
-          <Field label="Notes">
+          <Field label={t("Notes")}>
             <Textarea value={openNotes} onChange={(e) => setOpenNotes(e.target.value)} />
           </Field>
           <Button className="w-full mt-3" onClick={doOpen} loading={busy}>
-            Open Register
+            {t("Open Register")}
           </Button>
         </Card>
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <StatCard label="Opening float" value={fmt(session.openingAmount)} />
+            <StatCard label={t("Opening float")} value={fmt(session.openingAmount)} />
             <StatCard
-              label="Cash sales"
+              label={t("Cash sales")}
               value={fmt(detail?.movements.filter((m) => m.type === "sale").reduce((a, m) => a + m.amount, 0) ?? 0)}
               accent="success"
             />
             <StatCard
-              label="Refunds"
+              label={t("Refunds")}
               value={fmt(detail?.movements.filter((m) => m.type === "refund").reduce((a, m) => a + m.amount, 0) ?? 0)}
               accent="error"
             />
             <StatCard
-              label="Expected in drawer"
+              label={t("Expected in drawer")}
               value={fmt(detail?.expectedCash ?? session.openingAmount)}
               accent="primary"
             />
@@ -175,14 +177,14 @@ export default function CashRegisterPage() {
 
           <div className="flex flex-wrap gap-2 mb-4">
             <Button variant="secondary" onClick={() => setMoveOpen("cash_in")}>
-              <ArrowDownCircle className="w-3.5 h-3.5" /> Cash In
+              <ArrowDownCircle className="w-3.5 h-3.5" /> {t("Cash In")}
             </Button>
             <Button variant="secondary" onClick={() => setMoveOpen("cash_out")}>
-              <ArrowUpCircle className="w-3.5 h-3.5" /> Cash Out
+              <ArrowUpCircle className="w-3.5 h-3.5" /> {t("Cash Out")}
             </Button>
             <div className="ml-auto" />
             <Button variant="danger" onClick={() => setCloseOpen(true)}>
-              <Lock className="w-3.5 h-3.5" /> Close Register
+              <Lock className="w-3.5 h-3.5" /> {t("Close Register")}
             </Button>
           </div>
 
@@ -190,16 +192,16 @@ export default function CashRegisterPage() {
             {!detail ? (
               <Spinner />
             ) : detail.movements.length === 0 ? (
-              <EmptyState title="No movements yet" />
+              <EmptyState title={t("No movements yet")} />
             ) : (
               <Table>
                 <thead>
                   <tr>
-                    <Th>When</Th>
-                    <Th>Type</Th>
-                    <Th>Description</Th>
-                    <Th className="text-right">Amount</Th>
-                    <Th>By</Th>
+                    <Th>{t("When")}</Th>
+                    <Th>{t("Type")}</Th>
+                    <Th>{t("Description")}</Th>
+                    <Th className="text-right">{t("Amount")}</Th>
+                    <Th>{t("By")}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,7 +212,7 @@ export default function CashRegisterPage() {
                       </Td>
                       <Td>
                         <Badge tone={MOVE_TONE[m.type] ?? "neutral"}>
-                          {m.type.replace("_", " ")}
+                          {t(m.type.replace("_", " "))}
                         </Badge>
                       </Td>
                       <Td className="text-xs">{m.description}</Td>
@@ -237,26 +239,26 @@ export default function CashRegisterPage() {
         open={!!moveOpen}
         onClose={() => setMoveOpen(null)}
         size="sm"
-        title={moveOpen === "cash_in" ? "Cash In" : "Cash Out"}
+        title={moveOpen === "cash_in" ? t("Cash In") : t("Cash Out")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setMoveOpen(null)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={doMove} loading={busy}>
-              Record
+              {t("Record")}
             </Button>
           </>
         }
       >
-        <Field label="Amount" required>
+        <Field label={t("Amount")} required>
           <TextInput
             type="number"
             value={moveAmount}
             onChange={(e) => setMoveAmount(e.target.value)}
           />
         </Field>
-        <Field label="Description" required>
+        <Field label={t("Description")} required>
           <TextInput value={moveDesc} onChange={(e) => setMoveDesc(e.target.value)} />
         </Field>
       </Modal>
@@ -265,27 +267,27 @@ export default function CashRegisterPage() {
         open={closeOpen}
         onClose={() => setCloseOpen(false)}
         size="sm"
-        title="Close Register"
-        subtitle={`Expected ${fmt(detail?.expectedCash ?? 0)}`}
+        title={t("Close Register")}
+        subtitle={t("Expected {amount}", { amount: fmt(detail?.expectedCash ?? 0) })}
         footer={
           <>
             <Button variant="ghost" onClick={() => setCloseOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button variant="danger" onClick={doClose} loading={busy}>
-              Close
+              {t("Close")}
             </Button>
           </>
         }
       >
-        <Field label="Counted cash" required>
+        <Field label={t("Counted cash")} required>
           <TextInput
             type="number"
             value={actualCash}
             onChange={(e) => setActualCash(e.target.value)}
           />
         </Field>
-        <Field label="Closing notes" hint="Required if there is a discrepancy over 5">
+        <Field label={t("Closing notes")} hint={t("Required if there is a discrepancy over 5")}>
           <Textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} />
         </Field>
       </Modal>

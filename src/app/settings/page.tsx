@@ -22,9 +22,15 @@ import {
 import { useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { useTheme, THEME_OPTIONS } from "@/contexts/ThemeContext";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Check, Plus, Pencil, FileClock, Truck, Ruler, Palette } from "lucide-react";
+
+const LANGUAGE_OPTIONS: { code: "pt" | "en"; name: string }[] = [
+  { code: "pt", name: "Português" },
+  { code: "en", name: "English" },
+];
 
 const TOGGLE_KEYS = [
   "allowNegativeStock",
@@ -52,8 +58,21 @@ export default function SettingsPage() {
   const upsert = useMutation(api.settings.upsert);
   const initDefaults = useMutation(api.settings.initializeDefaults);
   const { theme, setTheme } = useTheme();
+  const { language, t } = useTranslation();
+  const [savingLanguage, setSavingLanguage] = useState(false);
 
   const get = (key: string) => settings?.find((s) => s.key === key);
+
+  const setLanguage = async (code: "pt" | "en") => {
+    setSavingLanguage(true);
+    try {
+      await upsert({ token, key: "language", isActive: true, value: code });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setSavingLanguage(false);
+    }
+  };
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -69,14 +88,14 @@ export default function SettingsPage() {
         value: drafts[key] ?? s?.value ?? "",
         label: s?.label,
       });
-      toast.success("Saved");
+      toast.success(t("Saved"));
       setDrafts((p) => {
         const n = { ...p };
         delete n[key];
         return n;
       });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setSavingKey(null);
     }
@@ -93,7 +112,7 @@ export default function SettingsPage() {
         label: s?.label,
       });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     }
   };
 
@@ -102,26 +121,26 @@ export default function SettingsPage() {
   >(null);
 
   return (
-    <PageLayout title="Settings" subtitle="Business configuration">
+    <PageLayout title={t("Settings")} subtitle={t("Business configuration")}>
       <div className="flex flex-wrap gap-2 mb-4">
         <Link href="/settings/sizes">
           <Button variant="secondary">
-            <Ruler className="w-3.5 h-3.5" /> Sizes
+            <Ruler className="w-3.5 h-3.5" /> {t("Sizes")}
           </Button>
         </Link>
         <Link href="/settings/colors">
           <Button variant="secondary">
-            <Palette className="w-3.5 h-3.5" /> Colors
+            <Palette className="w-3.5 h-3.5" /> {t("Colors")}
           </Button>
         </Link>
         <Link href="/settings/audit-logs">
           <Button variant="secondary">
-            <FileClock className="w-3.5 h-3.5" /> Audit Logs
+            <FileClock className="w-3.5 h-3.5" /> {t("Audit Logs")}
           </Button>
         </Link>
         <Link href="/settings/delivery-fees">
           <Button variant="secondary">
-            <Truck className="w-3.5 h-3.5" /> Delivery Fees
+            <Truck className="w-3.5 h-3.5" /> {t("Delivery Fees")}
           </Button>
         </Link>
         <div className="ml-auto" />
@@ -129,10 +148,10 @@ export default function SettingsPage() {
           variant="ghost"
           onClick={async () => {
             await initDefaults({ token });
-            toast.success("Defaults ensured");
+            toast.success(t("Defaults ensured"));
           }}
         >
-          Restore missing defaults
+          {t("Restore missing defaults")}
         </Button>
       </div>
 
@@ -141,7 +160,7 @@ export default function SettingsPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card className="p-4">
-            <h3 className="text-sm font-black uppercase tracking-wider mb-3">Business</h3>
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">{t("Business")}</h3>
             <div className="space-y-3">
               {VALUE_KEYS.map((key) => {
                 const s = get(key);
@@ -161,7 +180,7 @@ export default function SettingsPage() {
                           onClick={() => saveValue(key)}
                           loading={savingKey === key}
                         >
-                          Save
+                          {t("Save")}
                         </Button>
                       )}
                     </div>
@@ -172,7 +191,7 @@ export default function SettingsPage() {
           </Card>
 
           <Card className="p-4">
-            <h3 className="text-sm font-black uppercase tracking-wider mb-3">Features</h3>
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">{t("Features")}</h3>
             <div className="space-y-2">
               {TOGGLE_KEYS.map((key) => {
                 const s = get(key);
@@ -184,7 +203,7 @@ export default function SettingsPage() {
                   >
                     <span className="text-xs font-bold">{s?.label ?? key}</span>
                     <Badge tone={s?.isActive ? "success" : "neutral"}>
-                      {s?.isActive ? "On" : "Off"}
+                      {s?.isActive ? t("On") : t("Off")}
                     </Badge>
                   </button>
                 );
@@ -194,7 +213,7 @@ export default function SettingsPage() {
 
           <Card className="p-4 lg:col-span-2">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-black uppercase tracking-wider">Branches</h3>
+              <h3 className="text-sm font-black uppercase tracking-wider">{t("Branches")}</h3>
               <Button
                 size="sm"
                 onClick={() =>
@@ -207,16 +226,16 @@ export default function SettingsPage() {
                   })
                 }
               >
-                <Plus className="w-3.5 h-3.5" /> Add
+                <Plus className="w-3.5 h-3.5" /> {t("Add")}
               </Button>
             </div>
             <Table>
               <thead>
                 <tr>
-                  <Th>Name</Th>
-                  <Th>Code</Th>
-                  <Th>Address</Th>
-                  <Th>Status</Th>
+                  <Th>{t("Name")}</Th>
+                  <Th>{t("Code")}</Th>
+                  <Th>{t("Address")}</Th>
+                  <Th>{t("Status")}</Th>
                   <Th className="w-16" />
                 </tr>
               </thead>
@@ -225,13 +244,13 @@ export default function SettingsPage() {
                   <tr key={b._id}>
                     <Td className="font-bold">
                       {b.name}
-                      {b.isDefault && <Badge tone="info"> default</Badge>}
+                      {b.isDefault && <Badge tone="info"> {t("default")}</Badge>}
                     </Td>
                     <Td className="font-mono text-xs">{b.code}</Td>
                     <Td className="text-on-surface-variant">{b.address ?? "—"}</Td>
                     <Td>
                       <Badge tone={b.status === "active" ? "success" : "neutral"}>
-                        {b.status}
+                        {t(b.status === "active" ? "Active" : "Inactive")}
                       </Badge>
                     </Td>
                     <Td>
@@ -270,7 +289,7 @@ export default function SettingsPage() {
           </Card>
 
           <Card className="p-4 lg:col-span-2">
-            <h3 className="text-sm font-black uppercase tracking-wider mb-3">Theme</h3>
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">{t("Theme")}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {THEME_OPTIONS.map((t) => (
                 <button
@@ -294,6 +313,34 @@ export default function SettingsPage() {
                     {theme === t.key && <Check className="w-3.5 h-3.5 text-primary ml-auto" />}
                   </div>
                   <p className="text-[10px] text-on-surface-variant">{t.description}</p>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-4 lg:col-span-2">
+            <h3 className="text-sm font-black uppercase tracking-wider mb-3">{t("Language")}</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.code}
+                  disabled={savingLanguage}
+                  onClick={() => setLanguage(opt.code)}
+                  className={cn(
+                    "p-3 rounded-xl border text-left transition-colors disabled:opacity-50",
+                    language === opt.code
+                      ? "border-primary bg-primary/5"
+                      : "border-outline hover:border-primary/50"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider">
+                      {opt.name}
+                    </span>
+                    {language === opt.code && (
+                      <Check className="w-3.5 h-3.5 text-primary ml-auto" />
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
@@ -330,13 +377,14 @@ function BranchModal({
 }) {
   const create = useMutation(api.branches.create);
   const update = useMutation(api.branches.update);
+  const { t } = useTranslation();
   const [f, setF] = useState(data);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string | boolean) =>
     setF((p) => ({ ...p, [k]: v }));
 
   const save = async () => {
-    if (!f.name.trim() || !f.code.trim()) return toast.error("Name and code required.");
+    if (!f.name.trim() || !f.code.trim()) return toast.error(t("Name and code required."));
     setBusy(true);
     try {
       if (f._id) {
@@ -359,10 +407,10 @@ function BranchModal({
           isDefault: f.isDefault,
         });
       }
-      toast.success("Saved");
+      toast.success(t("Saved"));
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -373,28 +421,28 @@ function BranchModal({
       open
       onClose={onClose}
       size="sm"
-      title={f._id ? "Edit Branch" : "New Branch"}
+      title={f._id ? t("Edit Branch") : t("New Branch")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={save} loading={busy}>
-            Save
+            {t("Save")}
           </Button>
         </>
       }
     >
-      <Field label="Name" required>
+      <Field label={t("Name")} required>
         <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} />
       </Field>
-      <Field label="Code" required>
+      <Field label={t("Code")} required>
         <TextInput value={f.code} onChange={(e) => set("code", e.target.value)} />
       </Field>
-      <Field label="Address">
+      <Field label={t("Address")}>
         <TextInput value={f.address} onChange={(e) => set("address", e.target.value)} />
       </Field>
-      <Field label="Phone">
+      <Field label={t("Phone")}>
         <TextInput value={f.phone} onChange={(e) => set("phone", e.target.value)} />
       </Field>
       <label className="flex items-center gap-2 text-xs font-bold">
@@ -403,7 +451,7 @@ function BranchModal({
           checked={f.isDefault}
           onChange={(e) => set("isDefault", e.target.checked)}
         />
-        Default branch
+        {t("Default branch")}
       </label>
     </Modal>
   );

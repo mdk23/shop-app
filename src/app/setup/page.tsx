@@ -6,8 +6,10 @@ import { api } from "../../../convex/_generated/api";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Shield, AlertTriangle } from "lucide-react";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 export default function SetupPage() {
+  const { t } = useTranslation();
   const seedAdmin = useAction(api.usersActions.seedAdmin);
   const router = useRouter();
 
@@ -23,9 +25,9 @@ export default function SetupPage() {
     try {
       await seedAdmin({ name, username, password });
       setDone(true);
-      toast.success("Admin account created successfully!");
+      toast.success(t("Admin account created successfully!"));
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to create admin");
+      toast.error(err instanceof Error ? err.message : t("Failed to create admin"));
     } finally {
       setSubmitting(false);
     }
@@ -38,15 +40,15 @@ export default function SetupPage() {
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
             <Shield className="w-8 h-8 text-emerald-500" />
           </div>
-          <h1 className="text-2xl font-display text-on-surface mb-2">Setup Complete!</h1>
+          <h1 className="text-2xl font-display text-on-surface mb-2">{t("Setup Complete!")}</h1>
           <p className="text-sm text-on-surface-variant font-bold mb-6">
-            Admin account <strong>@{username}</strong> created. You can now log in.
+            {t("Admin account")} <strong>@{username}</strong> {t("created. You can now log in.")}
           </p>
           <button
             onClick={() => router.replace("/login")}
             className="w-full py-4 bg-primary text-on-primary rounded-xl font-black text-sm uppercase tracking-widest hover:bg-secondary transition-colors shadow-hard"
           >
-            Go to Login
+            {t("Go to Login")}
           </button>
         </div>
       </div>
@@ -62,9 +64,9 @@ export default function SetupPage() {
               <Shield className="w-8 h-8 text-on-primary" />
             </div>
             <div className="text-center">
-              <h1 className="font-display text-on-primary text-2xl">System Setup</h1>
+              <h1 className="font-display text-on-primary text-2xl">{t("System Setup")}</h1>
               <p className="text-on-primary/70 text-xs font-bold uppercase tracking-widest mt-1">
-                Create First Admin Account
+                {t("Create First Admin Account")}
               </p>
             </div>
           </div>
@@ -73,14 +75,14 @@ export default function SetupPage() {
             <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
               <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-amber-600 dark:text-amber-400 text-xs font-bold">
-                This page is only for first-time setup. Remove it from production after creating your admin account.
+                {t("This page is only for first-time setup. Remove it from production after creating your admin account.")}
               </p>
             </div>
 
             {[
-              { label: "Full Name", id: "name", value: name, setter: setName, type: "text", placeholder: "Admin Name" },
-              { label: "Username", id: "username", value: username, setter: (v: string) => setUsername(v.toLowerCase()), type: "text", placeholder: "admin" },
-              { label: "Password", id: "password", value: password, setter: setPassword, type: "password", placeholder: "Min. 4 characters" },
+              { label: t("Full Name"), id: "name", value: name, setter: setName, type: "text", placeholder: t("Admin Name") },
+              { label: t("Username"), id: "username", value: username, setter: (v: string) => setUsername(v.toLowerCase()), type: "text", placeholder: "admin" },
+              { label: t("Password"), id: "password", value: password, setter: setPassword, type: "password", placeholder: t("Min. 4 characters") },
             ].map(({ label, id, value, setter, type, placeholder }) => (
               <div key={id} className="space-y-2">
                 <label htmlFor={id} className="block text-xs font-black text-on-surface uppercase tracking-widest">
@@ -106,7 +108,7 @@ export default function SetupPage() {
               disabled={submitting || !name || !username || !password}
               className="w-full py-4 bg-primary text-on-primary rounded-xl font-black text-sm uppercase tracking-widest hover:bg-secondary transition-colors shadow-hard disabled:opacity-50"
             >
-              {submitting ? "Creating Admin..." : "Create Admin Account"}
+              {submitting ? t("Creating Admin...") : t("Create Admin Account")}
             </button>
           </form>
         </div>

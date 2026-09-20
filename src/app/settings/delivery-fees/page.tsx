@@ -25,6 +25,7 @@ import {
 } from "@/components/ui";
 import { useToken, useCurrency } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 
@@ -39,6 +40,7 @@ type Fee = {
 export default function DeliveryFeesPage() {
   const token = useToken();
   const fmt = useCurrency();
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const fees = useQuery(api.deliveryFees.list, { search });
   const page = useClientPage(fees ?? []);
@@ -50,13 +52,13 @@ export default function DeliveryFeesPage() {
   const [deleting, setDeleting] = useState<Fee | null>(null);
 
   return (
-    <PageLayout title="Delivery Fees" subtitle="Settings · delivery zones & charges">
+    <PageLayout title={t("Delivery Fees")} subtitle={t("Settings · delivery zones & charges")}>
       <Toolbar>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-56`}
-            placeholder="Search zones…"
+            placeholder={t("Search zones…")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -68,7 +70,7 @@ export default function DeliveryFeesPage() {
             setOpen(true);
           }}
         >
-          <Plus className="w-3.5 h-3.5" /> New Zone
+          <Plus className="w-3.5 h-3.5" /> {t("New Zone")}
         </Button>
       </Toolbar>
 
@@ -76,15 +78,15 @@ export default function DeliveryFeesPage() {
         {fees === undefined ? (
           <Spinner />
         ) : fees.length === 0 ? (
-          <EmptyState title="No delivery zones" />
+          <EmptyState title={t("No delivery zones")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Zone</Th>
-                <Th className="text-right">Fee</Th>
-                <Th>Description</Th>
-                <Th>Status</Th>
+                <Th>{t("Zone")}</Th>
+                <Th className="text-right">{t("Fee")}</Th>
+                <Th>{t("Description")}</Th>
+                <Th>{t("Status")}</Th>
                 <Th className="w-28" />
               </tr>
             </thead>
@@ -107,12 +109,12 @@ export default function DeliveryFeesPage() {
                           description: f.description,
                           active: !f.active,
                         }).catch((e) =>
-                          toast.error(e instanceof Error ? e.message : "Failed")
+                          toast.error(e instanceof Error ? e.message : t("Failed"))
                         )
                       }
                     >
                       <Badge tone={f.active ? "success" : "neutral"}>
-                        {f.active ? "Active" : "Inactive"}
+                        {f.active ? t("Active") : t("Inactive")}
                       </Badge>
                     </button>
                   </Td>
@@ -158,17 +160,17 @@ export default function DeliveryFeesPage() {
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete delivery zone"
-        message={`Delete "${deleting?.name}"?`}
+        title={t("Delete delivery zone")}
+        message={t('Delete "{name}"?', { name: deleting?.name ?? "" })}
         danger
-        confirmLabel="Delete"
+        confirmLabel={t("Delete")}
         onConfirm={async () => {
           if (!deleting) return;
           try {
             await remove({ token, id: deleting._id });
-            toast.success("Deleted");
+            toast.success(t("Deleted"));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed");
+            toast.error(e instanceof Error ? e.message : t("Failed"));
           }
           setDeleting(null);
         }}
@@ -188,6 +190,7 @@ function FeeModal({
 }) {
   const create = useMutation(api.deliveryFees.create);
   const update = useMutation(api.deliveryFees.update);
+  const { t } = useTranslation();
   const [name, setName] = useState(existing?.name ?? "");
   const [fee, setFee] = useState(existing ? String(existing.fee) : "");
   const [description, setDescription] = useState(existing?.description ?? "");
@@ -197,7 +200,7 @@ function FeeModal({
   const save = async () => {
     const n = parseFloat(fee);
     if (!name.trim() || isNaN(n) || n <= 0)
-      return toast.error("Name and a fee greater than 0 are required.");
+      return toast.error(t("Name and a fee greater than 0 are required."));
     setBusy(true);
     try {
       if (existing) {
@@ -218,10 +221,10 @@ function FeeModal({
           active,
         });
       }
-      toast.success("Saved");
+      toast.success(t("Saved"));
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -232,25 +235,25 @@ function FeeModal({
       open
       onClose={onClose}
       size="sm"
-      title={existing ? "Edit Delivery Zone" : "New Delivery Zone"}
+      title={existing ? t("Edit Delivery Zone") : t("New Delivery Zone")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={save} loading={busy}>
-            Save
+            {t("Save")}
           </Button>
         </>
       }
     >
-      <Field label="Zone name" required>
+      <Field label={t("Zone name")} required>
         <TextInput value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Fee" required>
+      <Field label={t("Fee")} required>
         <TextInput type="number" value={fee} onChange={(e) => setFee(e.target.value)} />
       </Field>
-      <Field label="Description">
+      <Field label={t("Description")}>
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
       <label className="flex items-center gap-2 text-xs font-bold">
@@ -259,7 +262,7 @@ function FeeModal({
           checked={active}
           onChange={(e) => setActive(e.target.checked)}
         />
-        Active
+        {t("Active")}
       </label>
     </Modal>
   );

@@ -158,6 +158,9 @@ export default defineSchema({
     isDelivery: v.optional(v.boolean()),
     deliveryFeeId: v.optional(v.id("deliveryFees")),
     deliveryFeeAmount: v.optional(v.number()),
+    // Automatic tier discount applied by performSale — separate from the
+    // cashier-entered `discount` above, for auditability.
+    tierDiscountAmount: v.optional(v.number()),
     customerName: v.optional(v.string()),
     itemSummary: v.optional(
       v.array(
@@ -178,7 +181,8 @@ export default defineSchema({
     .index("by_customer", ["customerId"])
     .index("by_branch", ["branchId"])
     .index("by_created_at", ["createdAt"])
-    .index("by_sale_number", ["saleNumber"]),
+    .index("by_sale_number", ["saleNumber"])
+    .index("by_delivery_fee", ["deliveryFeeId"]),
 
   saleItems: defineTable({
     saleId: v.id("sales"),
@@ -223,7 +227,8 @@ export default defineSchema({
     .index("by_sale", ["saleId"])
     .index("by_branch", ["branchId"])
     .index("by_created_at", ["createdAt"])
-    .index("by_return_number", ["returnNumber"]),
+    .index("by_return_number", ["returnNumber"])
+    .index("by_customer", ["customerId"]),
 
   salesReturnItems: defineTable({
     returnId: v.id("salesReturns"),
@@ -360,6 +365,28 @@ export default defineSchema({
     isGeneric: v.optional(v.boolean()),
     active: v.optional(v.boolean()),
     status: v.optional(v.union(v.literal("active"), v.literal("archived"))),
+    // Customer-centric POS fields — all optional, no migration needed.
+    photoUrl: v.optional(v.string()),
+    tier: v.optional(
+      v.union(v.literal("NOVO"), v.literal("REGULAR"), v.literal("VIP"))
+    ),
+    tierUpdatedAt: v.optional(v.number()),
+    preferredGender: v.optional(
+      v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))
+    ),
+    preferredSports: v.optional(v.array(v.string())),
+    preferredColorIds: v.optional(v.array(v.id("colors"))),
+    preferredCategoryIds: v.optional(v.array(v.id("categories"))),
+    // No brand taxonomy exists in the catalog (single-brand shop) — this is a
+    // cashier-entered free-text preference only, not joined against products.
+    preferredBrands: v.optional(v.array(v.string())),
+    whatsappOptIn: v.optional(v.boolean()),
+    // Tier 3 — derived-only, never form input. Cached here because computing
+    // them requires the same bounded sale-history scan already done for size
+    // inference/tier in refreshCustomerProfile; recomputed on every sale/
+    // return/cancel alongside tier, never editable by a cashier.
+    topCategoryName: v.optional(v.string()),
+    topColorName: v.optional(v.string()),
   })
     .index("by_phone1", ["phone1"])
     .index("by_isGeneric", ["isGeneric"])
@@ -387,6 +414,21 @@ export default defineSchema({
   })
     .index("by_customer", ["customerId"])
     .index("by_created_at", ["createdAt"]),
+
+  // Per-customer, per-category size memory. Populated by inference from sale
+  // history (INFERIDO) or set by hand in the Ficha (CONFIRMADO, never
+  // overwritten by inference). sizeName is denormalized so the POS rail can
+  // render chips with zero joins.
+  customerSizeProfiles: defineTable({
+    customerId: v.id("customers"),
+    categoryId: v.id("categories"),
+    sizeId: v.id("sizes"),
+    sizeName: v.string(),
+    confidence: v.union(v.literal("CONFIRMADO"), v.literal("INFERIDO")),
+    updatedAt: v.number(),
+  })
+    .index("by_customer", ["customerId"])
+    .index("by_customer_category", ["customerId", "categoryId"]),
 
   // ─────────────────────────────────────────────
   // PURCHASING

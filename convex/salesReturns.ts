@@ -15,6 +15,7 @@ import {
 } from "./metrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { performSale } from "./sales";
+import { refreshCustomerProfile } from "./customerProfile";
 
 const RETURN_ITEM_REASON = v.union(
   v.literal("WRONG_SIZE"),
@@ -251,10 +252,22 @@ export const create = mutation({
       returnedTotal += await alreadyReturnedQty(ctx, si._id);
     }
     const fullyReturned = returnedTotal >= soldTotal;
+    // KNOWN GAP: this only patches status/paymentStatus — sale.total/balance/
+    // paidAmount are NOT reduced on refund, so customers.ts's lifetime-spend/
+    // debt aggregates overstate for refunded sales. Not fixed here (see
+    // convex/customerProfile.ts's docstring); refreshCustomerProfile below
+    // works around it locally for its own trailing-12-month tier figure only.
     await ctx.db.patch(args.saleId, {
       status: fullyReturned ? "REFUNDED" : "PARTIALLY_REFUNDED",
       paymentStatus: fullyReturned ? "REFUNDED" : "PARTIALLY_REFUNDED",
       updatedAt: now,
+    });
+
+    // A return changes size observations (returned units net out) and
+    // trailing spend — recompute before metrics/audit.
+    await refreshCustomerProfile(ctx, sale.customerId, {
+      _id: actor._id,
+      username: actor.username,
     });
 
     // Metrics: unwind the returned portion.
@@ -417,6 +430,11 @@ export const exchange = mutation({
     }
 
     // 4. Create the replacement sale (return value applied as a discount).
+    // Ordering matters: the returned `salesReturnItems` rows above were
+    // already inserted, so `performSale`'s internal `refreshCustomerProfile`
+    // call sees this exchange's return when it recomputes size/tier for the
+    // replacement sale below — no separate hook call needed here. Don't
+    // reorder this block ahead of the `salesReturnItems` inserts.
     const replacementSaleId: Id<"sales"> = await performSale(ctx, actor, {
       branchId: sale.branchId,
       customerId: sale.customerId,

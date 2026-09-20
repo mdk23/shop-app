@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import {
   mutation,
   internalMutation,
@@ -20,6 +21,7 @@ import {
   type SaleMetricDeltas,
 } from "./metrics";
 import { adjustCustomerCredit } from "./customerCredits";
+import { refreshCustomerProfile } from "./customerProfile";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -190,7 +192,30 @@ export async function performSale(
     const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
     const lineDiscountTotal = lines.reduce((s, l) => s + l.discount, 0);
     const saleDiscount = Math.max(0, args.discount ?? 0);
-    const discount = lineDiscountTotal + saleDiscount;
+
+    // Automatic tier discount — server-authoritative so it can't be forged
+    // client-side, and kept out of the discount-authority check below since
+    // it's never a cashier choice. Ships dark (settings default to
+    // isActive:false / value:"0"), so this is a no-op until an admin opts in.
+    const tier = customer.tier ?? "NOVO";
+    const tierSettingKey =
+      tier === "VIP"
+        ? "tierDiscountPercentVIP"
+        : tier === "REGULAR"
+          ? "tierDiscountPercentREGULAR"
+          : null;
+    let tierDiscountPercent = 0;
+    if (tierSettingKey) {
+      const tierSetting = await getSetting(ctx, tierSettingKey);
+      if (tierSetting?.isActive) tierDiscountPercent = Number(tierSetting.value ?? "0") || 0;
+    }
+    const manualDiscount = lineDiscountTotal + saleDiscount;
+    const preTierBase = Math.max(0, subtotal - manualDiscount);
+    const tierDiscountAmount =
+      tierDiscountPercent > 0
+        ? Math.round(preTierBase * (tierDiscountPercent / 100) * 100) / 100
+        : 0;
+    const discount = manualDiscount + tierDiscountAmount;
 
     const taxRate =
       args.taxRate ??
@@ -207,14 +232,15 @@ export async function performSale(
 
     const total = Math.max(0, taxableBase + tax + deliveryFeeAmount);
 
-    // 3. Discount authority.
-    const discountPct = subtotal > 0 ? (discount / subtotal) * 100 : 0;
+    // 3. Discount authority — only the manual portion counts; the automatic
+    // tier discount is never a cashier choice and can't trip this.
+    const discountPct = subtotal > 0 ? (manualDiscount / subtotal) * 100 : 0;
     const maxWithoutApproval = Number(
       (await getSetting(ctx, "discountMaxPercentWithoutApproval"))?.value ?? "100"
     );
     if (discountPct > maxWithoutApproval) {
       requirePermission(actor, "sales.discount_large");
-    } else if (discount > 0) {
+    } else if (manualDiscount > 0) {
       requirePermission(actor, "sales.discount");
     }
 
@@ -264,6 +290,7 @@ export async function performSale(
       isDelivery: args.isDelivery,
       deliveryFeeId: args.deliveryFeeId,
       deliveryFeeAmount: deliveryFeeAmount || undefined,
+      tierDiscountAmount: tierDiscountAmount || undefined,
       customerName: customer.name,
       itemSummary: lines.map((l) => ({
         productVariantId: l.productVariantId,
@@ -344,6 +371,15 @@ export async function performSale(
         notes: `Overpayment on ${saleNumber}`,
       });
     }
+
+    // 11.5. Recompute size profile + tier from history (includes this sale,
+    // since its saleItems were just inserted above). Skipped for the
+    // walk-in/generic customer inside the helper. Runs before metrics/audit
+    // so a failure here can never leave a misleading "sale created" trail.
+    await refreshCustomerProfile(ctx, args.customerId, {
+      _id: actor._id,
+      username: actor.username,
+    });
 
     // 12. Metrics.
     const grossProfit = lines.reduce(
@@ -509,6 +545,14 @@ export const cancel = mutation({
       updatedAt: Date.now(),
     });
 
+    // Cancelling changes both this sale's size observations (now excluded,
+    // being CANCELLED) and the customer's trailing spend — same invariant
+    // as a normal sale/return.
+    await refreshCustomerProfile(ctx, sale.customerId, {
+      _id: actor._id,
+      username: actor.username,
+    });
+
     // Reverse the sale's metric contribution.
     const dateString = getLocalDateString(sale.createdAt);
     const grossProfit = items.reduce(
@@ -583,6 +627,21 @@ export const listByCustomer = query({
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
       .order("desc")
       .take(args.limit ?? 100);
+  },
+});
+
+/** Cursor-paginated sales history for one customer — powers the Ficha's unbounded Histórico tab. */
+export const listByCustomerPaged = query({
+  args: {
+    customerId: v.id("customers"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("sales")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .order("desc")
+      .paginate(args.paginationOpts);
   },
 });
 

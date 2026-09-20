@@ -22,11 +22,13 @@ import {
 } from "@/components/ui";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { usePagedQuery } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 export default function CashReportsPage() {
   const token = useToken();
   const fmt = useCurrency();
   const { branches } = useResolvedBranch();
+  const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState("");
   const [branch, setBranch] = useState("");
   const [openId, setOpenId] = useState<Id<"cashRegisterSessions"> | null>(null);
@@ -62,11 +64,11 @@ export default function CashReportsPage() {
   ) ?? { sales: 0, refunds: 0, shortages: 0 };
 
   return (
-    <PageLayout title="Cash Reports" subtitle="Cash register · session history">
+    <PageLayout title={t("Cash Reports")} subtitle={t("Cash register · session history")}>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-        <StatCard label="Cash sales" value={fmt(totals.sales)} accent="success" />
-        <StatCard label="Cash refunds" value={fmt(totals.refunds)} accent="error" />
-        <StatCard label="Shortages" value={fmt(totals.shortages)} accent="error" />
+        <StatCard label={t("Cash sales")} value={fmt(totals.sales)} accent="success" />
+        <StatCard label={t("Cash refunds")} value={fmt(totals.refunds)} accent="error" />
+        <StatCard label={t("Shortages")} value={fmt(totals.shortages)} accent="error" />
       </div>
 
       <Toolbar>
@@ -75,13 +77,13 @@ export default function CashReportsPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="w-36"
         >
-          <option value="">All</option>
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
+          <option value="">{t("All")}</option>
+          <option value="open">{t("Open")}</option>
+          <option value="closed">{t("Closed")}</option>
         </Select>
         {branches.length > 1 && (
           <Select value={branch} onChange={(e) => setBranch(e.target.value)} className="w-40">
-            <option value="">All branches</option>
+            <option value="">{t("All branches")}</option>
             {branches.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
@@ -95,19 +97,19 @@ export default function CashReportsPage() {
         {isLoading ? (
           <Spinner />
         ) : sessions.length === 0 ? (
-          <EmptyState title="No sessions" />
+          <EmptyState title={t("No sessions")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Opened</Th>
-                <Th>User</Th>
-                <Th>Status</Th>
-                <Th className="text-right">Opening</Th>
-                <Th className="text-right">Cash sales</Th>
-                <Th className="text-right">Expected</Th>
-                <Th className="text-right">Counted</Th>
-                <Th className="text-right">Diff</Th>
+                <Th>{t("Opened")}</Th>
+                <Th>{t("User")}</Th>
+                <Th>{t("Status")}</Th>
+                <Th className="text-right">{t("Opening")}</Th>
+                <Th className="text-right">{t("Cash sales")}</Th>
+                <Th className="text-right">{t("Expected")}</Th>
+                <Th className="text-right">{t("Counted")}</Th>
+                <Th className="text-right">{t("Diff")}</Th>
                 <Th />
               </tr>
             </thead>
@@ -117,7 +119,9 @@ export default function CashReportsPage() {
                   <Td className="text-xs">{new Date(s.openedAt).toLocaleString()}</Td>
                   <Td>{s.userName ?? s.username}</Td>
                   <Td>
-                    <Badge tone={s.status === "open" ? "info" : "neutral"}>{s.status}</Badge>
+                    <Badge tone={s.status === "open" ? "info" : "neutral"}>
+                      {t(s.status === "open" ? "Open" : "Closed")}
+                    </Badge>
                   </Td>
                   <Td className="text-right">{fmt(s.openingAmount)}</Td>
                   <Td className="text-right">{fmt(s.cashSalesTotal ?? 0)}</Td>
@@ -134,7 +138,7 @@ export default function CashReportsPage() {
                   </Td>
                   <Td>
                     <Button variant="ghost" size="sm" onClick={() => setOpenId(s._id)}>
-                      View
+                      {t("View")}
                     </Button>
                   </Td>
                 </tr>
@@ -172,18 +176,19 @@ function SessionDetail({
   onClose: () => void;
 }) {
   const s = useQuery(api.cashRegister.getSessionWithMovements, { sessionId: id });
+  const { t } = useTranslation();
   return (
-    <Modal open onClose={onClose} size="lg" title="Session detail">
+    <Modal open onClose={onClose} size="lg" title={t("Session detail")}>
       {!s ? (
         <Spinner />
       ) : (
         <Table>
           <thead>
             <tr>
-              <Th>When</Th>
-              <Th>Type</Th>
-              <Th>Description</Th>
-              <Th className="text-right">Amount</Th>
+              <Th>{t("When")}</Th>
+              <Th>{t("Type")}</Th>
+              <Th>{t("Description")}</Th>
+              <Th className="text-right">{t("Amount")}</Th>
             </tr>
           </thead>
           <tbody>
@@ -191,7 +196,7 @@ function SessionDetail({
               <tr key={m._id}>
                 <Td className="text-xs">{new Date(m.createdAt).toLocaleString()}</Td>
                 <Td>
-                  <Badge tone="neutral">{m.type.replace("_", " ")}</Badge>
+                  <Badge tone="neutral">{t(m.type.replace("_", " "))}</Badge>
                 </Td>
                 <Td className="text-xs">{m.description}</Td>
                 <Td className="text-right font-bold">{fmt(m.amount)}</Td>

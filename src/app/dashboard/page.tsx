@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { PageLayout } from "@/components/PageLayout";
 import { Card, StatCard, Spinner, Badge, Table, Th, Td } from "@/components/ui";
 import { useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 import {
   LineChart,
@@ -24,6 +25,7 @@ const RANGES = [
 ];
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const fmt = useCurrency();
   const { branchId, isAll } = useResolvedBranch();
   const [range, setRange] = useState("7");
@@ -55,7 +57,7 @@ export default function DashboardPage() {
   });
 
   return (
-    <PageLayout title="Dashboard" subtitle="Retail overview">
+    <PageLayout title={t("Dashboard")} subtitle={t("Retail overview")}>
       <div className="flex gap-1.5 mb-4">
         {RANGES.map((r) => (
           <button
@@ -68,18 +70,18 @@ export default function DashboardPage() {
                 : "bg-surface-container-low text-on-surface-variant border-outline"
             )}
           >
-            {r.label}
+            {t(r.label)}
           </button>
         ))}
       </div>
 
       {today && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <StatCard label="Today revenue" value={fmt(today.revenue)} />
-          <StatCard label="Today sales" value={today.salesCount} />
-          <StatCard label="Today items" value={today.itemsSold} />
+          <StatCard label={t("Today revenue")} value={fmt(today.revenue)} />
+          <StatCard label={t("Today sales")} value={today.salesCount} />
+          <StatCard label={t("Today items")} value={today.itemsSold} />
           <StatCard
-            label="Today returns"
+            label={t("Today returns")}
             value={today.returnsCount}
             sub={fmt(today.refundAmount)}
             accent={today.returnsCount > 0 ? "error" : "primary"}
@@ -93,24 +95,33 @@ export default function DashboardPage() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <StatCard
-              label={`Revenue · ${range === "today" ? "today" : `${range}d`}`}
+              label={t("Revenue · {period}", {
+                period: range === "today" ? t("today") : `${range}d`,
+              })}
               value={fmt(metrics.grossRevenue)}
-              sub={`${metrics.revenueGrowth >= 0 ? "+" : ""}${metrics.revenueGrowth.toFixed(0)}% vs prev`}
+              sub={t("{sign}{pct}% vs prev", {
+                sign: metrics.revenueGrowth >= 0 ? "+" : "",
+                pct: metrics.revenueGrowth.toFixed(0),
+              })}
               accent={metrics.revenueGrowth >= 0 ? "success" : "error"}
             />
-            <StatCard label="Gross profit" value={fmt(metrics.grossProfit)} sub={`${metrics.marginPercent.toFixed(0)}% margin`} />
             <StatCard
-              label="Outstanding debt"
+              label={t("Gross profit")}
+              value={fmt(metrics.grossProfit)}
+              sub={t("{pct}% margin", { pct: metrics.marginPercent.toFixed(0) })}
+            />
+            <StatCard
+              label={t("Outstanding debt")}
               value={fmt(metrics.outstandingDebt)}
               accent={metrics.outstandingDebt > 0 ? "error" : "primary"}
             />
-            <StatCard label="Discounts given" value={fmt(metrics.discountTotal)} />
+            <StatCard label={t("Discounts given")} value={fmt(metrics.discountTotal)} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
             <Card className="p-4 lg:col-span-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
-                Sales trend
+                {t("Sales trend")}
               </p>
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
@@ -136,7 +147,7 @@ export default function DashboardPage() {
 
             <Card className="p-4">
               <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
-                Payment methods
+                {t("Payment methods")}
               </p>
               <div className="space-y-2">
                 {Object.entries(metrics.paymentMethodsBreakdown).map(([m, info]) => (
@@ -149,29 +160,29 @@ export default function DashboardPage() {
                   </div>
                 ))}
                 {Object.keys(metrics.paymentMethodsBreakdown).length === 0 && (
-                  <p className="text-xs text-on-surface-variant">No payments in range.</p>
+                  <p className="text-xs text-on-surface-variant">{t("No payments in range.")}</p>
                 )}
               </div>
             </Card>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <TopList title="Top products" rows={metrics.topProducts} />
-            <TopList title="Top categories" rows={metrics.topCategories} />
-            <TopList title="Top sizes" rows={metrics.topSizes} />
-            <TopList title="Top colors" rows={metrics.topColors} />
+            <TopList title={t("Top products")} rows={metrics.topProducts} />
+            <TopList title={t("Top categories")} rows={metrics.topCategories} />
+            <TopList title={t("Top sizes")} rows={metrics.topSizes} />
+            <TopList title={t("Top colors")} rows={metrics.topColors} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
             <Card className="p-0">
               <div className="px-4 py-3 border-b border-outline/40 flex items-center justify-between">
                 <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
-                  Low / out of stock
+                  {t("Low / out of stock")}
                 </p>
                 {lowStock && (
                   <div className="flex gap-1.5">
-                    <Badge tone="warning">{lowStock.lowStockCount} low</Badge>
-                    <Badge tone="error">{lowStock.outOfStockCount} out</Badge>
+                    <Badge tone="warning">{t("{count} low", { count: lowStock.lowStockCount })}</Badge>
+                    <Badge tone="error">{t("{count} out", { count: lowStock.outOfStockCount })}</Badge>
                   </div>
                 )}
               </div>
@@ -180,7 +191,7 @@ export default function DashboardPage() {
                   <Spinner />
                 ) : lowStock.items.length === 0 ? (
                   <p className="px-4 py-4 text-xs text-on-surface-variant">
-                    Everything is well stocked.
+                    {t("Everything is well stocked.")}
                   </p>
                 ) : (
                   <Table>
@@ -193,7 +204,7 @@ export default function DashboardPage() {
                           </Td>
                           <Td className="w-20">
                             <Badge tone={i.status === "OUT_OF_STOCK" ? "error" : "warning"}>
-                              {i.status === "OUT_OF_STOCK" ? "out" : "low"}
+                              {i.status === "OUT_OF_STOCK" ? t("out") : t("low")}
                             </Badge>
                           </Td>
                         </tr>
@@ -207,7 +218,7 @@ export default function DashboardPage() {
             {isAll && metrics.branchLeaderboard.length > 0 && (
               <Card className="p-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
-                  Best performing branches
+                  {t("Best performing branches")}
                 </p>
                 <div className="space-y-2">
                   {metrics.branchLeaderboard.map((b) => (
@@ -236,6 +247,7 @@ function TopList({
   title: string;
   rows: { name: string; qty: number }[];
 }) {
+  const { t } = useTranslation();
   return (
     <Card className="p-4">
       <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
@@ -243,7 +255,7 @@ function TopList({
       </p>
       <div className="space-y-1.5">
         {rows.length === 0 && (
-          <p className="text-xs text-on-surface-variant">No data.</p>
+          <p className="text-xs text-on-surface-variant">{t("No data.")}</p>
         )}
         {rows.map((r, i) => (
           <div key={r.name} className="flex justify-between text-xs">

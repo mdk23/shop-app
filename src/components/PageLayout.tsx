@@ -10,6 +10,7 @@ import { ThemeSelector } from "./ThemeSelector";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
@@ -18,6 +19,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 function UserProfileMenu() {
+  const { t } = useTranslation();
   const { currentUser, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -53,7 +55,7 @@ function UserProfileMenu() {
             {currentUser.name}
           </p>
           <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-tighter opacity-60">
-            {ROLE_LABELS[currentUser.role] ?? currentUser.role}
+            {t(ROLE_LABELS[currentUser.role] ?? currentUser.role)}
           </p>
         </div>
         <div className="w-10 h-10 lg:w-11 lg:h-11 rounded-2xl bg-primary border border-outline/30 shadow-md flex items-center justify-center text-on-primary font-display text-base lg:text-lg select-none">
@@ -75,7 +77,7 @@ function UserProfileMenu() {
               @{currentUser.username}
             </p>
             <span className="inline-block mt-1 px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest rounded-full">
-              {ROLE_LABELS[currentUser.role]}
+              {t(ROLE_LABELS[currentUser.role])}
             </span>
           </div>
           <div className="p-2">
@@ -87,7 +89,7 @@ function UserProfileMenu() {
               className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-error hover:bg-error/10 transition-colors text-xs font-black uppercase tracking-widest"
             >
               <LogOut className="w-4 h-4" />
-              Sign Out
+              {t("Sign Out")}
             </button>
           </div>
         </div>

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useResolvedBranch } from "@/lib/useShop";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -36,6 +37,7 @@ const TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error">
 };
 
 export default function TransfersPage() {
+  const { t } = useTranslation();
   const token = useToken();
   const { branches } = useResolvedBranch();
   const {
@@ -58,9 +60,9 @@ export default function TransfersPage() {
   const [busy, setBusy] = useState(false);
 
   const submit = async (asDraft: boolean) => {
-    if (!source || !dest) return toast.error("Pick source and destination.");
-    if (source === dest) return toast.error("Branches must differ.");
-    if (lines.length === 0) return toast.error("Add at least one item.");
+    if (!source || !dest) return toast.error(t("Pick source and destination."));
+    if (source === dest) return toast.error(t("Branches must differ."));
+    if (lines.length === 0) return toast.error(t("Add at least one item."));
     setBusy(true);
     try {
       await create({
@@ -73,30 +75,30 @@ export default function TransfersPage() {
         })),
         submit: !asDraft,
       });
-      toast.success(asDraft ? "Draft saved" : "Transfer submitted");
+      toast.success(asDraft ? t("Draft saved") : t("Transfer submitted"));
       setOpen(false);
       setLines([]);
       setSource("");
       setDest("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <PageLayout title="Stock Transfers" subtitle="Inventory · move stock between branches">
+    <PageLayout title={t("Stock Transfers")} subtitle={t("Inventory · move stock between branches")}>
       <Toolbar>
         <div className="ml-auto" />
         <Button onClick={() => setOpen(true)} disabled={branches.length < 2}>
-          <Plus className="w-3.5 h-3.5" /> New Transfer
+          <Plus className="w-3.5 h-3.5" /> {t("New Transfer")}
         </Button>
       </Toolbar>
 
       {branches.length < 2 && (
         <Card className="p-4 mb-4 text-xs text-on-surface-variant">
-          Add a second branch in Settings to use transfers.
+          {t("Add a second branch in Settings to use transfers.")}
         </Card>
       )}
 
@@ -104,36 +106,36 @@ export default function TransfersPage() {
         {isLoading ? (
           <Spinner />
         ) : list.length === 0 ? (
-          <EmptyState title="No transfers yet" />
+          <EmptyState title={t("No transfers yet")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Number</Th>
-                <Th>From</Th>
-                <Th>To</Th>
-                <Th>Status</Th>
-                <Th>Created</Th>
+                <Th>{t("Number")}</Th>
+                <Th>{t("From")}</Th>
+                <Th>{t("To")}</Th>
+                <Th>{t("Status")}</Th>
+                <Th>{t("Created")}</Th>
                 <Th />
               </tr>
             </thead>
             <tbody>
-              {list.map((t) => (
-                <tr key={t._id} className="hover:bg-surface-container-low">
-                  <Td className="font-mono text-[11px] font-bold">{t.transferNumber}</Td>
-                  <Td>{branches.find((b) => b._id === t.sourceBranchId)?.name ?? "—"}</Td>
+              {list.map((tr) => (
+                <tr key={tr._id} className="hover:bg-surface-container-low">
+                  <Td className="font-mono text-[11px] font-bold">{tr.transferNumber}</Td>
+                  <Td>{branches.find((b) => b._id === tr.sourceBranchId)?.name ?? "—"}</Td>
                   <Td>
-                    {branches.find((b) => b._id === t.destinationBranchId)?.name ?? "—"}
+                    {branches.find((b) => b._id === tr.destinationBranchId)?.name ?? "—"}
                   </Td>
                   <Td>
-                    <Badge tone={TONE[t.status]}>{t.status.replace("_", " ")}</Badge>
+                    <Badge tone={TONE[tr.status]}>{t(tr.status.replace("_", " "))}</Badge>
                   </Td>
                   <Td className="text-on-surface-variant text-xs">
-                    {new Date(t.createdAt).toLocaleDateString()}
+                    {new Date(tr.createdAt).toLocaleDateString()}
                   </Td>
                   <Td>
-                    <Button variant="ghost" size="sm" onClick={() => setDetailId(t._id)}>
-                      Open
+                    <Button variant="ghost" size="sm" onClick={() => setDetailId(tr._id)}>
+                      {t("Open")}
                     </Button>
                   </Td>
                 </tr>
@@ -158,22 +160,22 @@ export default function TransfersPage() {
         open={open}
         onClose={() => setOpen(false)}
         size="lg"
-        title="New Transfer"
+        title={t("New Transfer")}
         footer={
           <>
             <Button variant="ghost" onClick={() => submit(true)} loading={busy}>
-              Save draft
+              {t("Save draft")}
             </Button>
             <Button onClick={() => submit(false)} loading={busy}>
-              Submit
+              {t("Submit")}
             </Button>
           </>
         }
       >
         <div className="grid grid-cols-2 gap-3">
-          <Field label="From branch" required>
+          <Field label={t("From branch")} required>
             <Select value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="">Select…</option>
+              <option value="">{t("Select…")}</option>
               {branches.map((b) => (
                 <option key={b._id} value={b._id}>
                   {b.name}
@@ -181,9 +183,9 @@ export default function TransfersPage() {
               ))}
             </Select>
           </Field>
-          <Field label="To branch" required>
+          <Field label={t("To branch")} required>
             <Select value={dest} onChange={(e) => setDest(e.target.value)}>
-              <option value="">Select…</option>
+              <option value="">{t("Select…")}</option>
               {branches.map((b) => (
                 <option key={b._id} value={b._id}>
                   {b.name}
@@ -193,7 +195,7 @@ export default function TransfersPage() {
           </Field>
         </div>
 
-        <Field label="Add items">
+        <Field label={t("Add items")}>
           <VariantPicker
             onPick={(v) =>
               setLines((p) =>
@@ -254,7 +256,8 @@ function TransferDetail({
   id: Id<"stockTransfers">;
   onClose: () => void;
 }) {
-  const t = useQuery(api.stockTransfers.get, { id });
+  const { t } = useTranslation();
+  const transfer = useQuery(api.stockTransfers.get, { id });
   const setStatus = useMutation(api.stockTransfers.setStatus);
   const receive = useMutation(api.stockTransfers.receive);
   const [busy, setBusy] = useState(false);
@@ -265,7 +268,7 @@ function TransferDetail({
       await fn();
       toast.success(msg);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -276,37 +279,42 @@ function TransferDetail({
       open
       onClose={onClose}
       size="lg"
-      title={t ? `Transfer ${t.transferNumber}` : "Transfer"}
-      subtitle={t ? `${t.source?.name} → ${t.destination?.name}` : undefined}
+      title={transfer ? t("Transfer {number}", { number: transfer.transferNumber }) : t("Transfer")}
+      subtitle={
+        transfer ? `${transfer.source?.name} → ${transfer.destination?.name}` : undefined
+      }
       footer={
-        t && (
+        transfer && (
           <div className="flex gap-2">
-            {t.status === "DRAFT" && (
+            {transfer.status === "DRAFT" && (
               <Button
                 variant="secondary"
                 loading={busy}
                 onClick={() =>
-                  act(() => setStatus({ token, transferId: id, status: "PENDING" }), "Submitted")
+                  act(
+                    () => setStatus({ token, transferId: id, status: "PENDING" }),
+                    t("Submitted")
+                  )
                 }
               >
-                Submit
+                {t("Submit")}
               </Button>
             )}
-            {(t.status === "PENDING" || t.status === "DRAFT") && (
+            {(transfer.status === "PENDING" || transfer.status === "DRAFT") && (
               <Button
                 variant="secondary"
                 loading={busy}
                 onClick={() =>
                   act(
                     () => setStatus({ token, transferId: id, status: "IN_TRANSIT" }),
-                    "Marked in transit"
+                    t("Marked in transit")
                   )
                 }
               >
-                Mark in transit
+                {t("Mark in transit")}
               </Button>
             )}
-            {t.status !== "RECEIVED" && t.status !== "CANCELLED" && (
+            {transfer.status !== "RECEIVED" && transfer.status !== "CANCELLED" && (
               <>
                 <Button
                   variant="danger"
@@ -314,17 +322,17 @@ function TransferDetail({
                   onClick={() =>
                     act(
                       () => setStatus({ token, transferId: id, status: "CANCELLED" }),
-                      "Cancelled"
+                      t("Cancelled")
                     )
                   }
                 >
-                  Cancel
+                  {t("Cancel")}
                 </Button>
                 <Button
                   loading={busy}
-                  onClick={() => act(() => receive({ token, transferId: id }), "Received")}
+                  onClick={() => act(() => receive({ token, transferId: id }), t("Received"))}
                 >
-                  Receive
+                  {t("Receive")}
                 </Button>
               </>
             )}
@@ -332,19 +340,19 @@ function TransferDetail({
         )
       }
     >
-      {!t ? (
+      {!transfer ? (
         <Spinner />
       ) : (
         <Table>
           <thead>
             <tr>
-              <Th>Item</Th>
-              <Th>SKU</Th>
-              <Th className="text-right">Qty</Th>
+              <Th>{t("Item")}</Th>
+              <Th>{t("SKU")}</Th>
+              <Th className="text-right">{t("Qty")}</Th>
             </tr>
           </thead>
           <tbody>
-            {t.items.map((it) => (
+            {transfer.items.map((it) => (
               <tr key={it._id}>
                 <Td>{it.label}</Td>
                 <Td className="font-mono text-[11px]">{it.sku}</Td>

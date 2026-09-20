@@ -7,8 +7,10 @@ import { Eye, EyeOff, LogIn, AlertCircle, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ConvexError } from "convex/values";
 import { toast } from "sonner";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 function LoginForm() {
+  const { t } = useTranslation();
   const { login, currentUser, isLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -54,20 +56,20 @@ function LoginForm() {
       }
 
       if (code === "ACCOUNT_DISABLED") {
-        toast.error("Account Disabled", {
-          description: "Your account has been deactivated. Please contact the administrator to restore access.",
+        toast.error(t("Account Disabled"), {
+          description: t("Your account has been deactivated. Please contact the administrator to restore access."),
           duration: 5000,
         });
         setPassword("");
         passwordRef.current?.focus();
         setError(null);
       } else if (code === "INVALID_CREDENTIALS" || code === "USER_NOT_FOUND") {
-        toast.error("Login Failed", { description: "Invalid username or password." });
+        toast.error(t("Login Failed"), { description: t("Invalid username or password.") });
         setPassword("");
         passwordRef.current?.focus();
         setError(null);
       } else {
-        toast.error("Something went wrong. Please try again later.");
+        toast.error(t("Something went wrong. Please try again later."));
         setError(null);
       }
     } finally {
@@ -115,7 +117,7 @@ function LoginForm() {
                 Threadline
               </h1>
               <p className="text-on-surface-variant text-sm font-medium">
-                Welcome back, please sign in to your staff portal.
+                {t("Welcome back, please sign in to your staff portal.")}
               </p>
             </div>
           </div>
@@ -134,9 +136,9 @@ function LoginForm() {
                   >
                     <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-semibold mb-1">Signed Out</p>
+                      <p className="text-sm font-semibold mb-1">{t("Signed Out")}</p>
                       <p className="text-xs text-amber-700">
-                        Your account was signed in from another device. You have been logged out.
+                        {t("Your account was signed in from another device. You have been logged out.")}
                       </p>
                     </div>
                   </motion.div>
@@ -165,7 +167,7 @@ function LoginForm() {
                   htmlFor="username"
                   className="block text-xs font-semibold text-on-surface/80 uppercase tracking-wider ml-1"
                 >
-                  Username
+                  {t("Username")}
                 </label>
                 <input
                   id="username"
@@ -178,7 +180,7 @@ function LoginForm() {
                     setSessionReplaced(false);
                   }}
                   className="w-full px-4 py-3.5 bg-surface/50 border border-outline-variant/50 rounded-2xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all backdrop-blur-sm shadow-inner"
-                  placeholder="Enter your username"
+                  placeholder={t("Enter your username")}
                   autoFocus
                   disabled={isSubmitting}
                 />
@@ -189,7 +191,7 @@ function LoginForm() {
                   htmlFor="password"
                   className="block text-xs font-semibold text-on-surface/80 uppercase tracking-wider ml-1"
                 >
-                  Password
+                  {t("Password")}
                 </label>
                 <div className="relative">
                   <input
@@ -204,7 +206,7 @@ function LoginForm() {
                       setSessionReplaced(false);
                     }}
                     className="w-full px-4 py-3.5 pr-12 bg-surface/50 border border-outline-variant/50 rounded-2xl text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all backdrop-blur-sm shadow-inner"
-                    placeholder="Enter your password"
+                    placeholder={t("Enter your password")}
                     disabled={isSubmitting}
                   />
                   <button
@@ -228,12 +230,12 @@ function LoginForm() {
                 type="button"
                 className="text-xs font-semibold text-primary/80 hover:text-primary transition-colors"
                 onClick={() =>
-                  toast.info("Password Reset", {
-                    description: "Please contact your system administrator to reset your password.",
+                  toast.info(t("Password Reset"), {
+                    description: t("Please contact your system administrator to reset your password."),
                   })
                 }
               >
-                Forgot password?
+                {t("Forgot password?")}
               </button>
             </div>
 
@@ -248,11 +250,11 @@ function LoginForm() {
               {isSubmitting ? (
                 <>
                   <div className="w-5 h-5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
-                  <span>Signing in...</span>
+                  <span>{t("Signing in...")}</span>
                 </>
               ) : (
                 <>
-                  <span>Sign In</span>
+                  <span>{t("Sign In")}</span>
                   <LogIn className="w-4 h-4 ml-1" />
                 </>
               )}

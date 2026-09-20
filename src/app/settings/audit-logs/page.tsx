@@ -17,9 +17,11 @@ import {
   inputClass,
 } from "@/components/ui";
 import { usePagedQuery, useClientPage } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { Search } from "lucide-react";
 
 export default function AuditLogsPage() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const isSearching = search.trim().length > 0;
 
@@ -47,20 +49,20 @@ export default function AuditLogsPage() {
   const pager = isSearching ? clientPage : paged;
 
   return (
-    <PageLayout title="Audit Logs" subtitle="Administration · activity trail">
+    <PageLayout title={t("Audit Logs")} subtitle={t("Administration · activity trail")}>
       <Toolbar>
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
             className={`${inputClass} pl-9 w-64`}
-            placeholder="Filter action / user / detail"
+            placeholder={t("Filter action / user / detail")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         {isSearching && (
           <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-            Searching the last 300 entries
+            {t("Searching the last 300 entries")}
           </span>
         )}
       </Toolbar>
@@ -69,15 +71,15 @@ export default function AuditLogsPage() {
         {isLoading ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyState title="No matching entries" />
+          <EmptyState title={t("No matching entries")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>When</Th>
-                <Th>User</Th>
-                <Th>Action</Th>
-                <Th>Detail</Th>
+                <Th>{t("When")}</Th>
+                <Th>{t("User")}</Th>
+                <Th>{t("Action")}</Th>
+                <Th>{t("Detail")}</Th>
               </tr>
             </thead>
             <tbody>

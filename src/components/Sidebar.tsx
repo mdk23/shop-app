@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 type MenuItem = {
   name: string;
@@ -110,6 +111,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { isCollapsed, toggleCollapse, isOpen, close } = useSidebar();
   const { currentUser, logout } = useAuth();
+  const { t } = useTranslation();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -155,7 +157,7 @@ export function Sidebar() {
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 bg-surface border-r border-outline/30 flex flex-col adaptive-transition lg:static shadow-lg lg:shadow-none",
-          isCollapsed ? "w-20" : "w-[280px] sm:w-64",
+          isCollapsed ? "w-20" : "w-72 sm:w-80",
           isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
@@ -198,7 +200,7 @@ export function Sidebar() {
               <item.icon className="w-5 h-5 flex-shrink-0" />
               {!isCollapsed && (
                 <span className="whitespace-nowrap font-black uppercase tracking-wider text-[10px]">
-                  {item.name}
+                  {t(item.name)}
                 </span>
               )}
             </Link>
@@ -221,7 +223,7 @@ export function Sidebar() {
                   >
                     <span className="flex items-center gap-2 text-[10px] font-black tracking-widest text-on-surface-variant opacity-60 group-hover/header:opacity-100 uppercase">
                       <span className="text-sm leading-none">{group.emoji}</span>
-                      {group.name}
+                      {t(group.name)}
                     </span>
                     <ChevronDown
                       className={cn(
@@ -259,7 +261,7 @@ export function Sidebar() {
                           )}
                         >
                           <item.icon className={cn("flex-shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
-                          {!isCollapsed && <span className="whitespace-nowrap">{item.name}</span>}
+                          {!isCollapsed && <span className="whitespace-nowrap">{t(item.name)}</span>}
                         </Link>
                       ))}
                     </motion.div>
@@ -275,10 +277,10 @@ export function Sidebar() {
             <div className="px-3 py-2 mb-1">
               <p className="text-[10px] font-black text-on-surface-variant opacity-60 uppercase tracking-widest truncate">
                 {currentUser.role === "admin"
-                  ? "Administrator"
+                  ? t("Administrator")
                   : currentUser.role === "manager"
-                    ? "Manager"
-                    : "POS Seller"}
+                    ? t("Manager")
+                    : t("POS Seller")}
               </p>
               <p className="text-xs font-black text-on-surface truncate">
                 {currentUser.name}
@@ -293,7 +295,7 @@ export function Sidebar() {
             )}
           >
             <LogOut className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && <span className="text-[10px]">Sign Out</span>}
+            {!isCollapsed && <span className="text-[10px]">{t("Sign Out")}</span>}
           </button>
         </div>
       </aside>

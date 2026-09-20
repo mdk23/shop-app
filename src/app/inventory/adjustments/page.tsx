@@ -24,6 +24,7 @@ import {
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useResolvedBranch } from "@/lib/useShop";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
@@ -38,6 +39,7 @@ const REASONS = [
 ] as const;
 
 export default function AdjustmentsPage() {
+  const { t } = useTranslation();
   const token = useToken();
   const { branchId, branchName, branches } = useResolvedBranch();
   const create = useMutation(api.stockAdjustments.create);
@@ -56,10 +58,10 @@ export default function AdjustmentsPage() {
   const effBranch = (targetBranch || branchId) as Id<"branches"> | undefined;
 
   const submit = async () => {
-    if (!picked) return toast.error("Pick a product variant.");
-    if (!effBranch) return toast.error("Pick a branch.");
-    if (!qty) return toast.error("Enter a quantity.");
-    if (!notes.trim()) return toast.error("A note is required.");
+    if (!picked) return toast.error(t("Pick a product variant."));
+    if (!effBranch) return toast.error(t("Pick a branch."));
+    if (!qty) return toast.error(t("Enter a quantity."));
+    if (!notes.trim()) return toast.error(t("A note is required."));
     setBusy(true);
     try {
       await create({
@@ -71,24 +73,24 @@ export default function AdjustmentsPage() {
         adjustmentQuantity: mode === "delta" ? Number(qty) : undefined,
         notes,
       });
-      toast.success("Stock adjusted");
+      toast.success(t("Stock adjusted"));
       setOpen(false);
       setPicked(null);
       setQty("");
       setNotes("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <PageLayout title="Stock Adjustments" subtitle={`Inventory · ${branchName}`}>
+    <PageLayout title={t("Stock Adjustments")} subtitle={t("Inventory · {branch}", { branch: branchName })}>
       <Toolbar>
         <div className="ml-auto" />
         <Button onClick={() => setOpen(true)}>
-          <Plus className="w-3.5 h-3.5" /> New Adjustment
+          <Plus className="w-3.5 h-3.5" /> {t("New Adjustment")}
         </Button>
       </Toolbar>
 
@@ -96,19 +98,19 @@ export default function AdjustmentsPage() {
         {isLoading ? (
           <Spinner />
         ) : rows.length === 0 ? (
-          <EmptyState title="No adjustments yet" />
+          <EmptyState title={t("No adjustments yet")} />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>When</Th>
-                <Th>Variant</Th>
-                <Th>Reason</Th>
-                <Th className="text-right">Prev</Th>
+                <Th>{t("When")}</Th>
+                <Th>{t("Variant")}</Th>
+                <Th>{t("Reason")}</Th>
+                <Th className="text-right">{t("Prev")}</Th>
                 <Th className="text-right">Δ</Th>
-                <Th className="text-right">New</Th>
-                <Th>By</Th>
-                <Th>Note</Th>
+                <Th className="text-right">{t("New")}</Th>
+                <Th>{t("By")}</Th>
+                <Th>{t("Note")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -119,7 +121,7 @@ export default function AdjustmentsPage() {
                   </Td>
                   <Td className="font-mono text-[11px]">{r.productVariantId.slice(-8)}</Td>
                   <Td>
-                    <Badge tone="info">{r.reason.replace("_", " ")}</Badge>
+                    <Badge tone="info">{t(r.reason.replace("_", " "))}</Badge>
                   </Td>
                   <Td className="text-right">{r.previousQuantity}</Td>
                   <Td
@@ -156,14 +158,14 @@ export default function AdjustmentsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="New Stock Adjustment"
+        title={t("New Stock Adjustment")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={submit} loading={busy}>
-              Apply
+              {t("Apply")}
             </Button>
           </>
         }
@@ -175,17 +177,17 @@ export default function AdjustmentsPage() {
               className="text-[10px] uppercase tracking-widest text-primary font-black"
               onClick={() => setPicked(null)}
             >
-              Change
+              {t("Change selection")}
             </button>
           </div>
         ) : (
-          <Field label="Product variant" required>
+          <Field label={t("Product variant")} required>
             <VariantPicker onPick={setPicked} />
           </Field>
         )}
 
         {branches.length > 1 && (
-          <Field label="Branch" required>
+          <Field label={t("Branch")} required>
             <Select
               value={targetBranch || branchId || ""}
               onChange={(e) => setTargetBranch(e.target.value)}
@@ -200,32 +202,32 @@ export default function AdjustmentsPage() {
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Reason" required>
+          <Field label={t("Reason")} required>
             <Select
               value={reason}
               onChange={(e) => setReason(e.target.value as (typeof REASONS)[number])}
             >
               {REASONS.map((r) => (
                 <option key={r} value={r}>
-                  {r.replace("_", " ")}
+                  {t(r.replace("_", " "))}
                 </option>
               ))}
             </Select>
           </Field>
-          <Field label="Mode">
+          <Field label={t("Mode")}>
             <Select value={mode} onChange={(e) => setMode(e.target.value as "absolute" | "delta")}>
-              <option value="absolute">Set to (count)</option>
-              <option value="delta">Change by (+/-)</option>
+              <option value="absolute">{t("Set to (count)")}</option>
+              <option value="delta">{t("Change by (+/-)")}</option>
             </Select>
           </Field>
         </div>
         <Field
-          label={mode === "absolute" ? "Counted quantity" : "Change amount (use - to reduce)"}
+          label={mode === "absolute" ? t("Counted quantity") : t("Change amount (use - to reduce)")}
           required
         >
           <TextInput type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
         </Field>
-        <Field label="Note" required>
+        <Field label={t("Note")} required>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       </Modal>

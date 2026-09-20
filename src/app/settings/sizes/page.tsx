@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
@@ -35,6 +36,7 @@ type Row = {
 
 export default function SizesPage() {
   const token = useToken();
+  const { t } = useTranslation();
   const rows = useQuery(api.sizes.list, { includeInactive: true });
   const page = useClientPage(rows ?? []);
   const create = useMutation(api.sizes.create);
@@ -62,7 +64,7 @@ export default function SizesPage() {
   };
 
   const save = async () => {
-    if (!name.trim()) return toast.error("Size name is required.");
+    if (!name.trim()) return toast.error(t("Size name is required."));
     setBusy(true);
     try {
       if (editing) {
@@ -72,18 +74,18 @@ export default function SizesPage() {
           name,
           sortOrder: sortOrder ? Number(sortOrder) : undefined,
         });
-        toast.success("Size updated");
+        toast.success(t("Size updated"));
       } else {
         await create({
           token,
           name,
           sortOrder: sortOrder ? Number(sortOrder) : undefined,
         });
-        toast.success("Size added");
+        toast.success(t("Size added"));
       }
       setOpen(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t("Failed to save"));
     } finally {
       setBusy(false);
     }
@@ -93,16 +95,16 @@ export default function SizesPage() {
     try {
       await update({ token, id: r._id, active: !r.active });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     }
   };
 
   return (
-    <PageLayout title="Sizes" subtitle="Settings · clothing size taxonomy">
+    <PageLayout title={t("Sizes")} subtitle={t("Settings · clothing size taxonomy")}>
       <Toolbar>
         <div className="ml-auto" />
         <Button onClick={openNew}>
-          <Plus className="w-3.5 h-3.5" /> New Size
+          <Plus className="w-3.5 h-3.5" /> {t("New Size")}
         </Button>
       </Toolbar>
 
@@ -111,17 +113,17 @@ export default function SizesPage() {
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState
-            title="No sizes yet"
-            message="Add sizes like S, M, L, XL — they'll be offered when creating product variants."
-            action={<Button onClick={openNew}>New Size</Button>}
+            title={t("No sizes yet")}
+            message={t("Add sizes like S, M, L, XL — they'll be offered when creating product variants.")}
+            action={<Button onClick={openNew}>{t("New Size")}</Button>}
           />
         ) : (
           <Table>
             <thead>
               <tr>
-                <Th>Name</Th>
-                <Th className="w-24">Order</Th>
-                <Th className="w-24">Status</Th>
+                <Th>{t("Name")}</Th>
+                <Th className="w-24">{t("Order")}</Th>
+                <Th className="w-24">{t("Status")}</Th>
                 <Th className="w-32" />
               </tr>
             </thead>
@@ -133,7 +135,7 @@ export default function SizesPage() {
                   <Td>
                     <button onClick={() => toggleActive(r as Row)}>
                       <Badge tone={r.active ? "success" : "neutral"}>
-                        {r.active ? "Active" : "Inactive"}
+                        {r.active ? t("Active") : t("Inactive")}
                       </Badge>
                     </button>
                   </Td>
@@ -168,23 +170,23 @@ export default function SizesPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={editing ? "Edit Size" : "New Size"}
+        title={editing ? t("Edit Size") : t("New Size")}
         size="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={save} loading={busy}>
-              Save
+              {t("Save")}
             </Button>
           </>
         }
       >
-        <Field label="Name" required>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. M" />
+        <Field label={t("Name")} required>
+          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. M")} />
         </Field>
-        <Field label="Sort order" hint="Lower numbers show first">
+        <Field label={t("Sort order")} hint={t("Lower numbers show first")}>
           <TextInput
             type="number"
             value={sortOrder}
@@ -196,17 +198,17 @@ export default function SizesPage() {
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete size"
-        message={`Delete "${deleting?.name}"? Existing variants keep their size label; only the taxonomy entry is removed.`}
+        title={t("Delete size")}
+        message={t('Delete "{name}"? Existing variants keep their size label; only the taxonomy entry is removed.', { name: deleting?.name ?? "" })}
         danger
-        confirmLabel="Delete"
+        confirmLabel={t("Delete")}
         onConfirm={async () => {
           if (!deleting) return;
           try {
             await remove({ token, id: deleting._id });
-            toast.success("Size deleted");
+            toast.success(t("Size deleted"));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Failed");
+            toast.error(e instanceof Error ? e.message : t("Failed"));
           }
           setDeleting(null);
         }}

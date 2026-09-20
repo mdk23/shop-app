@@ -4,8 +4,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { useBranch } from "@/contexts/BranchContext";
 import { Store, ChevronDown, Check, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 export function BranchSelector({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
   const {
     selectedBranchId,
     setSelectedBranchId,
@@ -41,7 +43,7 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
           "flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-surface border border-outline/30 hover:bg-surface-container hover:border-outline/50 transition-all cursor-pointer shadow-sm",
           compact && "p-2"
         )}
-        title="Switch Branch View"
+        title={t("Switch Branch View")}
       >
         <div className="flex items-center gap-1.5 text-primary">
           {selectedBranchId === "all" ? (
@@ -54,8 +56,8 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
         {!compact && (
           <span className="text-[11px] font-bold text-on-surface uppercase tracking-wider hidden sm:inline max-w-[120px] truncate">
             {selectedBranchId === "all"
-              ? "All Branches"
-              : currentBranch?.name || "Select Branch"}
+              ? t("All Branches")
+              : currentBranch?.name || t("Select Branch")}
           </span>
         )}
 
@@ -71,10 +73,10 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
         <div className="absolute right-0 top-full mt-2 w-64 bg-surface/95 backdrop-blur-xl border border-outline/30 rounded-2xl shadow-xl z-[100] overflow-hidden p-2 space-y-1">
           <div className="px-3 py-2 border-b border-outline/20 mb-1">
             <p className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">
-              STORE BRANCH VIEW
+              {t("STORE BRANCH VIEW")}
             </p>
             <p className="text-xs text-on-surface font-semibold">
-              Filter data by store location
+              {t("Filter data by store location")}
             </p>
           </div>
 
@@ -95,10 +97,10 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
               <Globe className="w-4 h-4 text-primary" />
               <div>
                 <p className="text-xs font-bold text-on-surface group-hover:text-primary transition-colors">
-                  All Branches
+                  {t("All Branches")}
                 </p>
                 <p className="text-[9px] text-on-surface-variant font-medium">
-                  Combined multi-store view
+                  {t("Combined multi-store view")}
                 </p>
               </div>
             </div>

@@ -74,6 +74,7 @@ export type Permission =
   | "returns.view"
   | "returns.process"
   | "returns.approve"
+  | "delivery_fees.manage"
   | "customers.view"
   | "customers.manage"
   | "customers.credit_grant"
@@ -106,6 +107,7 @@ const MANAGER_PERMISSIONS: Permission[] = [
   "returns.view",
   "returns.process",
   "returns.approve",
+  "delivery_fees.manage",
   "customers.view",
   "customers.manage",
   "customers.credit_grant",

@@ -5,6 +5,7 @@ import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 import { SonnerProvider } from "@/components/SonnerProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 import { BranchProvider } from "@/contexts/BranchContext";
 import { RouteGuard } from "@/components/RouteGuard";
 
@@ -27,16 +28,18 @@ export default function RootLayout({
     <html lang="en" data-theme="sage">
       <body className={`${plusJakartaSans.variable} antialiased`}>
         <ConvexClientProvider>
-          <ThemeProvider>
-            <BranchProvider>
-              <AuthProvider>
-                <SonnerProvider />
-                <RouteGuard>
-                  {children}
-                </RouteGuard>
-              </AuthProvider>
-            </BranchProvider>
-          </ThemeProvider>
+          <LanguageProvider>
+            <ThemeProvider>
+              <BranchProvider>
+                <AuthProvider>
+                  <SonnerProvider />
+                  <RouteGuard>
+                    {children}
+                  </RouteGuard>
+                </AuthProvider>
+              </BranchProvider>
+            </ThemeProvider>
+          </LanguageProvider>
         </ConvexClientProvider>
       </body>
     </html>

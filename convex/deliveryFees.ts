@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { validateToken } from "./auth";
+import { authorize } from "./permissions";
+import { writeAudit } from "./audit";
 
 export const list = query({
   args: {
@@ -42,10 +43,7 @@ export const create = mutation({
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await validateToken(ctx, args.token);
-    if (actor.role !== "admin" && actor.role !== "manager") {
-      throw new Error("Only Admin and Manager can create delivery fees.");
-    }
+    const actor = await authorize(ctx, args.token, "delivery_fees.manage");
 
     if (!args.name || args.name.trim() === "") {
       throw new Error("Name is required.");
@@ -74,12 +72,13 @@ export const create = mutation({
       createdAt: Date.now(),
     });
 
-    await ctx.db.insert("auditLogs", {
+    await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
-      action: "delivery_fee_created",
+      action: "deliveryFee.created",
+      entityType: "deliveryFee",
+      entityId: newId,
       details: `Created delivery fee "${args.name}" of ${args.fee} MT`,
-      createdAt: Date.now(),
     });
 
     return newId;
@@ -96,10 +95,7 @@ export const update = mutation({
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const actor = await validateToken(ctx, args.token);
-    if (actor.role !== "admin" && actor.role !== "manager") {
-      throw new Error("Only Admin and Manager can edit delivery fees.");
-    }
+    const actor = await authorize(ctx, args.token, "delivery_fees.manage");
 
     if (!args.name || args.name.trim() === "") {
       throw new Error("Name is required.");
@@ -132,12 +128,13 @@ export const update = mutation({
       active: args.active,
     });
 
-    await ctx.db.insert("auditLogs", {
+    await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
-      action: "delivery_fee_updated",
+      action: "deliveryFee.updated",
+      entityType: "deliveryFee",
+      entityId: args.id,
       details: `Updated delivery fee "${args.name}" to ${args.fee} MT (Active: ${args.active})`,
-      createdAt: Date.now(),
     });
   },
 });
@@ -148,34 +145,36 @@ export const remove = mutation({
     id: v.id("deliveryFees"),
   },
   handler: async (ctx, args) => {
-    const actor = await validateToken(ctx, args.token);
-    if (actor.role !== "admin" && actor.role !== "manager") {
-      throw new Error("Only Admin and Manager can delete delivery fees.");
-    }
+    const actor = await authorize(ctx, args.token, "delivery_fees.manage");
 
     const fee = await ctx.db.get(args.id);
     if (!fee) {
       throw new Error("Delivery fee not found.");
     }
 
-    // Check if used in any orders
+    // Check if used in any current sales, or (for historical data) legacy orders.
+    const usedInSales = await ctx.db
+      .query("sales")
+      .withIndex("by_delivery_fee", (q) => q.eq("deliveryFeeId", args.id))
+      .first();
     const usedInOrders = await ctx.db
       .query("orders")
       .withIndex("by_delivery_fee", (q) => q.eq("deliveryFeeId", args.id))
       .first();
 
-    if (usedInOrders) {
-      throw new Error("Cannot delete this delivery fee because it is already used in orders. Please deactivate it instead.");
+    if (usedInSales || usedInOrders) {
+      throw new Error("Cannot delete this delivery fee because it is already used in sales. Please deactivate it instead.");
     }
 
     await ctx.db.delete(args.id);
 
-    await ctx.db.insert("auditLogs", {
+    await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
-      action: "delivery_fee_deleted",
+      action: "deliveryFee.deleted",
+      entityType: "deliveryFee",
+      entityId: args.id,
       details: `Deleted delivery fee "${fee.name}"`,
-      createdAt: Date.now(),
     });
   },
 });

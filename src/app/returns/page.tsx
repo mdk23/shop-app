@@ -25,6 +25,7 @@ import {
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useCurrency } from "@/lib/useShop";
 import { usePagedQuery } from "@/lib/pagination";
+import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 
@@ -48,6 +49,7 @@ const REFUND_METHODS = [
 ] as const;
 
 export default function ReturnsPage() {
+  const { t } = useTranslation();
   const fmt = useCurrency();
   const [saleQuery, setSaleQuery] = useState("");
   const [pickedSaleId, setPickedSaleId] = useState<Id<"sales"> | null>(null);
@@ -72,17 +74,17 @@ export default function ReturnsPage() {
   );
 
   return (
-    <PageLayout title="Returns" subtitle="Sales · returns & refunds">
+    <PageLayout title={t("Returns")} subtitle={t("Sales · returns & refunds")}>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-            Find the original sale
+            {t("Find the original sale")}
           </p>
           <div className="relative mb-2">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
             <input
               className={`${inputClass} pl-9`}
-              placeholder="Sale number or customer"
+              placeholder={t("Sale number or customer")}
               value={saleQuery}
               onChange={(e) => setSaleQuery(e.target.value)}
             />
@@ -109,7 +111,7 @@ export default function ReturnsPage() {
                   >
                     <span className="font-mono font-bold">{s.saleNumber}</span>
                     <span className="text-on-surface-variant">
-                      {s.customerName ?? "Walk-in"}
+                      {s.customerName ?? t("Walk-in")}
                     </span>
                     <span className="font-bold">{fmt(s.total)}</span>
                   </button>
@@ -121,22 +123,22 @@ export default function ReturnsPage() {
         <Card className="p-0">
           <div className="px-4 py-3 border-b border-outline/40">
             <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
-              Recent returns
+              {t("Recent returns")}
             </p>
           </div>
           <div>
             {recentLoading ? (
               <Spinner />
             ) : recent.length === 0 ? (
-              <EmptyState title="No returns yet" />
+              <EmptyState title={t("No returns yet")} />
             ) : (
               <Table>
                 <thead>
                   <tr>
-                    <Th>Return</Th>
-                    <Th>Method</Th>
-                    <Th className="text-right">Refund</Th>
-                    <Th>When</Th>
+                    <Th>{t("Return")}</Th>
+                    <Th>{t("Method")}</Th>
+                    <Th className="text-right">{t("Refund")}</Th>
+                    <Th>{t("When")}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -202,6 +204,7 @@ function ReturnModal({
   fmt: (n: number) => string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const token = useToken();
   const process = useMutation(api.salesReturns.create);
   const exchange = useMutation(api.salesReturns.exchange);
@@ -243,12 +246,12 @@ function ReturnModal({
       reason: r.reason,
       restock: r.restock,
     }));
-    if (items.length === 0) return toast.error("Select at least one item.");
+    if (items.length === 0) return toast.error(t("Select at least one item."));
     setBusy(true);
     try {
       if (mode === "exchange") {
         if (replacements.length === 0)
-          return toast.error("Add at least one replacement item.");
+          return toast.error(t("Add at least one replacement item."));
         const res = await exchange({
           token,
           saleId: sale._id,
@@ -265,15 +268,13 @@ function ReturnModal({
           refundMethod,
           notes: notes || undefined,
         });
-        toast.success(
-          `Exchange done · ${
-            res.difference > 0
-              ? `customer paid ${fmt(res.difference)}`
-              : res.difference < 0
-                ? `store credit ${fmt(-res.difference)}`
-                : "even"
-          }`
-        );
+        const detail =
+          res.difference > 0
+            ? t("customer paid {amount}", { amount: fmt(res.difference) })
+            : res.difference < 0
+              ? t("store credit {amount}", { amount: fmt(-res.difference) })
+              : t("even");
+        toast.success(t("Exchange done · {detail}", { detail }));
       } else {
         await process({
           token,
@@ -282,11 +283,11 @@ function ReturnModal({
           refundMethod,
           notes: notes || undefined,
         });
-        toast.success("Return processed");
+        toast.success(t("Return processed"));
       }
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(e instanceof Error ? e.message : t("Failed"));
     } finally {
       setBusy(false);
     }
@@ -297,21 +298,21 @@ function ReturnModal({
       open
       onClose={onClose}
       size="lg"
-      title={`${mode === "exchange" ? "Exchange" : "Return"} · ${sale.saleNumber}`}
-      subtitle={sale.customerName ?? "Walk-in"}
+      title={`${mode === "exchange" ? t("Exchange") : t("Return")} · ${sale.saleNumber}`}
+      subtitle={sale.customerName ?? t("Walk-in")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={submit} loading={busy}>
             {mode === "exchange"
               ? difference > 0
-                ? `Collect ${fmt(difference)}`
+                ? t("Collect {amount}", { amount: fmt(difference) })
                 : difference < 0
-                  ? `Credit ${fmt(-difference)}`
-                  : "Complete exchange"
-              : `Refund ${fmt(estRefund)}`}
+                  ? t("Credit {amount}", { amount: fmt(-difference) })
+                  : t("Complete exchange")
+              : t("Refund {amount}", { amount: fmt(estRefund) })}
           </Button>
         </>
       }
@@ -328,7 +329,7 @@ function ReturnModal({
                 : "bg-surface-container-low text-on-surface-variant border-outline")
             }
           >
-            {m}
+            {t(m)}
           </button>
         ))}
       </div>
@@ -336,11 +337,11 @@ function ReturnModal({
         <thead>
           <tr>
             <Th className="w-8" />
-            <Th>Item</Th>
-            <Th className="text-right">Sold</Th>
-            <Th className="text-right w-20">Return</Th>
-            <Th className="w-40">Reason</Th>
-            <Th className="w-20">Restock</Th>
+            <Th>{t("Item")}</Th>
+            <Th className="text-right">{t("Sold")}</Th>
+            <Th className="text-right w-20">{t("Return")}</Th>
+            <Th className="w-40">{t("Reason")}</Th>
+            <Th className="w-20">{t("Restock")}</Th>
           </tr>
         </thead>
         <tbody>
@@ -419,7 +420,7 @@ function ReturnModal({
       {mode === "exchange" && (
         <div className="mt-3 rounded-xl border border-outline bg-surface-container-low p-3 space-y-2">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
-            Replacement items
+            {t("Replacement items")}
           </p>
           <VariantPicker
             onPick={(v) =>
@@ -459,7 +460,10 @@ function ReturnModal({
           ))}
           <div className="flex justify-between text-xs pt-1 border-t border-outline/40">
             <span className="text-on-surface-variant uppercase tracking-wider">
-              Replacement {fmt(replacementTotal)} − return {fmt(estRefund)}
+              {t("Replacement {total} − return {refund}", {
+                total: fmt(replacementTotal),
+                refund: fmt(estRefund),
+              })}
             </span>
             <span
               className={
@@ -471,10 +475,10 @@ function ReturnModal({
               }
             >
               {difference > 0
-                ? `customer pays ${fmt(difference)}`
+                ? t("customer pays {amount}", { amount: fmt(difference) })
                 : difference < 0
-                  ? `store credit ${fmt(-difference)}`
-                  : "even"}
+                  ? t("store credit {amount}", { amount: fmt(-difference) })
+                  : t("even")}
             </span>
           </div>
         </div>
@@ -482,7 +486,7 @@ function ReturnModal({
 
       <div className="grid grid-cols-2 gap-3 mt-2">
         <Field
-          label={mode === "exchange" ? "Extra charge via" : "Refund method"}
+          label={mode === "exchange" ? t("Extra charge via") : t("Refund method")}
           required
         >
           {mode === "exchange" && difference > 0 ? (
@@ -509,7 +513,7 @@ function ReturnModal({
             </Select>
           )}
         </Field>
-        <Field label="Notes">
+        <Field label={t("Notes")}>
           <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       </div>

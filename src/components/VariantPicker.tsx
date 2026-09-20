@@ -7,6 +7,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { inputClass } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { Search } from "lucide-react";
+import { useTranslation } from "@/contexts/LanguageContext";
 
 export type PickedVariant = {
   variantId: Id<"productVariants">;
@@ -18,11 +19,12 @@ export type PickedVariant = {
 
 export function VariantPicker({
   onPick,
-  placeholder = "Search product…",
+  placeholder,
 }: {
   onPick: (v: PickedVariant) => void;
   placeholder?: string;
 }) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [openProduct, setOpenProduct] = useState<Id<"products"> | null>(null);
   const products = useQuery(
@@ -40,7 +42,7 @@ export function VariantPicker({
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
         <input
           className={`${inputClass} pl-9`}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t("Search product…")}
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -92,7 +94,7 @@ export function VariantPicker({
             </div>
           ))}
           {products && products.length === 0 && (
-            <p className="px-3 py-3 text-xs text-on-surface-variant">No products</p>
+            <p className="px-3 py-3 text-xs text-on-surface-variant">{t("No products")}</p>
           )}
         </div>
       )}

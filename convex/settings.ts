@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, MutationCtx } from "./_generated/server";
+import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
@@ -36,6 +36,42 @@ export const DEFAULT_SETTINGS: {
     value: "Thank you for shopping with us!",
     label: "Receipt footer",
   },
+  {
+    key: "tierNovoMaxSales",
+    isActive: true,
+    value: "1",
+    label: "Nº máximo de compras para o nível NOVO",
+  },
+  {
+    key: "tierVipMinSpend12m",
+    isActive: true,
+    value: "50000",
+    label: "Gasto mínimo (12 meses) para VIP (MZN)",
+  },
+  {
+    key: "sizeInferenceMonths",
+    isActive: true,
+    value: "24",
+    label: "Janela de inferência de tamanhos (meses)",
+  },
+  {
+    key: "tierDiscountPercentVIP",
+    isActive: false,
+    value: "0",
+    label: "Desconto automático VIP (%)",
+  },
+  {
+    key: "tierDiscountPercentREGULAR",
+    isActive: false,
+    value: "0",
+    label: "Desconto automático REGULAR (%)",
+  },
+  {
+    key: "language",
+    isActive: true,
+    value: "pt",
+    label: "Idioma da aplicação / Application language",
+  },
 ];
 
 export async function ensureDefaultSettings(ctx: MutationCtx) {
@@ -54,6 +90,14 @@ export async function ensureDefaultSettings(ctx: MutationCtx) {
       });
     }
   }
+}
+
+/** Read a single setting's value by key. New code should use this rather than re-inlining the `by_key` lookup. */
+export async function getSetting(ctx: QueryCtx | MutationCtx, key: string) {
+  return await ctx.db
+    .query("settings")
+    .withIndex("by_key", (q) => q.eq("key", key))
+    .unique();
 }
 
 export const getByKey = query({
