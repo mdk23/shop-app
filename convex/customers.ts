@@ -471,6 +471,7 @@ const CUSTOMER_FIELDS = {
   email: v.optional(v.string()),
   address: v.optional(v.string()),
   notes: v.optional(v.string()),
+  nuit: v.optional(v.string()),
 };
 
 export const create = mutation({

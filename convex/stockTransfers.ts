@@ -96,9 +96,24 @@ export const setStatus = mutation({
   },
 });
 
-/** Completing a transfer emits paired TRANSFER_OUT (source) + TRANSFER_IN (destination) movements. */
+/**
+ * Completing a transfer emits TRANSFER_OUT for the full sent quantity at the source
+ * and TRANSFER_IN for what the destination counted. Any difference is a shortage in
+ * transit: it is recorded on the receipt, not put back into the destination.
+ */
 export const receive = mutation({
-  args: { token: v.string(), transferId: v.id("stockTransfers") },
+  args: {
+    token: v.string(),
+    transferId: v.id("stockTransfers"),
+    observed: v.optional(
+      v.array(
+        v.object({
+          productVariantId: v.id("productVariants"),
+          quantityObserved: v.number(),
+        })
+      )
+    ),
+  },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "inventory.transfer");
     const { transfer, items } = await hydrate(ctx, args.transferId);
@@ -108,11 +123,29 @@ export const receive = mutation({
       throw new Error("Transfer was cancelled.");
     if (items.length === 0) throw new Error("Transfer has no items.");
 
-    for (const it of items) {
-      await ctx.runMutation(internal.inventory.mutateStock, {
+    const observedByVariant = new Map(
+      (args.observed ?? []).map((o) => [o.productVariantId, o.quantityObserved])
+    );
+    for (const key of observedByVariant.keys()) {
+      if (!items.some((i) => i.productVariantId === key))
+        throw new Error("A counted line is not part of this transfer.");
+    }
+    const lines = items.map((it) => {
+      const quantityObserved = observedByVariant.get(it.productVariantId) ?? it.quantity;
+      if (quantityObserved < 0 || quantityObserved > it.quantity)
+        throw new Error(`Observed quantity must be between 0 and ${it.quantity}.`);
+      return {
         productVariantId: it.productVariantId,
+        quantitySent: it.quantity,
+        quantityObserved,
+      };
+    });
+
+    for (const line of lines) {
+      await ctx.runMutation(internal.inventory.mutateStock, {
+        productVariantId: line.productVariantId,
         branchId: transfer.sourceBranchId,
-        quantity: -it.quantity,
+        quantity: -line.quantitySent,
         movementType: "TRANSFER_OUT",
         referenceType: "stock_transfer",
         referenceId: args.transferId,
@@ -120,31 +153,52 @@ export const receive = mutation({
         userId: actor._id,
         username: actor.username,
       });
-      await ctx.runMutation(internal.inventory.mutateStock, {
-        productVariantId: it.productVariantId,
-        branchId: transfer.destinationBranchId,
-        quantity: it.quantity,
-        movementType: "TRANSFER_IN",
-        referenceType: "stock_transfer",
-        referenceId: args.transferId,
-        notes: `Transfer ${transfer.transferNumber} ← source`,
-        userId: actor._id,
-        username: actor.username,
-      });
+      if (line.quantityObserved > 0) {
+        await ctx.runMutation(internal.inventory.mutateStock, {
+          productVariantId: line.productVariantId,
+          branchId: transfer.destinationBranchId,
+          quantity: line.quantityObserved,
+          movementType: "TRANSFER_IN",
+          referenceType: "stock_transfer",
+          referenceId: args.transferId,
+          notes: `Transfer ${transfer.transferNumber} ← source`,
+          userId: actor._id,
+          username: actor.username,
+        });
+      }
     }
 
+    const now = Date.now();
+    await ctx.db.insert("stockTransferReceipts", {
+      transferId: args.transferId,
+      receivedByUsername: actor.username,
+      receivedAt: now,
+      lines,
+    });
     await ctx.db.patch(args.transferId, {
       status: "RECEIVED",
-      completedAt: Date.now(),
+      completedAt: now,
     });
+
+    const short = lines.filter((l) => l.quantityObserved < l.quantitySent).length;
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: "transfer.received",
       entityType: "stockTransfer",
       entityId: args.transferId,
-      details: `${transfer.transferNumber}: ${items.length} line(s) moved`,
+      details: `${transfer.transferNumber}: ${lines.length} line(s) moved${short ? `, ${short} short` : ""}`,
     });
+  },
+});
+
+export const getReceipt = query({
+  args: { transferId: v.id("stockTransfers") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("stockTransferReceipts")
+      .withIndex("by_transfer", (q) => q.eq("transferId", args.transferId))
+      .first();
   },
 });
 

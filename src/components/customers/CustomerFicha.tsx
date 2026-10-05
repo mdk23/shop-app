@@ -10,9 +10,11 @@ import { FichaResumo } from "./FichaResumo";
 import { FichaTamanhos } from "./FichaTamanhos";
 import { FichaHistorico } from "./FichaHistorico";
 import { FichaPreferencias } from "./FichaPreferencias";
+import { FichaContatos } from "./FichaContatos";
+import { FichaProcuras } from "./FichaProcuras";
 import { useTranslation } from "@/contexts/LanguageContext";
 
-const TABS = ["Summary", "Sizes", "History", "Preferences"] as const;
+const TABS = ["Summary", "Sizes", "History", "Preferences", "Contacts", "Requests"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -63,6 +65,8 @@ export function CustomerFicha({
       {tab === "Sizes" && <FichaTamanhos customerId={customerId} context={context} />}
       {tab === "History" && <FichaHistorico customerId={customerId} />}
       {tab === "Preferences" && <FichaPreferencias customerId={customerId} context={context} />}
+      {tab === "Contacts" && <FichaContatos customerId={customerId} />}
+      {tab === "Requests" && <FichaProcuras customerId={customerId} />}
     </div>
   );
 }

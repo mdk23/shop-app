@@ -4,6 +4,7 @@ import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { variantLabel } from "./inventory";
+import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
 
 // ─────────────────────────────────────────────
 // SKU HELPERS
@@ -88,6 +89,24 @@ export const getBySkuOrBarcode = query({
   },
 });
 
+export const priceHistory = query({
+  args: { productVariantId: v.id("productVariants") },
+  handler: async (ctx, args) => {
+    const list = await ctx.db
+      .query("priceLists")
+      .withIndex("by_default", (q) => q.eq("isDefault", true))
+      .first();
+    if (!list) return [];
+    return await ctx.db
+      .query("variantPrices")
+      .withIndex("by_variant_list_from", (q) =>
+        q.eq("productVariantId", args.productVariantId).eq("priceListId", list._id)
+      )
+      .order("desc")
+      .collect();
+  },
+});
+
 // ─────────────────────────────────────────────
 // MUTATIONS
 // ─────────────────────────────────────────────
@@ -119,19 +138,23 @@ export const create = mutation({
     if (existing) throw new Error(`SKU "${sku}" is already in use.`);
 
     const now = Date.now();
+    const sellingPrice = args.sellingPrice ?? product.defaultSellingPrice;
     const id = await ctx.db.insert("productVariants", {
       productId: args.productId,
       sku,
       barcode: args.barcode?.trim() || undefined,
       size: args.size?.trim() || undefined,
       color: args.color?.trim() || undefined,
+      sizeId: await resolveSizeId(ctx, args.size),
+      colorId: await resolveColorId(ctx, args.color),
       costPrice: args.costPrice ?? product.defaultCostPrice,
-      sellingPrice: args.sellingPrice ?? product.defaultSellingPrice,
+      sellingPrice,
       reorderLevel: args.reorderLevel ?? 0,
       active: true,
       createdAt: now,
       updatedAt: now,
     });
+    await recordVariantPrice(ctx, id, sellingPrice, now);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -188,18 +211,22 @@ export const generateMatrix = mutation({
           color || undefined,
           size || undefined
         );
-        await ctx.db.insert("productVariants", {
+        const sellingPrice = args.sellingPrice ?? product.defaultSellingPrice;
+        const variantId = await ctx.db.insert("productVariants", {
           productId: args.productId,
           sku,
           size: size.trim() || undefined,
           color: color.trim() || undefined,
+          sizeId: await resolveSizeId(ctx, size),
+          colorId: await resolveColorId(ctx, color),
           costPrice: args.costPrice ?? product.defaultCostPrice,
-          sellingPrice: args.sellingPrice ?? product.defaultSellingPrice,
+          sellingPrice,
           reorderLevel: args.reorderLevel ?? 0,
           active: true,
           createdAt: now,
           updatedAt: now,
         });
+        await recordVariantPrice(ctx, variantId, sellingPrice, now);
         created += 1;
       }
     }
@@ -238,9 +265,16 @@ export const update = mutation({
       await authorize(ctx, args.token, "products.change_cost");
     }
 
-    const patch: Record<string, unknown> = { updatedAt: Date.now() };
-    if (args.size !== undefined) patch.size = args.size.trim() || undefined;
-    if (args.color !== undefined) patch.color = args.color.trim() || undefined;
+    const now = Date.now();
+    const patch: Record<string, unknown> = { updatedAt: now };
+    if (args.size !== undefined) {
+      patch.size = args.size.trim() || undefined;
+      patch.sizeId = await resolveSizeId(ctx, args.size);
+    }
+    if (args.color !== undefined) {
+      patch.color = args.color.trim() || undefined;
+      patch.colorId = await resolveColorId(ctx, args.color);
+    }
     if (args.barcode !== undefined)
       patch.barcode = args.barcode.trim() || undefined;
     if (args.sellingPrice !== undefined) patch.sellingPrice = args.sellingPrice;
@@ -249,6 +283,9 @@ export const update = mutation({
     if (args.active !== undefined) patch.active = args.active;
 
     await ctx.db.patch(args.id, patch);
+    if (args.sellingPrice !== undefined) {
+      await recordVariantPrice(ctx, args.id, args.sellingPrice, now);
+    }
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,

@@ -6,6 +6,7 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { generateSku } from "./productVariants";
 import { variantLabel } from "./inventory";
+import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
 
 // ─────────────────────────────────────────────
 // QUERIES
@@ -203,6 +204,7 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     categoryId: v.id("categories"),
+    taxRateId: v.optional(v.id("taxRates")),
     gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
     defaultCostPrice: v.number(),
     defaultSellingPrice: v.number(),
@@ -230,6 +232,7 @@ export const create = mutation({
       name,
       description: args.description,
       categoryId: args.categoryId,
+      taxRateId: args.taxRateId,
       gender: args.gender ?? "unisex",
       defaultCostPrice: args.defaultCostPrice,
       defaultSellingPrice: args.defaultSellingPrice,
@@ -242,19 +245,23 @@ export const create = mutation({
       const sku =
         spec.sku?.trim() ||
         (await generateSku(ctx, name, spec.color, spec.size));
-      await ctx.db.insert("productVariants", {
+      const sellingPrice = spec.sellingPrice ?? args.defaultSellingPrice;
+      const variantId = await ctx.db.insert("productVariants", {
         productId,
         sku,
         barcode: spec.barcode?.trim() || undefined,
         size: spec.size?.trim() || undefined,
         color: spec.color?.trim() || undefined,
+        sizeId: await resolveSizeId(ctx, spec.size),
+        colorId: await resolveColorId(ctx, spec.color),
         costPrice: spec.costPrice ?? args.defaultCostPrice,
-        sellingPrice: spec.sellingPrice ?? args.defaultSellingPrice,
+        sellingPrice,
         reorderLevel: spec.reorderLevel ?? 0,
         active: true,
         createdAt: now,
         updatedAt: now,
       });
+      await recordVariantPrice(ctx, variantId, sellingPrice, now);
     }
 
     await writeAudit(ctx, {
@@ -276,6 +283,7 @@ export const update = mutation({
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     categoryId: v.optional(v.id("categories")),
+    taxRateId: v.optional(v.union(v.id("taxRates"), v.null())),
     gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
     defaultCostPrice: v.optional(v.number()),
     defaultSellingPrice: v.optional(v.number()),
@@ -298,6 +306,7 @@ export const update = mutation({
     if (args.name !== undefined) patch.name = args.name.trim();
     if (args.description !== undefined) patch.description = args.description;
     if (args.categoryId !== undefined) patch.categoryId = args.categoryId;
+    if (args.taxRateId !== undefined) patch.taxRateId = args.taxRateId ?? undefined;
     if (args.gender !== undefined) patch.gender = args.gender;
     if (args.defaultCostPrice !== undefined)
       patch.defaultCostPrice = args.defaultCostPrice;

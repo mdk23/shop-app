@@ -22,6 +22,7 @@ import {
 } from "./metrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { refreshCustomerProfile } from "./customerProfile";
+import { nextFiscalNumber, round2 } from "./lib/fiscal";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -129,6 +130,8 @@ export async function performSale(
     if (!customer) throw new Error("Customer not found.");
 
     const allowNegSetting = (await getSetting(ctx, "allowNegativeStock"))?.isActive ?? false;
+    const defaultTaxPercent =
+      args.taxRate ?? Number((await getSetting(ctx, "taxRatePercent"))?.value ?? "0") ?? 0;
 
     // 1. Resolve lines, price them, and verify stock up-front.
     const lines: {
@@ -144,6 +147,10 @@ export async function performSale(
       size?: string;
       color?: string;
       categoryName: string;
+      taxRateId?: Id<"taxRates">;
+      taxPercent: number;
+      net: number;
+      taxAmount: number;
     }[] = [];
 
     for (const item of args.items) {
@@ -154,6 +161,10 @@ export async function performSale(
       const product = await ctx.db.get(variant.productId);
       if (!product) throw new Error("Parent product missing for a variant.");
       const category = await ctx.db.get(product.categoryId);
+      const taxRate = product.taxRateId ? await ctx.db.get(product.taxRateId) : null;
+      if (taxRate && !taxRate.active) {
+        throw new Error(`The IVA rate on ${product.name} is inactive. Update the product before selling it.`);
+      }
 
       const unitPrice = item.unitPrice ?? variant.sellingPrice;
       const lineDiscount = item.discount ?? 0;
@@ -185,6 +196,10 @@ export async function performSale(
         size: variant.size,
         color: variant.color,
         categoryName: category?.name ?? "Uncategorised",
+        taxRateId: taxRate?._id,
+        taxPercent: taxRate ? taxRate.percentage : defaultTaxPercent,
+        net: 0,
+        taxAmount: 0,
       });
     }
 
@@ -217,12 +232,25 @@ export async function performSale(
         : 0;
     const discount = manualDiscount + tierDiscountAmount;
 
-    const taxRate =
-      args.taxRate ??
-      Number((await getSetting(ctx, "taxRatePercent"))?.value ?? "0") ??
-      0;
-    const taxableBase = Math.max(0, subtotal - discount);
-    const tax = Math.round(taxableBase * (taxRate / 100) * 100) / 100;
+    // Sale-level discounts are spread across lines in proportion to their gross
+    // value, so each line's IVA is computed on its own net amount. The last line
+    // takes the rounding remainder, keeping the allocated total exact.
+    const saleLevelDiscount = discount - lineDiscountTotal;
+    const grossSum = lines.reduce((s, l) => s + l.total, 0);
+    let allocated = 0;
+    lines.forEach((l, i) => {
+      const share =
+        i === lines.length - 1
+          ? round2(saleLevelDiscount - allocated)
+          : grossSum > 0
+            ? round2((saleLevelDiscount * l.total) / grossSum)
+            : 0;
+      allocated = round2(allocated + share);
+      l.net = round2(Math.max(0, l.total - share));
+      l.taxAmount = round2((l.net * l.taxPercent) / 100);
+    });
+    const taxableBase = round2(lines.reduce((s, l) => s + l.net, 0));
+    const tax = round2(lines.reduce((s, l) => s + l.taxAmount, 0));
 
     let deliveryFeeAmount = 0;
     if (args.deliveryFeeId) {
@@ -258,6 +286,7 @@ export async function performSale(
     const dateString = getLocalDateString(now);
     const seq = await nextSequence(ctx, `sale_sequence_${args.branchId}`, dateString);
     const saleNumber = `${branch.code}-${dateString.replace(/-/g, "").slice(2)}-${String(seq).padStart(3, "0")}`;
+    const fiscal = await nextFiscalNumber(ctx, "SALE", Number(dateString.slice(0, 4)), now);
 
     // 6. Session.
     const session = payments.some((p) => isCash(p.method))
@@ -291,6 +320,9 @@ export async function performSale(
       deliveryFeeId: args.deliveryFeeId,
       deliveryFeeAmount: deliveryFeeAmount || undefined,
       tierDiscountAmount: tierDiscountAmount || undefined,
+      fiscalSeriesId: fiscal.seriesId,
+      fiscalNumber: fiscal.fiscalNumber,
+      customerNuit: customer.nuit,
       customerName: customer.name,
       itemSummary: lines.map((l) => ({
         productVariantId: l.productVariantId,
@@ -315,6 +347,9 @@ export async function performSale(
         discount: l.discount,
         total: l.total,
         costPriceAtSale: l.costPriceAtSale,
+        taxRateId: l.taxRateId,
+        taxRatePercent: l.taxPercent,
+        taxAmount: l.taxAmount,
       });
       await ctx.runMutation(internal.inventory.mutateStock, {
         productVariantId: l.productVariantId,

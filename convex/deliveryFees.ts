@@ -152,17 +152,12 @@ export const remove = mutation({
       throw new Error("Delivery fee not found.");
     }
 
-    // Check if used in any current sales, or (for historical data) legacy orders.
     const usedInSales = await ctx.db
       .query("sales")
       .withIndex("by_delivery_fee", (q) => q.eq("deliveryFeeId", args.id))
       .first();
-    const usedInOrders = await ctx.db
-      .query("orders")
-      .withIndex("by_delivery_fee", (q) => q.eq("deliveryFeeId", args.id))
-      .first();
 
-    if (usedInSales || usedInOrders) {
+    if (usedInSales) {
       throw new Error("Cannot delete this delivery fee because it is already used in sales. Please deactivate it instead.");
     }
 

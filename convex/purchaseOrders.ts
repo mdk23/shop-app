@@ -2,10 +2,10 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { nextSequence } from "./metrics";
+import { receiveIntoStock } from "./lib/receiving";
 
 const PO_ITEM = v.object({
   productVariantId: v.id("productVariants"),
@@ -299,63 +299,12 @@ export const receiveItems = mutation({
     const branchId = args.branchId ?? po.branchId;
     if (!branchId) throw new Error("No branch to receive stock into.");
 
-    const poItems = await ctx.db
-      .query("purchaseOrderItems")
-      .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
-      .collect();
-
-    for (const rx of args.items) {
-      if (rx.quantityReceived <= 0) continue;
-      const line = poItems.find(
-        (i) => i.productVariantId === rx.productVariantId
-      );
-      if (!line)
-        throw new Error("A received line is not part of this purchase order.");
-      const outstanding = line.quantityOrdered - line.quantityReceived;
-      if (rx.quantityReceived > outstanding)
-        throw new Error(
-          `Receiving ${rx.quantityReceived} exceeds the ${outstanding} still outstanding on a line.`
-        );
-
-      await ctx.db.patch(line._id, {
-        quantityReceived: line.quantityReceived + rx.quantityReceived,
-      });
-      await ctx.runMutation(internal.inventory.mutateStock, {
-        productVariantId: rx.productVariantId,
-        branchId,
-        quantity: rx.quantityReceived,
-        movementType: "PURCHASE",
-        referenceType: "purchase_order",
-        referenceId: po._id,
-        costPerUnit: line.unitCost,
-        notes: `Received via ${po.orderCode}`,
-        userId: actor._id,
-        username: actor.username,
-      });
-    }
-
-    const updated = await ctx.db
-      .query("purchaseOrderItems")
-      .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
-      .collect();
-    const allComplete = updated.every(
-      (i) => i.quantityReceived >= i.quantityOrdered
-    );
-    const anyReceived = updated.some((i) => i.quantityReceived > 0);
-    const newStatus = allComplete
-      ? "completed"
-      : anyReceived
-        ? "partially_received"
-        : po.status;
-    await ctx.db.patch(po._id, { status: newStatus });
-
-    await writeAudit(ctx, {
-      userId: actor._id,
-      username: actor.username,
-      action: "purchase_order.received",
-      entityType: "purchaseOrder",
-      entityId: po._id,
-      details: `${po.orderCode}: received into branch ${branchId}, status ${newStatus}`,
+    await receiveIntoStock(ctx, actor, {
+      purchaseOrder: po,
+      branchId,
+      lines: args.items,
+      allowOver: false,
+      allowUnannounced: false,
     });
     return po._id;
   },
