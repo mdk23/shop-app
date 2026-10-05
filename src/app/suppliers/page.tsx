@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -111,7 +112,11 @@ export default function SuppliersPage() {
             <tbody>
               {(page.rows as Supplier[]).map((s) => (
                 <tr key={s._id} className="hover:bg-surface-container-low">
-                  <Td className="font-bold">{s.name}</Td>
+                  <Td className="font-bold">
+                    <Link href={`/suppliers/${s._id}`} className="hover:text-primary">
+                      {s.name}
+                    </Link>
+                  </Td>
                   <Td className="text-on-surface-variant">{s.contactName ?? "—"}</Td>
                   <Td>{s.phone ?? "—"}</Td>
                   <Td className="text-on-surface-variant">{s.paymentTerms ?? "—"}</Td>

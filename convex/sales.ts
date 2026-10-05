@@ -22,7 +22,7 @@ import {
 } from "./metrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { refreshCustomerProfile } from "./customerProfile";
-import { nextFiscalNumber, round2 } from "./lib/fiscal";
+import { currentNuit, nextFiscalNumber, round2 } from "./lib/fiscal";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -176,10 +176,21 @@ export async function performSale(
           q.eq("branchId", args.branchId).eq("productVariantId", item.productVariantId)
         )
         .unique();
-      const available = stock?.quantity ?? 0;
+      const holds = await ctx.db
+        .query("stockHolds")
+        .withIndex("by_branch_variant_status", (q) =>
+          q
+            .eq("branchId", args.branchId)
+            .eq("productVariantId", item.productVariantId)
+            .eq("status", "ACTIVE")
+        )
+        .collect();
+      const reserved = holds.reduce((s, h) => s + h.quantity, 0);
+      const available = (stock?.quantity ?? 0) - reserved;
       if (available < item.quantity && !allowNegSetting) {
+        const reservedNote = reserved > 0 ? ` (${reserved} held for customer orders)` : "";
         throw new Error(
-          `Insufficient stock for ${product.name} (${variantLabel(variant)}). Available: ${available}, requested: ${item.quantity}.`
+          `Insufficient stock for ${product.name} (${variantLabel(variant)}). Available: ${available}${reservedNote}, requested: ${item.quantity}.`
         );
       }
 
@@ -322,7 +333,7 @@ export async function performSale(
       tierDiscountAmount: tierDiscountAmount || undefined,
       fiscalSeriesId: fiscal.seriesId,
       fiscalNumber: fiscal.fiscalNumber,
-      customerNuit: customer.nuit,
+      customerNuit: await currentNuit(ctx, customer._id),
       customerName: customer.name,
       itemSummary: lines.map((l) => ({
         productVariantId: l.productVariantId,
@@ -487,7 +498,7 @@ export const create = mutation({
   },
 });
 
-/** Internal entrypoint for exchanges / migrations. */
+/** Internal entrypoint for exchanges. */
 export const createInternal = internalMutation({
   args: {
     actingUserId: v.id("users"),

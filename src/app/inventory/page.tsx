@@ -63,6 +63,10 @@ export default function InventoryPage() {
         }
       : "skip"
   );
+  const held = useQuery(
+    api.stockHolds.activeByBranch,
+    effectiveBranch ? { branchId: effectiveBranch } : "skip"
+  );
   const valuation = useQuery(
     api.analytics.inventoryValuation,
     effectiveBranch ? { branchId: effectiveBranch } : "skip"
@@ -166,6 +170,7 @@ export default function InventoryPage() {
                 <Th>{t("SKU")}</Th>
                 <Th>{t("Category")}</Th>
                 <Th className="text-right">{t("On hand")}</Th>
+                <Th className="text-right">{t("Reserved")}</Th>
                 <Th className="text-right">{t("Reorder")}</Th>
                 <Th className="text-right">{t("Cost")}</Th>
                 <Th className="text-right">{t("Price")}</Th>
@@ -180,6 +185,7 @@ export default function InventoryPage() {
                   <Td className="font-mono text-[11px]">{r.sku}</Td>
                   <Td className="text-on-surface-variant">{r.categoryName}</Td>
                   <Td className="text-right font-bold">{r.quantity}</Td>
+                  <Td className="text-right text-on-surface-variant">{held?.[r.productVariantId] ?? 0}</Td>
                   <Td className="text-right text-on-surface-variant">{r.reorderLevel}</Td>
                   <Td className="text-right">{fmt(r.costPrice)}</Td>
                   <Td className="text-right">{fmt(r.sellingPrice)}</Td>

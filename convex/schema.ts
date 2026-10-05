@@ -1,5 +1,14 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { governanceTables } from "./schemaTables/governance";
+import { catalogTables } from "./schemaTables/catalog";
+import { relationTables } from "./schemaTables/relations";
+import { commitmentTables } from "./schemaTables/commitments";
+import { procurementTables } from "./schemaTables/procurement";
+import { stockTables } from "./schemaTables/stock";
+import { afterSalesTables } from "./schemaTables/afterSales";
+import { planningTables } from "./schemaTables/planning";
+import { supplyChainTables } from "./schemaTables/supplyChain";
 
 /**
  * CLOTHING RETAIL MANAGEMENT SYSTEM — schema
@@ -9,10 +18,8 @@ import { v } from "convex/values";
  * Stock is ledger-based: `inventoryMovements` is the source of truth, `variantStock`
  * is a per-branch denormalized cache updated in the same mutation as the ledger row.
  *
- * The `LEGACY` section at the bottom holds the old restaurant tables verbatim so
- * existing rows keep validating while `convex/migrations/*` transforms them. Those
- * tables (and the transition-only optional fields marked "// migration bridge")
- * are removed in a follow-up schema pass once `migrations.dropLegacy` has run.
+ * The restaurant-era tables and migration-only fields were removed once the
+ * legacy data had been migrated (see git history before this pass).
  */
 
 // ─────────────────────────────────────────────
@@ -347,6 +354,8 @@ export default defineSchema({
     cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
     // For exchanges: the follow-up sale that issued replacement items.
     exchangeSaleId: v.optional(v.id("sales")),
+    resolutionId: v.optional(v.id("resolutions")),
+    complaintId: v.optional(v.id("complaints")),
     createdAt: v.number(),
   })
     .index("by_sale", ["saleId"])
@@ -371,22 +380,23 @@ export default defineSchema({
       v.literal("OTHER")
     ),
     restock: v.boolean(),
+    // DAMAGED goods are never put back on sale, whatever `restock` says.
+    condition: v.optional(
+      v.union(v.literal("SELLABLE"), v.literal("USED"), v.literal("DAMAGED"))
+    ),
   })
     .index("by_return", ["returnId"])
     .index("by_sale_item", ["saleItemId"]),
 
   payments: defineTable({
     saleId: v.optional(v.id("sales")),
-    orderId: v.optional(v.id("orders")), // migration bridge (legacy rows)
     method: v.string(),
     amount: v.number(),
     // Negative amount = refund. `kind` disambiguates for reporting.
     kind: v.optional(v.union(v.literal("payment"), v.literal("refund"))),
     returnId: v.optional(v.id("salesReturns")),
     createdAt: v.number(),
-  })
-    .index("by_sale", ["saleId"])
-    .index("by_order", ["orderId"]),
+  }).index("by_sale", ["saleId"]),
 
   // ─────────────────────────────────────────────
   // INVENTORY
@@ -395,10 +405,8 @@ export default defineSchema({
   inventoryMovements: defineTable({
     movementDate: v.number(),
     productVariantId: v.optional(v.id("productVariants")),
-    itemId: v.optional(v.id("ingredients")), // migration bridge (legacy rows)
     productName: v.optional(v.string()),
     variantLabel: v.optional(v.string()),
-    itemName: v.optional(v.string()), // migration bridge (legacy rows)
     sku: v.optional(v.string()),
     branchId: v.optional(v.id("branches")),
     movementType: v.string(), // see INVENTORY_MOVEMENT_TYPES
@@ -416,7 +424,6 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_variant", ["productVariantId"])
-    .index("by_item", ["itemId"])
     .index("by_branch_and_variant", ["branchId", "productVariantId"])
     .index("by_date", ["movementDate"])
     .index("by_type", ["movementType"])
@@ -527,7 +534,6 @@ export default defineSchema({
     address: v.optional(v.string()),
     notes: v.optional(v.string()),
     customerCode: v.optional(v.string()),
-    nuit: v.optional(v.string()), // Mozambican tax number, printed on fiscal documents when present
     isGeneric: v.optional(v.boolean()),
     active: v.optional(v.boolean()),
     status: v.optional(v.union(v.literal("active"), v.literal("archived"))),
@@ -585,14 +591,109 @@ export default defineSchema({
   // history (INFERIDO) or set by hand in the Ficha (CONFIRMADO, never
   // overwritten by inference). sizeName is denormalized so the POS rail can
   // render chips with zero joins.
+  // Customer orders (encomendas): goods the customer pays for in parts (deposits)
+  // and collects later. Prices are snapshotted on the lines at order time.
+  customerOrders: defineTable({
+    orderNumber: v.string(),
+    customerId: v.id("customers"),
+    branchId: v.id("branches"),
+    status: v.union(
+      v.literal("OPEN"),
+      v.literal("READY"),
+      v.literal("COLLECTED"),
+      v.literal("CANCELLED")
+    ),
+    totalAmount: v.number(),
+    expectedDate: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    paymentTermId: v.optional(v.id("paymentTerms")),
+    conditions: v.optional(v.string()),
+    saleId: v.optional(v.id("sales")),
+    createdByUsername: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    closedAt: v.optional(v.number()),
+  })
+    .index("by_customer", ["customerId"])
+    .index("by_status", ["status"])
+    .index("by_order_number", ["orderNumber"]),
+
+  customerOrderItems: defineTable({
+    orderId: v.id("customerOrders"),
+    productVariantId: v.id("productVariants"),
+    productName: v.string(),
+    variantLabel: v.string(),
+    quantity: v.number(),
+    unitPrice: v.number(),
+    lineTotal: v.number(),
+  }).index("by_order", ["orderId"]),
+
+  customerDeposits: defineTable({
+    orderId: v.id("customerOrders"),
+    customerId: v.id("customers"),
+    amount: v.number(),
+    method: v.string(),
+    referenceExternal: v.optional(v.string()),
+    receivedByUsername: v.string(),
+    createdAt: v.number(),
+  }).index("by_order", ["orderId"]),
+
+  // Stock set aside for an order. Holds reduce what the POS can sell, and are
+  // released when the order is collected or cancelled.
+  stockHolds: defineTable({
+    orderId: v.id("customerOrders"),
+    branchId: v.id("branches"),
+    productVariantId: v.id("productVariants"),
+    quantity: v.number(),
+    status: v.union(v.literal("ACTIVE"), v.literal("RELEASED")),
+    createdAt: v.number(),
+    releasedAt: v.optional(v.number()),
+  })
+    .index("by_order", ["orderId"])
+    .index("by_branch_variant_status", ["branchId", "productVariantId", "status"]),
+
+  // Complaints (reclamações) from a customer about a purchase. Resolved by a return,
+  // a repair, a credit, or rejected; a return can point back to the complaint.
+  complaints: defineTable({
+    customerId: v.optional(v.id("customers")),
+    saleId: v.optional(v.id("sales")),
+    description: v.string(),
+    status: v.union(v.literal("OPEN"), v.literal("RESOLVED"), v.literal("REJECTED")),
+    resolutionId: v.optional(v.id("resolutions")),
+    resolutionNotes: v.optional(v.string()),
+    createdByUsername: v.string(),
+    createdAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_customer", ["customerId"])
+    .index("by_sale", ["saleId"])
+    .index("by_status", ["status"]),
+
   // Demand the shop could not meet (or a customer asked to be told about). Records
   // lost sales so buying can see what people wanted; `customerId` is optional for
   // walk-in requests.
   wantList: defineTable({
     customerId: v.optional(v.id("customers")),
     description: v.string(),
+    productId: v.optional(v.id("products")),
     productVariantId: v.optional(v.id("productVariants")),
     categoryId: v.optional(v.id("categories")),
+    sizeId: v.optional(v.id("sizes")),
+    colorId: v.optional(v.id("colors")),
+    maxPrice: v.optional(v.number()),
+    quantity: v.optional(v.number()),
+    neededBy: v.optional(v.number()),
+    intendedUse: v.optional(v.string()),
+    // Why the sale did not happen, for counting lost sales by cause.
+    reason: v.optional(
+      v.union(
+        v.literal("WRONG_SIZE"),
+        v.literal("WRONG_COLOR"),
+        v.literal("PRICE_TOO_HIGH"),
+        v.literal("NOT_IN_STOCK"),
+        v.literal("OTHER")
+      )
+    ),
     branchId: v.optional(v.id("branches")),
     status: v.union(v.literal("OPEN"), v.literal("FULFILLED"), v.literal("CANCELLED")),
     notes: v.optional(v.string()),
@@ -602,7 +703,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_customer", ["customerId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_reason", ["reason"]),
 
   // Contacts with a customer (calls, WhatsApp, visits). Follow-up notes that used to
   // live only in `customers.notes`.
@@ -646,7 +748,6 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("inactive")),
     paymentTerms: v.optional(v.string()),
     notes: v.optional(v.string()),
-    suppliedIngredients: v.optional(v.array(v.id("ingredients"))), // migration bridge
     suppliedVariants: v.optional(v.array(v.id("productVariants"))),
     createdAt: v.number(),
   }).index("by_status", ["status"]),
@@ -680,7 +781,6 @@ export default defineSchema({
   purchaseOrderItems: defineTable({
     purchaseOrderId: v.id("purchaseOrders"),
     productVariantId: v.optional(v.id("productVariants")),
-    ingredientId: v.optional(v.id("ingredients")), // migration bridge (legacy rows)
     quantityOrdered: v.number(),
     quantityReceived: v.number(),
     unitCost: v.number(),
@@ -763,14 +863,12 @@ export default defineSchema({
     ),
     amount: v.number(),
     description: v.string(),
-    orderId: v.optional(v.id("orders")), // migration bridge (legacy rows)
     saleId: v.optional(v.id("sales")),
     returnId: v.optional(v.id("salesReturns")),
     createdAt: v.number(),
   })
     .index("by_session", ["sessionId"])
     .index("by_user", ["userId"])
-    .index("by_order", ["orderId"])
     .index("by_sale", ["saleId"]),
 
   // ─────────────────────────────────────────────
@@ -894,20 +992,19 @@ export default defineSchema({
     colorSales: v.optional(v.record(v.string(), v.number())),
     customerIds: v.optional(v.array(v.string())),
 
-    // legacy restaurant fields (migration bridge — dropped after rebuildAnalytics)
-    grossRevenue: v.optional(v.number()),
-    deliveryRevenue: v.optional(v.number()),
-    orderCount: v.optional(v.number()),
-    cancelledOrderCount: v.optional(v.number()),
-    deliveryOrdersCount: v.optional(v.number()),
-    pickupOrdersCount: v.optional(v.number()),
-    profileSalesCount: v.optional(v.number()),
-    genericSalesCount: v.optional(v.number()),
     fullyPaidCount: v.optional(v.number()),
     partiallyPaidCount: v.optional(v.number()),
     pendingCount: v.optional(v.number()),
-    wasteCount: v.optional(v.number()),
-    wasteCost: v.optional(v.number()),
   }).index("by_date", ["dateString"])
     .index("by_date_and_branch", ["dateString", "branchId"]),
+
+  ...governanceTables,
+  ...catalogTables,
+  ...relationTables,
+  ...commitmentTables,
+  ...procurementTables,
+  ...stockTables,
+  ...afterSalesTables,
+  ...planningTables,
+  ...supplyChainTables,
 });

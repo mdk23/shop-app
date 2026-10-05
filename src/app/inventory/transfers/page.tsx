@@ -22,6 +22,7 @@ import {
   Toolbar,
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
+import { TransferReceiveModal } from "@/components/transfers/TransferReceiveModal";
 import { useToken, useResolvedBranch } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { usePagedQuery } from "@/lib/pagination";
@@ -259,7 +260,7 @@ function TransferDetail({
   const { t } = useTranslation();
   const transfer = useQuery(api.stockTransfers.get, { id });
   const setStatus = useMutation(api.stockTransfers.setStatus);
-  const receive = useMutation(api.stockTransfers.receive);
+  const [receivingId, setReceivingId] = useState<Id<"stockTransfers"> | null>(null);
   const [busy, setBusy] = useState(false);
 
   const act = async (fn: () => Promise<unknown>, msg: string) => {
@@ -328,12 +329,16 @@ function TransferDetail({
                 >
                   {t("Cancel")}
                 </Button>
-                <Button
-                  loading={busy}
-                  onClick={() => act(() => receive({ token, transferId: id }), t("Received"))}
-                >
+                <Button loading={busy} onClick={() => setReceivingId(id)}>
                   {t("Receive")}
                 </Button>
+                {receivingId === id && (
+                  <TransferReceiveModal
+                    transferId={id}
+                    onClose={() => setReceivingId(null)}
+                    onDone={() => setReceivingId(null)}
+                  />
+                )}
               </>
             )}
           </div>

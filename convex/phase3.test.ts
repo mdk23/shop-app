@@ -78,6 +78,44 @@ describe("want list (unmet demand)", () => {
   });
 });
 
+describe("want list: size, colour, budget and reason", () => {
+  test("stores the structured request and counts lost sales by reason", async () => {
+    const { t, token, customerId } = await seed();
+    const sizeId = await t.run((ctx) =>
+      ctx.db.insert("sizes", { name: "42", active: true, createdAt: 1, updatedAt: 1 })
+    );
+    const colorId = await t.run((ctx) =>
+      ctx.db.insert("colors", { name: "Black", active: true, createdAt: 1, updatedAt: 1 })
+    );
+    const id = await t.mutation(api.wantList.create, {
+      token,
+      customerId,
+      description: "Running shoes",
+      sizeId,
+      colorId,
+      maxPrice: 1500,
+      reason: "PRICE_TOO_HIGH",
+    });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row).toMatchObject({ sizeId, colorId, maxPrice: 1500, reason: "PRICE_TOO_HIGH" });
+
+    await t.mutation(api.wantList.create, {
+      token,
+      description: "Any sock",
+      reason: "NOT_IN_STOCK",
+    });
+    const counts = await t.query(api.wantList.countByReason, {});
+    expect(counts).toEqual({ PRICE_TOO_HIGH: 1, NOT_IN_STOCK: 1 });
+  });
+
+  test("rejects a negative budget", async () => {
+    const { t, token, customerId } = await seed();
+    await expect(
+      t.mutation(api.wantList.create, { token, customerId, description: "X", maxPrice: -1 })
+    ).rejects.toThrow(/negative/);
+  });
+});
+
 describe("customer interactions", () => {
   test("logs contacts and lists the newest first", async () => {
     const { t, token, customerId } = await seed();

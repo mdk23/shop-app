@@ -272,13 +272,15 @@ describe("fiscal numbering", () => {
 
   test("copies the customer's NUIT onto the sale", async () => {
     const { t, ids, token } = await seed();
-    await t.mutation(api.customers.update, {
-      token,
-      id: ids.customerId,
-      name: "Jane Doe",
-      phone1: "841234567",
-      nuit: "400123456",
-    });
+    await t.run((ctx) =>
+      ctx.db.insert("fiscalIdentities", {
+        personId: ids.customerId,
+        identificationType: "NUIT",
+        number: "400123456",
+        country: "MZ",
+        validFrom: Date.now(),
+      })
+    );
     const saleId = await t.mutation(api.sales.create, {
       token,
       branchId: ids.branchId,

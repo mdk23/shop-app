@@ -1,9 +1,21 @@
-import { MutationCtx } from "../_generated/server";
+import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
 const PREFIX_BY_TYPE = { SALE: "FT", RETURN: "NC" } as const;
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** The customer's open NUIT, if one is recorded in fiscalIdentities. */
+export async function currentNuit(
+  ctx: QueryCtx | MutationCtx,
+  personId: Id<"customers">
+): Promise<string | undefined> {
+  const rows = await ctx.db
+    .query("fiscalIdentities")
+    .withIndex("by_person", (q) => q.eq("personId", personId))
+    .collect();
+  return rows.find((r) => r.identificationType === "NUIT" && r.validTo === undefined)?.number;
+}
 
 /**
  * Takes the next gapless fiscal number for a document type in a fiscal year.

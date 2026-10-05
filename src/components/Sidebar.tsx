@@ -28,6 +28,17 @@ import {
   LogOut,
   ChevronLeft,
   ChevronDown,
+  PackageCheck,
+  Target,
+  Search,
+  MessageSquareWarning,
+  Ship,
+  ShieldCheck,
+  ClipboardCheck,
+  MapPin,
+  Percent,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -53,6 +64,18 @@ const topMenuItems: MenuItem[] = [
 
 const menuGroups: MenuGroup[] = [
   {
+    id: "relation",
+    name: "Relation & Demand",
+    emoji: "🤝",
+    items: [
+      { name: "Customers", href: "/customers", icon: Users },
+      { name: "Customer Orders", href: "/orders", icon: PackageCheck },
+      { name: "Opportunities", href: "/opportunities", icon: Target },
+      { name: "Requests", href: "/requests", icon: Search },
+      { name: "Complaints", href: "/complaints", icon: MessageSquareWarning, allowedRoles: MANAGER },
+    ],
+  },
+  {
     id: "sales",
     name: "Sales",
     emoji: "🧾",
@@ -60,7 +83,6 @@ const menuGroups: MenuGroup[] = [
       { name: "Sales", href: "/sales", icon: Receipt, allowedRoles: MANAGER },
       { name: "Returns", href: "/returns", icon: RotateCcw },
       { name: "Cash Reports", href: "/cash-register/reports", icon: ScrollText, allowedRoles: MANAGER },
-      { name: "Customers", href: "/customers", icon: Users },
     ],
   },
   {
@@ -70,6 +92,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { name: "Products", href: "/products", icon: Shirt, allowedRoles: MANAGER },
       { name: "Categories", href: "/products/categories", icon: Tags, allowedRoles: MANAGER },
+      { name: "Promotions", href: "/promotions", icon: Percent, allowedRoles: MANAGER },
       { name: "Sizes", href: "/settings/sizes", icon: Ruler, allowedRoles: MANAGER },
       { name: "Colors", href: "/settings/colors", icon: Palette, allowedRoles: MANAGER },
     ],
@@ -83,6 +106,8 @@ const menuGroups: MenuGroup[] = [
       { name: "Adjustments", href: "/inventory/adjustments", icon: SlidersHorizontal, allowedRoles: MANAGER },
       { name: "Transfers", href: "/inventory/transfers", icon: ArrowLeftRight, allowedRoles: MANAGER },
       { name: "Stock Ledger", href: "/inventory/ledger", icon: ScrollText, allowedRoles: MANAGER },
+      { name: "Stock counts", href: "/stock-counts", icon: ClipboardCheck, allowedRoles: MANAGER },
+      { name: "Locations", href: "/settings/locations", icon: MapPin, allowedRoles: MANAGER },
     ],
   },
   {
@@ -92,6 +117,9 @@ const menuGroups: MenuGroup[] = [
     items: [
       { name: "Suppliers", href: "/suppliers", icon: Truck, allowedRoles: MANAGER },
       { name: "Purchase Orders", href: "/purchase-orders", icon: ClipboardList, allowedRoles: MANAGER },
+      { name: "Goods received", href: "/receipts", icon: PackageCheck, allowedRoles: MANAGER },
+      { name: "Shipments", href: "/shipments", icon: Ship, allowedRoles: MANAGER },
+      { name: "Quality", href: "/quality", icon: ShieldCheck, allowedRoles: MANAGER },
     ],
   },
   {
@@ -100,6 +128,8 @@ const menuGroups: MenuGroup[] = [
     emoji: "⚙️",
     items: [
       { name: "Reports", href: "/reports", icon: BarChart3, allowedRoles: MANAGER },
+      { name: "Insights", href: "/insights", icon: TrendingUp, allowedRoles: MANAGER },
+      { name: "Commercial settings", href: "/settings/commercial", icon: Wallet, allowedRoles: MANAGER },
       { name: "Users", href: "/users", icon: Shield, allowedRoles: MANAGER },
       { name: "Settings", href: "/settings", icon: Settings, allowedRoles: MANAGER },
       { name: "Audit Logs", href: "/settings/audit-logs", icon: FileClock, allowedRoles: MANAGER },

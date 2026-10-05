@@ -50,6 +50,13 @@ export function CustomerFormModal({
 
   const categories = useQuery(api.categories.list, {});
   const colors = useQuery(api.colors.list, {});
+  const currentNuitValue = useQuery(
+    api.fiscalIdentities.getNuit,
+    existing ? { personId: existing._id } : "skip"
+  );
+  const setNuitMutation = useMutation(api.fiscalIdentities.setNuit);
+  const [nuit, setNuitValue] = useState<string | null>(null);
+  const nuitShown = nuit ?? currentNuitValue ?? "";
   // Only fetched when editing, to prefill preferences already on file.
   const context = useQuery(
     api.customers.getPosContext,
@@ -98,6 +105,8 @@ export function CustomerFormModal({
   const save = async () => {
     if (!f.name.trim() || !f.phone1.trim())
       return toast.error(t("Name and phone are required."));
+    const nuitValue = nuitShown.trim();
+    if (nuitValue && !/^\d{9}$/.test(nuitValue)) return toast.error(t("A NUIT has nine digits."));
     setBusy(true);
     try {
       const payload = {
@@ -125,6 +134,9 @@ export function CustomerFormModal({
         preferredCategoryIds: categoryIds,
         preferredColorIds: colorIds,
       });
+      if (nuitValue && nuitValue !== (currentNuitValue ?? "")) {
+        await setNuitMutation({ token, personId: id, number: nuitValue });
+      }
 
       onSaved?.(id);
       onClose();
@@ -169,6 +181,13 @@ export function CustomerFormModal({
         </Field>
         <Field label={t("Address")}>
           <TextInput value={f.address} onChange={(e) => set("address", e.target.value)} />
+        </Field>
+        <Field label={t("Tax number (NUIT)")} hint={t("Nine digits. Optional.")}>
+          <TextInput
+            value={nuitShown}
+            onChange={(e) => setNuitValue(e.target.value)}
+            placeholder="400000000"
+          />
         </Field>
 
         <div className="border-t border-outline/40 pt-4">

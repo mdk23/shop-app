@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -175,7 +176,11 @@ export default function ProductsPage() {
             <tbody>
               {(products as ProductRow[]).map((p) => (
                 <tr key={p._id} className="hover:bg-surface-container-low">
-                  <Td className="font-bold">{p.name}</Td>
+                  <Td className="font-bold">
+                    <Link href={`/products/${p._id}`} className="hover:text-primary">
+                      {p.name}
+                    </Link>
+                  </Td>
                   <Td className="text-on-surface-variant">{p.categoryName}</Td>
                   <Td>
                     <Badge tone="info">{t(GENDER_LABEL[p.gender ?? "unisex"])}</Badge>

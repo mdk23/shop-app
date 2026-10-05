@@ -38,6 +38,23 @@ const REASONS = [
   "OTHER",
 ] as const;
 
+const CONDITIONS = ["SELLABLE", "USED", "DAMAGED"] as const;
+type Condition = (typeof CONDITIONS)[number];
+const CONDITION_LABEL: Record<Condition, string> = {
+  SELLABLE: "Sellable",
+  USED: "Used",
+  DAMAGED: "Damaged",
+};
+const RESOLUTIONS = [
+  { value: "TROCA", label: "Exchange" },
+  { value: "DEVOLUCAO", label: "Return" },
+  { value: "REEMBOLSO", label: "Refund" },
+  { value: "CREDITO", label: "Store credit" },
+  { value: "REPARACAO", label: "Repair" },
+  { value: "RECUSA", label: "Reject" },
+] as const;
+type Resolution = (typeof RESOLUTIONS)[number]["value"];
+
 const REFUND_METHODS = [
   "CASH",
   "CARD",
@@ -210,10 +227,11 @@ function ReturnModal({
   const exchange = useMutation(api.salesReturns.exchange);
   const [mode, setMode] = useState<"return" | "exchange">("return");
   const [rows, setRows] = useState<
-    Record<string, { qty: number; reason: (typeof REASONS)[number]; restock: boolean }>
+    Record<string, { qty: number; reason: (typeof REASONS)[number]; restock: boolean; condition: Condition }>
   >({});
   const [refundMethod, setRefundMethod] =
     useState<(typeof REFUND_METHODS)[number]>("CASH");
+  const [resolution, setResolution] = useState<Resolution | "">("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [replacements, setReplacements] = useState<
@@ -225,7 +243,7 @@ function ReturnModal({
     setRows((p) =>
       p[id]
         ? Object.fromEntries(Object.entries(p).filter(([k]) => k !== id))
-        : { ...p, [id]: { qty: item.quantity, reason: "WRONG_SIZE", restock: true } }
+        : { ...p, [id]: { qty: item.quantity, reason: "WRONG_SIZE", restock: true, condition: "SELLABLE" } }
     );
 
   const estRefund = Object.entries(rows).reduce((sum, [id, r]) => {
@@ -245,6 +263,7 @@ function ReturnModal({
       quantity: r.qty,
       reason: r.reason,
       restock: r.restock,
+      condition: r.condition,
     }));
     if (items.length === 0) return toast.error(t("Select at least one item."));
     setBusy(true);
@@ -255,7 +274,7 @@ function ReturnModal({
         const res = await exchange({
           token,
           saleId: sale._id,
-          returnItems: items,
+          returnItems: items.map(({ condition: _condition, ...rest }) => rest),
           replacementItems: replacements.map((r) => ({
             productVariantId: r.variantId,
             quantity: r.quantity,
@@ -282,6 +301,7 @@ function ReturnModal({
           items,
           refundMethod,
           notes: notes || undefined,
+          resolutionType: resolution || undefined,
         });
         toast.success(t("Return processed"));
       }
@@ -341,6 +361,7 @@ function ReturnModal({
             <Th className="text-right">{t("Sold")}</Th>
             <Th className="text-right w-20">{t("Return")}</Th>
             <Th className="w-40">{t("Reason")}</Th>
+            <Th className="w-36">{t("Condition")}</Th>
             <Th className="w-20">{t("Restock")}</Th>
           </tr>
         </thead>
@@ -394,6 +415,24 @@ function ReturnModal({
                     {REASONS.map((r) => (
                       <option key={r} value={r}>
                         {r.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </Select>
+                </Td>
+                <Td>
+                  <Select
+                    disabled={!row}
+                    value={row?.condition ?? "SELLABLE"}
+                    onChange={(e) =>
+                      setRows((p) => ({
+                        ...p,
+                        [it._id]: { ...p[it._id], condition: e.target.value as Condition },
+                      }))
+                    }
+                  >
+                    {CONDITIONS.map((c) => (
+                      <option key={c} value={c}>
+                        {t(CONDITION_LABEL[c])}
                       </option>
                     ))}
                   </Select>
@@ -513,6 +552,18 @@ function ReturnModal({
             </Select>
           )}
         </Field>
+        {mode === "return" && (
+          <Field label={t("Resolution")} hint={t("Optional. Recorded for after-sales reporting.")}>
+            <Select value={resolution} onChange={(e) => setResolution(e.target.value as Resolution | "")}>
+              <option value="">{t("Not recorded")}</option>
+              {RESOLUTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {t(r.label)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field label={t("Notes")}>
           <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>

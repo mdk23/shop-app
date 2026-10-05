@@ -1,0 +1,258 @@
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
+import { describe, expect, test } from "vitest";
+import { api } from "./_generated/api";
+import schema from "./schema";
+import type { Id } from "./_generated/dataModel";
+
+const modules = import.meta.glob("./**/*.ts");
+
+async function seed() {
+  const t = convexTest(schema, modules);
+  const token = "tok-admin";
+  const ids = await t.run(async (ctx) => {
+    const now = Date.now();
+    const branchId = await ctx.db.insert("branches", {
+      name: "Main",
+      code: "MAIN",
+      status: "active",
+      createdAt: now,
+    });
+    const supplierId = await ctx.db.insert("suppliers", {
+      name: "Supplier Co",
+      status: "active",
+      createdAt: now,
+    });
+    const categoryId = await ctx.db.insert("categories", {
+      name: "T-Shirts",
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const productId = await ctx.db.insert("products", {
+      name: "Tee",
+      categoryId,
+      defaultCostPrice: 40,
+      defaultSellingPrice: 250,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const variantId = await ctx.db.insert("productVariants", {
+      productId,
+      sku: "TEE-M",
+      size: "M",
+      costPrice: 40,
+      sellingPrice: 250,
+      reorderLevel: 0,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const poId = await ctx.db.insert("purchaseOrders", {
+      supplierId,
+      branchId,
+      orderCode: "PO-00001",
+      orderDate: now,
+      status: "sent",
+      paymentStatus: "unpaid",
+      totalAmount: 400,
+      createdAt: now,
+    });
+    await ctx.db.insert("purchaseOrderItems", {
+      purchaseOrderId: poId,
+      productVariantId: variantId,
+      quantityOrdered: 10,
+      quantityReceived: 4,
+      unitCost: 40,
+      totalCost: 400,
+    });
+    const userId = await ctx.db.insert("users", {
+      name: "admin",
+      username: "admin",
+      passwordHash: "",
+      role: "admin",
+      status: "active",
+      createdAt: now,
+    });
+    await ctx.db.insert("userSessions", {
+      userId,
+      token,
+      expiresAt: now + 3_600_000,
+      createdAt: now,
+    });
+    return { branchId, supplierId, variantId, poId };
+  });
+  return { t, token, ids };
+}
+
+describe("supplier evaluation and relations", () => {
+  test("scores must be between 1 and 5", async () => {
+    const { t, token, ids } = await seed();
+    await expect(
+      t.mutation(api.supplierEvaluations.create, {
+        token,
+        supplierId: ids.supplierId,
+        qualityScore: 6,
+        punctualityPercent: 90,
+      })
+    ).rejects.toThrow(/between 1 and 5/);
+    await t.mutation(api.supplierEvaluations.create, {
+      token,
+      supplierId: ids.supplierId,
+      qualityScore: 4,
+      punctualityPercent: 90,
+    });
+    expect(await t.query(api.supplierEvaluations.listBySupplier, { supplierId: ids.supplierId })).toHaveLength(1);
+  });
+
+  test("a supplier has one open relation, and a new term closes the previous one", async () => {
+    const { t, token, ids } = await seed();
+    const relationId = await t.mutation(api.supplyRelations.createRelation, {
+      token,
+      supplierId: ids.supplierId,
+    });
+    await expect(
+      t.mutation(api.supplyRelations.createRelation, { token, supplierId: ids.supplierId })
+    ).rejects.toThrow(/open relation/);
+
+    await t.mutation(api.supplyRelations.addTerm, {
+      token,
+      supplyRelationId: relationId,
+      termType: "DEADLINES",
+      content: "15 dias",
+    });
+    await t.mutation(api.supplyRelations.addTerm, {
+      token,
+      supplyRelationId: relationId,
+      termType: "DEADLINES",
+      content: "10 dias",
+    });
+    const [rel] = await t.query(api.supplyRelations.listBySupplier, { supplierId: ids.supplierId });
+    const deadlines = rel.terms.filter((term) => term.termType === "DEADLINES");
+    expect(deadlines.filter((term) => term.validTo === undefined).map((term) => term.content)).toEqual(["10 dias"]);
+  });
+});
+
+describe("non-conformities, inspections and shipments", () => {
+  test("a non-conformity gets one treatment and is then closed", async () => {
+    const { t, token, ids } = await seed();
+    const ncId = await t.mutation(api.nonConformities.create, {
+      token,
+      variantId: ids.variantId,
+      supplierId: ids.supplierId,
+      description: "Costura solta",
+      affectedQuantity: 2,
+    });
+    let rows = await t.query(api.nonConformities.list, { supplierId: ids.supplierId });
+    expect(rows[0].open).toBe(true);
+
+    await t.mutation(api.nonConformities.treat, {
+      token,
+      nonConformityId: ncId,
+      treatmentType: "RETURN_TO_SUPPLIER",
+    });
+    await expect(
+      t.mutation(api.nonConformities.treat, {
+        token,
+        nonConformityId: ncId,
+        treatmentType: "DESTROY",
+      })
+    ).rejects.toThrow(/already has a treatment/);
+    rows = await t.query(api.nonConformities.list, {});
+    expect(rows[0].open).toBe(false);
+  });
+
+  test("a discrepancy inspection needs a note", async () => {
+    const { t, token, ids } = await seed();
+    const receiptId: Id<"purchaseReceipts"> = await t.run((ctx) =>
+      ctx.db.insert("purchaseReceipts", {
+        receiptNumber: "RC-00001",
+        branchId: ids.branchId,
+        unitsTotal: 3,
+        receivedByUsername: "admin",
+        receivedAt: Date.now(),
+        createdAt: Date.now(),
+      })
+    );
+    await expect(
+      t.mutation(api.receiptInspections.create, { token, receiptId, result: "DISCREPANCY" })
+    ).rejects.toThrow(/Describe the discrepancy/);
+    await t.mutation(api.receiptInspections.create, { token, receiptId, result: "OK" });
+    expect(await t.query(api.receiptInspections.listByReceipt, { receiptId })).toHaveLength(1);
+  });
+
+  test("a shipment arrives once and keeps its customs documents", async () => {
+    const { t, token, ids } = await seed();
+    const shipmentId = await t.mutation(api.shipments.create, {
+      token,
+      purchaseOrderId: ids.poId,
+      carrier: "DHL",
+      trackingReference: "TRK-1",
+    });
+    await t.mutation(api.shipments.addCustomsDocument, {
+      token,
+      shipmentId,
+      documentType: "DECLARACAO",
+      reference: "DA-9",
+    });
+    await t.mutation(api.shipments.markArrived, { token, id: shipmentId });
+    await expect(t.mutation(api.shipments.markArrived, { token, id: shipmentId })).rejects.toThrow(
+      /already arrived/
+    );
+    const rows = await t.query(api.shipments.list, { supplierId: ids.supplierId });
+    expect(rows[0]).toMatchObject({ status: "ARRIVED", supplierName: "Supplier Co", orderCode: "PO-00001" });
+    expect(rows[0].customs).toHaveLength(1);
+  });
+});
+
+describe("receiving lists, locations and holds", () => {
+  test("open orders show only what is still outstanding", async () => {
+    const { t, ids } = await seed();
+    const orders = await t.query(api.purchaseReceipts.openOrders, {});
+    expect(orders).toHaveLength(1);
+    expect(orders[0].lines[0].outstanding).toBe(6);
+  });
+
+  test("locations are per branch and holds add up per variant", async () => {
+    const { t, token, ids } = await seed();
+    await t.mutation(api.locations.create, {
+      token,
+      branchId: ids.branchId,
+      name: "Armazém",
+      locationType: "CENTRAL",
+    });
+    expect(await t.query(api.locations.listByBranch, { branchId: ids.branchId })).toHaveLength(1);
+
+    await t.run(async (ctx) => {
+      const orderId = await ctx.db.insert("customerOrders", {
+        orderNumber: "CE-1",
+        customerId: await ctx.db.insert("customers", {
+          name: "Jane",
+          phone1: "1",
+          isGeneric: false,
+          active: true,
+          status: "active",
+        }),
+        branchId: ids.branchId,
+        status: "OPEN",
+        totalAmount: 0,
+        createdByUsername: "admin",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      for (const quantity of [2, 3]) {
+        await ctx.db.insert("stockHolds", {
+          orderId,
+          branchId: ids.branchId,
+          productVariantId: ids.variantId,
+          quantity,
+          status: "ACTIVE",
+          createdAt: Date.now(),
+        });
+      }
+    });
+    const held = await t.query(api.stockHolds.activeByBranch, { branchId: ids.branchId });
+    expect(held[ids.variantId]).toBe(5);
+  });
+});

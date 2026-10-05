@@ -26,6 +26,17 @@ const RETURN_ITEM_REASON = v.union(
   v.literal("OTHER")
 );
 
+const CONDITION = v.union(v.literal("SELLABLE"), v.literal("USED"), v.literal("DAMAGED"));
+
+const RESOLUTION = v.union(
+  v.literal("TROCA"),
+  v.literal("DEVOLUCAO"),
+  v.literal("REEMBOLSO"),
+  v.literal("CREDITO"),
+  v.literal("REPARACAO"),
+  v.literal("RECUSA")
+);
+
 const REFUND_METHOD = v.union(
   v.literal("CASH"),
   v.literal("CARD"),
@@ -66,6 +77,7 @@ async function resolveReturnLines(
     quantity: number;
     reason: string;
     restock: boolean;
+    condition?: "SELLABLE" | "USED" | "DAMAGED";
   }[]
 ) {
   const resolved = [];
@@ -86,7 +98,8 @@ async function resolveReturnLines(
       saleItem,
       quantity: item.quantity,
       reason: item.reason,
-      restock: item.restock,
+      condition: item.condition,
+      restock: item.condition === "DAMAGED" ? false : item.restock,
       unitPrice: saleItem.unitPrice,
       refundAmount: Math.round(unitNet * item.quantity * 100) / 100,
       unitCost: saleItem.costPriceAtSale,
@@ -109,11 +122,14 @@ export const create = mutation({
         quantity: v.number(),
         reason: RETURN_ITEM_REASON,
         restock: v.boolean(),
+        condition: v.optional(CONDITION),
       })
     ),
     refundMethod: REFUND_METHOD,
     notes: v.optional(v.string()),
     cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
+    resolutionType: v.optional(RESOLUTION),
+    complaintId: v.optional(v.id("complaints")),
   },
   handler: async (ctx, args): Promise<Id<"salesReturns">> => {
     const actor = await authorize(ctx, args.token, "returns.process");
@@ -127,6 +143,12 @@ export const create = mutation({
     if (sale.status === "CANCELLED")
       throw new Error("Cannot return items from a cancelled sale.");
     if (args.items.length === 0) throw new Error("Nothing to return.");
+    if (args.complaintId) {
+      const complaint = await ctx.db.get(args.complaintId);
+      if (!complaint) throw new Error("Complaint not found.");
+      if (complaint.saleId && complaint.saleId !== args.saleId)
+        throw new Error("This complaint is about a different sale.");
+    }
 
     const lines = await resolveReturnLines(ctx, args.saleId, args.items);
     const refundAmount =
@@ -172,6 +194,13 @@ export const create = mutation({
       reason: args.notes ?? "Customer return",
       notes: args.notes,
       cashRegisterSessionId: session?._id,
+      resolutionId: args.resolutionType
+        ? await ctx.db.insert("resolutions", {
+            resolutionType: args.resolutionType,
+            decidedAt: now,
+          })
+        : undefined,
+      complaintId: args.complaintId,
       createdAt: now,
     });
 
@@ -190,6 +219,7 @@ export const create = mutation({
         refundAmount: l.refundAmount,
         reason: l.reason as Doc<"salesReturnItems">["reason"],
         restock: l.restock,
+        condition: l.condition,
       });
       if (l.restock) {
         restockedUnits += l.quantity;

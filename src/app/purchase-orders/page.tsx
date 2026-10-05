@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -143,7 +144,11 @@ export default function PurchaseOrdersPage() {
             <tbody>
               {list.map((po) => (
                 <tr key={po._id} className="hover:bg-surface-container-low">
-                  <Td className="font-mono text-[11px] font-bold">{po.orderCode}</Td>
+                  <Td className="font-mono text-[11px] font-bold">
+                    <Link href={`/purchase-orders/${po._id}`} className="hover:text-primary">
+                      {po.orderCode}
+                    </Link>
+                  </Td>
                   <Td>{po.supplierName}</Td>
                   <Td className="text-on-surface-variant text-xs">
                     {new Date(po.orderDate).toLocaleDateString()}
