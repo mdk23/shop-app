@@ -16,8 +16,9 @@ const RESOLUTION = v.union(
 /* ---------- Size equivalences (e.g. EU 42 ≈ UK 8) ---------- */
 
 export const listSizeEquivalences = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const rows = await ctx.db.query("sizeEquivalences").collect();
     return await Promise.all(
       rows.map(async (row) => ({
@@ -64,8 +65,9 @@ export const createSizeEquivalence = mutation({
 /* ---------- Follow-up commitments (promises made after a complaint or return) ---------- */
 
 export const listFollowUps = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const rows = await ctx.db.query("followUpCommitments").order("desc").take(200);
     return await Promise.all(
       rows.map(async (row) => {

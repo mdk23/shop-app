@@ -4,8 +4,9 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const incidents = await ctx.db.query("qualityIncidents").order("desc").take(200);
     return await Promise.all(
       incidents.map(async (incident) => {

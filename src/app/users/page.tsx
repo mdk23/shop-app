@@ -43,7 +43,7 @@ type User = {
 function Content() {
   const { currentUser } = useAuth();
   const token = useToken();
-  const users = useQuery(api.users.list);
+  const users = useQuery(api.users.list, { token });
   const setStatus = useMutation(api.users.setStatus);
   const sessions = useQuery(api.auth.listActiveSessions, { token });
   const terminate = useMutation(api.auth.terminateSession);

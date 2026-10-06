@@ -252,7 +252,7 @@ describe("receiving lists, locations and holds", () => {
         });
       }
     });
-    const held = await t.query(api.stockHolds.activeByBranch, { branchId: ids.branchId });
+    const held = await t.query(api.stockHolds.activeByBranch, { token, branchId: ids.branchId });
     expect(held[ids.variantId]).toBe(5);
   });
 });

@@ -19,7 +19,7 @@ type Dialog = null | "need" | "decision" | "cover";
 export default function ProcurementPlanningPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const overview = useQuery(api.procurementPlanning.overview, {});
+  const overview = useQuery(api.procurementPlanning.overview, { token });
   const createNeed = useMutation(api.procurementPlanning.createNeed);
   const createDecision = useMutation(api.procurementPlanning.createDecision);
   const coverNeed = useMutation(api.procurementPlanning.coverNeed);

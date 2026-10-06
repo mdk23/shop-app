@@ -1,3 +1,4 @@
+import { authorize } from "./permissions";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { validateToken } from "./auth";
@@ -66,8 +67,9 @@ export const updatePasswordHash = internalMutation({
 // ─────────────────────────────────────────────
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "users.manage");
     const users = await ctx.db.query("users").order("desc").collect();
     // Strip password hash from public response
     return users.map(({ passwordHash: _h, ...rest }) => rest);
@@ -75,6 +77,21 @@ export const list = query({
 });
 
 export const getById = query({
+  args: {
+    token: v.string(),
+    id: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "users.manage");
+    const user = await ctx.db.get(args.id);
+    if (!user) return null;
+    const { passwordHash: _h, ...rest } = user;
+    return rest;
+  },
+});
+
+/** Used by the password-reset action, which has already checked the caller's session. */
+export const getUserForReset = internalQuery({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.id);

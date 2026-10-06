@@ -1,10 +1,13 @@
+import { authorize } from "./permissions";
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 
 /** Quantity held for customer orders per variant at a branch, for the stock screens. */
 export const activeByBranch = query({
-  args: { branchId: v.id("branches") },
+  args: {
+    token: v.string(), branchId: v.id("branches") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const holds = await ctx.db
       .query("stockHolds")
       .withIndex("by_branch_variant_status", (q) => q.eq("branchId", args.branchId))

@@ -14,7 +14,7 @@ import { useTranslation } from "@/contexts/LanguageContext";
 export default function SizeEquivalencesPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const rows = useQuery(api.followUps.listSizeEquivalences, {});
+  const rows = useQuery(api.followUps.listSizeEquivalences, { token });
   const sizes = useQuery(api.sizes.list, {});
   const create = useMutation(api.followUps.createSizeEquivalence);
 

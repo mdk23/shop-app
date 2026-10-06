@@ -17,8 +17,8 @@ type Dialog = null | "offer" | "assortment" | "item" | "include";
 export default function OffersPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const offers = useQuery(api.offers.list, {});
-  const assortments = useQuery(api.offers.listAssortments, {});
+  const offers = useQuery(api.offers.list, { token });
+  const assortments = useQuery(api.offers.listAssortments, { token });
   const products = useQuery(api.products.list, {});
   const createOffer = useMutation(api.offers.createOffer);
   const createAssortment = useMutation(api.offers.createAssortment);

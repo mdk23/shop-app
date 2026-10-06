@@ -91,8 +91,8 @@ export default function IncidentsPage() {
   const { t } = useTranslation();
   const token = useToken();
   const { branchId } = useResolvedBranch();
-  const qualityIncidents = useQuery(api.qualityIncidents.list, {});
-  const materialIncidents = useQuery(api.materialIncidents.list, {});
+  const qualityIncidents = useQuery(api.qualityIncidents.list, { token });
+  const materialIncidents = useQuery(api.materialIncidents.list, { token });
   const openComplaints = useQuery(api.complaints.list, { status: "OPEN" });
   const createQuality = useMutation(api.qualityIncidents.create);
   const createMaterial = useMutation(api.materialIncidents.create);

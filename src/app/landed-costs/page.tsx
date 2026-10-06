@@ -19,7 +19,7 @@ export default function LandedCostsPage() {
   const { t } = useTranslation();
   const token = useToken();
   const formatMoney = useCurrency();
-  const costs = useQuery(api.landedCosts.list, {});
+  const costs = useQuery(api.landedCosts.list, { token });
   const create = useMutation(api.landedCosts.create);
 
   const [open, setOpen] = useState(false);

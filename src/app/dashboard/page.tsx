@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { PageLayout } from "@/components/PageLayout";
 import { Card, StatCard, Spinner, Badge, Table, Th, Td } from "@/components/ui";
-import { useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useCurrency, useResolvedBranch, useToken } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 import {
@@ -40,19 +40,20 @@ export default function DashboardPage() {
     return { start: now - Number(range) * 86400000, end: now };
   }, [range]);
 
+  const token = useToken();
   const branchArg = isAll ? undefined : branchId;
-  const metrics = useQuery(api.analytics.getDashboardMetrics, {
+  const metrics = useQuery(api.analytics.getDashboardMetrics, { token,
     start,
     end,
     branchId: branchArg,
   });
-  const today = useQuery(api.analytics.todaySnapshot, {});
-  const trend = useQuery(api.analytics.salesTrend, {
+  const today = useQuery(api.analytics.todaySnapshot, { token });
+  const trend = useQuery(api.analytics.salesTrend, { token,
     start,
     end,
     branchId: branchArg,
   });
-  const lowStock = useQuery(api.stock.lowStockSummary, {
+  const lowStock = useQuery(api.stock.lowStockSummary, { token,
     branchId: branchArg,
   });
 

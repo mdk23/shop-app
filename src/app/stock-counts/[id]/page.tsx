@@ -21,7 +21,7 @@ export default function StockCountPage() {
   const count = useQuery(api.stockCounts.get, { id: countId });
   const inventory = useQuery(
     api.stock.listInventory,
-    count ? { branchId: count.branchId } : "skip"
+    count ? { token, branchId: count.branchId } : "skip"
   );
   const record = useMutation(api.stockCounts.recordCounts);
   const close = useMutation(api.stockCounts.close);

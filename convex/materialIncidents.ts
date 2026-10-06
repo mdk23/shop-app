@@ -8,8 +8,9 @@ import { writeAudit } from "./audit";
 const KIND = v.union(v.literal("DAMAGE"), v.literal("LOSS"), v.literal("THEFT"), v.literal("OTHER"));
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const incidents = await ctx.db.query("materialIncidents").order("desc").take(200);
     return await Promise.all(
       incidents.map(async (incident) => {

@@ -71,7 +71,7 @@ export default function ComplaintsPage() {
   const page = useClientPage(complaints ?? []);
   const create = useMutation(api.complaints.create);
   const resolve = useMutation(api.complaints.resolve);
-  const followUps = useQuery(api.followUps.listFollowUps, {});
+  const followUps = useQuery(api.followUps.listFollowUps, { token });
   const commitFollowUp = useMutation(api.followUps.commitFollowUp);
   const recordSatisfaction = useMutation(api.followUps.recordSatisfaction);
   const supersede = useMutation(api.followUps.supersedeResolution);

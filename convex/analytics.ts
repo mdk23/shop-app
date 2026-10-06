@@ -1,3 +1,4 @@
+import { authorize } from "./permissions";
 import { v } from "convex/values";
 import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
@@ -40,11 +41,13 @@ async function salesInRange(
 
 export const getDashboardMetrics = query({
   args: {
+    token: v.string(),
     start: v.number(),
     end: v.number(),
     branchId: branchIdArg,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "reports.view");
     const { start, end } = args;
     const branchId = normalizeBranchId(args.branchId);
     const span = Math.max(1, end - start);
@@ -202,8 +205,9 @@ export const getDashboardMetrics = query({
 // ─────────────────────────────────────────────
 
 export const todaySnapshot = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "reports.view");
     const today = getLocalDateString(Date.now());
     const row = await ctx.db
       .query("dailyMetrics")
@@ -233,11 +237,13 @@ export const todaySnapshot = query({
 
 export const salesTrend = query({
   args: {
+    token: v.string(),
     start: v.number(),
     end: v.number(),
     branchId: branchIdArg,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "reports.view");
     const rows = (
       await salesInRange(ctx, args.start, args.end, normalizeBranchId(args.branchId))
     ).filter((s) => s.status !== "CANCELLED");
@@ -259,11 +265,13 @@ export const salesTrend = query({
 
 export const salesBreakdown = query({
   args: {
+    token: v.string(),
     start: v.number(),
     end: v.number(),
     branchId: v.optional(v.union(v.id("branches"), v.literal("all"))),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "reports.view");
     const branchId = normalizeBranchId(args.branchId);
     const sales = (await salesInRange(ctx, args.start, args.end, branchId)).filter(
       (s) => s.status !== "CANCELLED"
@@ -322,8 +330,10 @@ export const salesBreakdown = query({
 });
 
 export const customerDebt = query({
-  args: { branchId: v.optional(v.union(v.id("branches"), v.literal("all"))) },
+  args: {
+    token: v.string(), branchId: v.optional(v.union(v.id("branches"), v.literal("all"))) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "reports.view");
     const branchId = normalizeBranchId(args.branchId);
     let sales = await ctx.db
       .query("sales")
@@ -354,8 +364,10 @@ export const customerDebt = query({
 });
 
 export const inventoryValuation = query({
-  args: { branchId: branchIdArg },
+  args: {
+    token: v.string(), branchId: branchIdArg },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "reports.view");
     const branchId = normalizeBranchId(args.branchId);
     const stockRows = branchId
       ? await ctx.db

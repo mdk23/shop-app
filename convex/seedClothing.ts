@@ -1,3 +1,4 @@
+import { authorize } from "./permissions";
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
@@ -77,20 +78,15 @@ const PRODUCTS: ProductSpec[] = [
 ];
 
 export const seed = mutation({
-  args: { wipe: v.optional(v.boolean()) },
+  args: { token: v.string(), wipe: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<string> => {
-    // Acting user for ledger movements.
-    const admin =
-      (await ctx.db
-        .query("users")
-        .withIndex("by_role", (q) => q.eq("role", "admin"))
-        .first()) ??
-      (await ctx.db.query("users").first());
-    if (!admin) {
-      throw new Error(
-        "Create an admin user first (visit /setup) before seeding sample data."
-      );
+    const actor = await authorize(ctx, args.token, "settings.manage");
+    // Wiping the catalogue is destructive, so only an admin may do it.
+    if (args.wipe && actor.role !== "admin") {
+      throw new Error("Only an admin can wipe the catalogue.");
     }
+    // Acting user for ledger movements.
+    const admin = actor;
 
     // Default branch + walk-in customer + settings.
     let branch =

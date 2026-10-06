@@ -1,3 +1,4 @@
+import { authorize } from "./permissions";
 import { v } from "convex/values";
 import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
@@ -25,8 +26,10 @@ async function stockRowsForBranch(
 }
 
 export const getForVariant = query({
-  args: { productVariantId: v.id("productVariants"), branchId: v.id("branches") },
+  args: {
+    token: v.string(), productVariantId: v.id("productVariants"), branchId: v.id("branches") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const variant = await ctx.db.get(args.productVariantId);
     if (!variant) return null;
     const row = await stockRowsForBranch(
@@ -53,6 +56,7 @@ export const getForVariant = query({
  */
 export const listInventory = query({
   args: {
+    token: v.string(),
     branchId: v.id("branches"),
     categoryId: v.optional(v.id("categories")),
     size: v.optional(v.string()),
@@ -68,6 +72,7 @@ export const listInventory = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const limit = args.limit ?? 500;
     const variants = await ctx.db
       .query("productVariants")
@@ -132,8 +137,10 @@ export const listInventory = query({
 });
 
 export const lowStockSummary = query({
-  args: { branchId: v.optional(v.id("branches")) },
+  args: {
+    token: v.string(), branchId: v.optional(v.id("branches")) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const stockRows = args.branchId
       ? await ctx.db
           .query("variantStock")

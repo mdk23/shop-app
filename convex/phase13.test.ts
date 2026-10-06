@@ -83,7 +83,7 @@ describe("material incidents", () => {
       occurredAt: Date.now(),
       items: [{ variantId: ids.variantId, quantity: 2 }],
     });
-    const rows = await t.query(api.materialIncidents.list, {});
+    const rows = await t.query(api.materialIncidents.list, { token });
     expect(rows).toHaveLength(1);
     expect(rows[0].items[0].movementId).toBeDefined();
     const movements = await t.run((ctx) => ctx.db.query("inventoryMovements").collect());
@@ -115,7 +115,7 @@ describe("material incidents", () => {
       occurredAt: Date.now(),
       items: [{ variantId: ids.variantId, quantity: 1 }],
     });
-    const rows = await t.query(api.materialIncidents.list, {});
+    const rows = await t.query(api.materialIncidents.list, { token });
     expect(rows[0].items[0].movementId).toBeUndefined();
   });
 
@@ -150,7 +150,7 @@ describe("size equivalences", () => {
         certainty: "exact",
       })
     ).rejects.toThrow(/different sizes/);
-    const rows = await t.query(api.followUps.listSizeEquivalences, {});
+    const rows = await t.query(api.followUps.listSizeEquivalences, { token });
     expect(rows[0].fromName).toBe("M");
     expect(rows[0].toName).toBe("L");
   });
@@ -165,7 +165,7 @@ describe("follow-ups and resolution succession", () => {
       description: "Replace the seam within 7 days",
     });
     await t.mutation(api.followUps.recordSatisfaction, { token, followUpId });
-    const rows = await t.query(api.followUps.listFollowUps, {});
+    const rows = await t.query(api.followUps.listFollowUps, { token });
     expect(rows[0].customerName).toBe("Jane Doe");
     expect(rows[0].satisfied).toBe(true);
   });
@@ -222,7 +222,7 @@ describe("procurement planning and demand responses", () => {
       decisionType: "BUY",
       items: [{ variantId: otherVariant, quantity: 3 }],
     });
-    const overview = await t.query(api.procurementPlanning.overview, {});
+    const overview = await t.query(api.procurementPlanning.overview, { token });
     const needItemId = overview.needs[0].items[0]._id;
     const decisionItemId = overview.decisions[0].items[0]._id;
     await expect(
@@ -251,7 +251,7 @@ describe("procurement planning and demand responses", () => {
       outcome: "ALTERNATIVA",
       items: [{ description: "Same tee in black", price: 240 }],
     });
-    const responses = await t.query(api.demandResponses.listByDemand, { demandId });
+    const responses = await t.query(api.demandResponses.listByDemand, { token, demandId });
     expect(responses).toHaveLength(1);
     expect(responses[0].items[0].presentedDescription).toBe("Same tee in black");
   });
@@ -289,7 +289,7 @@ describe("landed costs", () => {
         { componentType: "duty", value: 300 },
       ],
     });
-    const rows = await t.query(api.landedCosts.list, {});
+    const rows = await t.query(api.landedCosts.list, { token });
     expect(rows[0].total).toBe(1500);
     await expect(
       t.mutation(api.landedCosts.create, { token, calculatedFor: Date.now(), components: [{ componentType: "x", value: -1 }] })

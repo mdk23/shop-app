@@ -19,8 +19,9 @@ async function variantLabel(ctx: QueryCtx, variantId?: Id<"productVariants">) {
 
 /** Needs recognised (what the shop should buy) and decisions taken to cover them. */
 export const overview = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const needs = await ctx.db.query("procurementNeeds").order("desc").take(100);
     const needsOut = await Promise.all(
       needs.map(async (need) => {

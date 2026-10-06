@@ -18,7 +18,10 @@ import { getStoredToken, setStoredToken, clearStoredToken } from "@/lib/auth";
 // When true, the app auto-provisions an admin session (convex/devAuth.ts)
 // and skips the login flow entirely. Set to false to restore real auth.
 // ─────────────────────────────────────────────
-export const DEV_BYPASS_AUTH = true;
+// Dev-only login bypass. Off unless NEXT_PUBLIC_DEV_AUTH_BYPASS=true at build time
+// (set in .env.local on a development machine). The server also refuses the bypass
+// unless its DEV_AUTH_BYPASS variable is set, so the two must be set together.
+export const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "true";
 const DEV_TOKEN = "dev-bypass-session-token";
 
 // ─────────────────────────────────────────────

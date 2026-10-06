@@ -19,7 +19,7 @@ import {
   inputClass,
   Button,
 } from "@/components/ui";
-import { useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useCurrency, useResolvedBranch, useToken } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { Search } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +37,7 @@ export default function InventoryPage() {
   const [pickBranch, setPickBranch] = useState<string>("");
   const effectiveBranch = (pickBranch || branchId) as Id<"branches"> | undefined;
 
+  const token = useToken();
   const categories = useQuery(api.categories.list, {});
   const sizes = useQuery(api.sizes.list, {});
   const colors = useQuery(api.colors.list, {});
@@ -50,6 +51,7 @@ export default function InventoryPage() {
     api.stock.listInventory,
     effectiveBranch
       ? {
+          token,
           branchId: effectiveBranch,
           categoryId: (categoryId || undefined) as Id<"categories"> | undefined,
           size: size || undefined,
@@ -65,11 +67,11 @@ export default function InventoryPage() {
   );
   const held = useQuery(
     api.stockHolds.activeByBranch,
-    effectiveBranch ? { branchId: effectiveBranch } : "skip"
+    effectiveBranch ? { token, branchId: effectiveBranch } : "skip"
   );
   const valuation = useQuery(
     api.analytics.inventoryValuation,
-    effectiveBranch ? { branchId: effectiveBranch } : "skip"
+    effectiveBranch ? { token, branchId: effectiveBranch } : "skip"
   );
 
   return (

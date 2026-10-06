@@ -82,7 +82,7 @@ export const resetPassword = action({
     }
 
     // Managers can only reset passwords for POS Sellers
-    const targetUser = (await ctx.runQuery(api.users.getById, { id: args.id })) as any;
+    const targetUser = await ctx.runQuery(internal.users.getUserForReset, { id: args.id });
     if (!targetUser) {
       throw new ConvexError("User not found");
     }

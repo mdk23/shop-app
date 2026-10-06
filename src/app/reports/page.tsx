@@ -17,7 +17,7 @@ import {
   EmptyState,
   Pagination,
 } from "@/components/ui";
-import { useCurrency, useResolvedBranch } from "@/lib/useShop";
+import { useCurrency, useResolvedBranch, useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
 import { Download } from "lucide-react";
@@ -45,19 +45,20 @@ export default function ReportsPage() {
     return { start: now - Number(range) * 86400000, end: now };
   }, [range]);
 
+  const token = useToken();
   const branchArg = isAll ? "all" : branchId;
-  const breakdown = useQuery(api.analytics.salesBreakdown, {
+  const breakdown = useQuery(api.analytics.salesBreakdown, { token,
     start,
     end,
     branchId: branchArg,
   });
-  const metrics = useQuery(api.analytics.getDashboardMetrics, {
+  const metrics = useQuery(api.analytics.getDashboardMetrics, { token,
     start,
     end,
     branchId: isAll ? undefined : branchId,
   });
-  const debt = useQuery(api.analytics.customerDebt, { branchId: branchArg });
-  const valuation = useQuery(api.analytics.inventoryValuation, {
+  const debt = useQuery(api.analytics.customerDebt, { token, branchId: branchArg });
+  const valuation = useQuery(api.analytics.inventoryValuation, { token,
     branchId: isAll ? undefined : branchId,
   });
 

@@ -20,6 +20,11 @@ const TEN_YEARS_MS = 1000 * 60 * 60 * 24 * 365 * 10;
 export const ensureDevSession = mutation({
   args: {},
   handler: async (ctx): Promise<{ token: string }> => {
+    // Refuse unless this deployment opted in. The variable is set only on the
+    // development deployment, so this cannot create an admin session in production.
+    if (process.env.DEV_AUTH_BYPASS !== "true") {
+      throw new Error("Dev auth bypass is disabled on this deployment.");
+    }
     // 1. Find or create the dev admin user.
     const existingUser = await ctx.db
       .query("users")

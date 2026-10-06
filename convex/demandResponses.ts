@@ -11,8 +11,10 @@ const OUTCOME = v.union(
 );
 
 export const listByDemand = query({
-  args: { demandId: v.id("wantList") },
+  args: {
+    token: v.string(), demandId: v.id("wantList") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const responses = await ctx.db
       .query("demandResponses")
       .withIndex("by_demand", (q) => q.eq("demandId", args.demandId))

@@ -5,8 +5,9 @@ import { writeAudit } from "./audit";
 
 /** Offers with the assortments they include, and each assortment's current items. */
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const offers = await ctx.db.query("offers").collect();
     return await Promise.all(
       offers.map(async (offer) => {
@@ -38,8 +39,11 @@ export const list = query({
 });
 
 export const listAssortments = query({
-  args: {},
-  handler: async (ctx) => ctx.db.query("assortments").collect(),
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
+    return await ctx.db.query("assortments").collect();
+  },
 });
 
 export const createOffer = mutation({

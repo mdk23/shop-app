@@ -14,8 +14,9 @@ async function mznCurrency(ctx: MutationCtx): Promise<Id<"currencies">> {
 }
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const costs = await ctx.db.query("landedCosts").order("desc").take(100);
     return await Promise.all(
       costs.map(async (cost) => {

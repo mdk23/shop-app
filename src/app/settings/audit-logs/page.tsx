@@ -17,6 +17,7 @@ import {
   inputClass,
 } from "@/components/ui";
 import { usePagedQuery, useClientPage } from "@/lib/pagination";
+import { useToken } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { Search } from "lucide-react";
 
@@ -31,7 +32,8 @@ export default function AuditLogsPage() {
 
   // Free-text filter isn't index-backed, so searching falls back to a capped
   // scan (300 most recent) filtered + paginated client-side.
-  const scanned = useQuery(api.auth.getAuditLogs, isSearching ? { limit: 300 } : "skip");
+  const token = useToken();
+  const scanned = useQuery(api.auth.getAuditLogs, isSearching ? { token, limit: 300 } : "skip");
   const term = search.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!isSearching) return [];

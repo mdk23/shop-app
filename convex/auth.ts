@@ -1,3 +1,4 @@
+import { authorize } from "./permissions";
 import { internalMutation, internalQuery, mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
@@ -133,8 +134,10 @@ export const getSession = query({
 });
 
 export const getAuditLogs = query({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    token: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "audit.view");
     return await ctx.db
       .query("auditLogs")
       .order("desc")
@@ -144,8 +147,10 @@ export const getAuditLogs = query({
 
 /** Cursor-paginated, indexed by creation time — O(page size) reads per page. */
 export const getAuditLogsPaged = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    token: v.string(), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "audit.view");
     return await ctx.db
       .query("auditLogs")
       .withIndex("by_created_at")
@@ -155,8 +160,10 @@ export const getAuditLogsPaged = query({
 });
 
 export const getAuditLogsByUser = query({
-  args: { userId: v.id("users"), limit: v.optional(v.number()) },
+  args: {
+    token: v.string(), userId: v.id("users"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "audit.view");
     return await ctx.db
       .query("auditLogs")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
