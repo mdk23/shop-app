@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 
 export type ThemeKey = "sage" | "cashmere" | "copper";
 
@@ -50,23 +50,34 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const STORAGE_KEY = "takeaway_app_theme";
 
+const THEME_KEYS: ThemeKey[] = ["sage", "cashmere", "copper"];
+const THEME_EVENT = "takeaway-theme-change";
+
+function subscribe(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(THEME_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(THEME_EVENT, onChange);
+  };
+}
+const readTheme = (): ThemeKey => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  return THEME_KEYS.find((key) => key === saved) ?? "sage";
+};
+const serverTheme = (): ThemeKey => "sage";
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeKey>("sage");
+  // Read the saved theme without an effect; the server render uses the default theme.
+  const theme = useSyncExternalStore(subscribe, readTheme, serverTheme);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as ThemeKey | null;
-    if (saved && ["sage", "cashmere", "copper"].includes(saved)) {
-      setThemeState(saved);
-      document.documentElement.setAttribute("data-theme", saved);
-    } else {
-      document.documentElement.setAttribute("data-theme", "sage");
-    }
-  }, []);
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   const setTheme = (newTheme: ThemeKey) => {
-    setThemeState(newTheme);
     localStorage.setItem(STORAGE_KEY, newTheme);
-    document.documentElement.setAttribute("data-theme", newTheme);
+    window.dispatchEvent(new Event(THEME_EVENT));
   };
 
   const currentThemeOption =

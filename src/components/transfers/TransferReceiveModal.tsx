@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -29,12 +29,12 @@ export function TransferReceiveModal({
   const [observed, setObserved] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!transfer) return;
-    setObserved(
-      Object.fromEntries(transfer.items.map((i) => [i.productVariantId, i.quantity]))
-    );
-  }, [transfer]);
+  // Start from the sent quantities, once per transfer. Done during render, not in an effect.
+  const [seededFor, setSeededFor] = useState<Id<"stockTransfers"> | null>(null);
+  if (transfer && seededFor !== transferId) {
+    setSeededFor(transferId);
+    setObserved(Object.fromEntries(transfer.items.map((i) => [i.productVariantId, i.quantity])));
+  }
 
   const submit = async () => {
     if (!transfer) return;

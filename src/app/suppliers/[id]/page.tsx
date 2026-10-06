@@ -198,10 +198,8 @@ function TermsTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
   const addTerm = useMutation(api.supplyRelations.addTerm);
   const [termType, setTermType] = useState<(typeof TERM_TYPES)[number]>("DEADLINES");
   const [content, setContent] = useState("");
-  const [relationId, setRelationId] = useState<Id<"supplyRelations"> | null>(null);
-
   const open = (relations ?? []).find((r) => r.endedAt === undefined);
-  const activeRelation = relationId ?? open?._id ?? null;
+  const activeRelation = open?._id ?? null;
 
   const start = async () => {
     try {

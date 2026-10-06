@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -154,15 +154,18 @@ export function Sidebar() {
   const { t } = useTranslation();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
+  // Expand the group that holds the current page whenever the route changes.
+  // Done during render (not in an effect), as React recommends for state that follows a prop.
+  const [shownPath, setShownPath] = useState(pathname);
+  if (pathname !== shownPath) {
+    setShownPath(pathname);
     const activeGroup = menuGroups.find((group) =>
       group.items.some(
         (item) => pathname === item.href || pathname.startsWith(item.href + "/")
       )
     );
-    if (activeGroup)
-      setExpandedGroups((p) => ({ ...p, [activeGroup.id]: true }));
-  }, [pathname]);
+    if (activeGroup) setExpandedGroups((p) => ({ ...p, [activeGroup.id]: true }));
+  }
 
   const canSee = (item: MenuItem) =>
     !item.allowedRoles ||

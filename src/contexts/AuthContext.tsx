@@ -156,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(() =>
     DEV_BYPASS_AUTH ? DEV_TOKEN : getStoredToken()
   );
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loginAction = useAction(api.authActions.login);
@@ -177,11 +177,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // isLoading: true until useQuery has resolved at least once.
   // Under DEV bypass, keep waiting until the provisioned session lands
   // so components never see a null currentUser.
-  useEffect(() => {
-    if (sessionData === undefined) return;
-    if (DEV_BYPASS_AUTH && sessionData === null) return;
-    setIsLoading(false);
-  }, [sessionData]);
+  const sessionReady = sessionData !== undefined && !(DEV_BYPASS_AUTH && sessionData === null);
+  // Record the first resolved session during render (not in an effect), so loading ends
+  // as soon as the query has data and does not flip back when the query refetches.
+  if (sessionReady && !hasLoaded) setHasLoaded(true);
+  const isLoading = !hasLoaded;
 
   const currentUser: CurrentUser | null = sessionData ?? null;
 
@@ -192,7 +192,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 1. If backend returns null but we have a token (meaning it was deleted/expired on server)
     if (!isLoading && token && sessionData === null) {
       clearStoredToken();
-      setToken(null);
       // Hard redirect to fully purge React state and trigger warning banner
       window.location.href = `/login?reason=session_replaced&redirect=${encodeURIComponent(window.location.pathname)}`;
       return;
@@ -201,17 +200,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Exact millisecond expiration timer
     if (sessionData && sessionData.expiresAt) {
       const timeRemaining = sessionData.expiresAt - Date.now();
-      
-      if (timeRemaining <= 0) {
-        clearStoredToken();
-        setToken(null);
-        return;
-      }
 
+      // An already-expired session is cleared on the next tick, through the same path as the timer.
       const exactExpireTimer = setTimeout(() => {
         clearStoredToken();
         setToken(null);
-      }, timeRemaining);
+      }, Math.max(timeRemaining, 0));
 
       return () => clearTimeout(exactExpireTimer);
     }

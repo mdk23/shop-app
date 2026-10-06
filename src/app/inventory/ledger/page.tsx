@@ -45,9 +45,10 @@ export default function LedgerPage() {
   const [branch, setBranch] = useState("");
   const [days, setDays] = useState("30");
 
+  const [now] = useState(() => Date.now());
   const start = useMemo(
-    () => Date.now() - Number(days) * 24 * 60 * 60 * 1000,
-    [days]
+    () => now - Number(days) * 24 * 60 * 60 * 1000,
+    [days, now]
   );
 
   const filterArgs = {

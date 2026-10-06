@@ -3,7 +3,7 @@
 import { Sidebar } from "./Sidebar";
 import { Clock } from "./Clock";
 import { SidebarProvider, useSidebar } from "./SidebarContext";
-import { Menu, ChevronDown, LogOut, User } from "lucide-react";
+import { Menu, ChevronDown, LogOut } from "lucide-react";
 
 import { BranchSelector } from "./BranchSelector";
 import { ThemeSelector } from "./ThemeSelector";

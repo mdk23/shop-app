@@ -26,7 +26,7 @@ export const createUser = action({
   },
   handler: async (ctx, args) => {
     // Validate session token
-    const session = (await ctx.runQuery(api.auth.getSession, { token: args.token })) as any;
+    const session = await ctx.runQuery(api.auth.getSession, { token: args.token });
     if (!session) {
       throw new ConvexError("Session expired. Please log in again.");
     }
@@ -73,7 +73,7 @@ export const resetPassword = action({
   },
   handler: async (ctx, args) => {
     // Validate session token
-    const session = (await ctx.runQuery(api.auth.getSession, { token: args.token })) as any;
+    const session = await ctx.runQuery(api.auth.getSession, { token: args.token });
     if (!session) {
       throw new ConvexError("Session expired. Please log in again.");
     }

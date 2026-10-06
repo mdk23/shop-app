@@ -208,7 +208,7 @@ describe("non-conformities, inspections and shipments", () => {
 
 describe("receiving lists, locations and holds", () => {
   test("open orders show only what is still outstanding", async () => {
-    const { t, ids } = await seed();
+    const { t } = await seed();
     const orders = await t.query(api.purchaseReceipts.openOrders, {});
     expect(orders).toHaveLength(1);
     expect(orders[0].lines[0].outstanding).toBe(6);

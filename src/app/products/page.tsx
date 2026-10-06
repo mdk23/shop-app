@@ -256,7 +256,6 @@ export default function ProductsPage() {
         <VariantManager
           token={token}
           productId={variantsFor}
-          fmt={fmt}
           onClose={() => setVariantsFor(null)}
         />
       )}
@@ -456,12 +455,10 @@ type VariantRowData = {
 function VariantManager({
   token,
   productId,
-  fmt,
   onClose,
 }: {
   token: string;
   productId: Id<"products">;
-  fmt: (n: number) => string;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -637,7 +634,6 @@ function VariantManager({
                   key={v._id}
                   token={token}
                   variant={v}
-                  fmt={fmt}
                   onSave={updateVariant}
                   onDelete={() => setDeletingVariant(v)}
                 />
@@ -703,13 +699,11 @@ function VariantManager({
 function VariantRow({
   token,
   variant,
-  fmt,
   onSave,
   onDelete,
 }: {
   token: string;
   variant: VariantRowData;
-  fmt: (n: number) => string;
   onSave: ReturnType<typeof useMutation>;
   onDelete: () => void;
 }) {

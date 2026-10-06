@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { useTheme, THEME_OPTIONS, ThemeKey } from "@/contexts/ThemeContext";
+import { useTheme, THEME_OPTIONS } from "@/contexts/ThemeContext";
 import { Palette, Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/contexts/LanguageContext";

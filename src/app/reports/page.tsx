@@ -40,25 +40,28 @@ export default function ReportsPage() {
   const [range, setRange] = useState("30");
   const [tab, setTab] = useState<(typeof TABS)[number]>("Category");
 
+  const [now] = useState(() => Date.now());
   const { start, end } = useMemo(() => {
-    const now = Date.now();
     return { start: now - Number(range) * 86400000, end: now };
-  }, [range]);
+  }, [range, now]);
 
   const token = useToken();
   const branchArg = isAll ? "all" : branchId;
-  const breakdown = useQuery(api.analytics.salesBreakdown, { token,
+  const breakdown = useQuery(api.analytics.salesBreakdown, {
+    token,
     start,
     end,
     branchId: branchArg,
   });
-  const metrics = useQuery(api.analytics.getDashboardMetrics, { token,
+  const metrics = useQuery(api.analytics.getDashboardMetrics, {
+    token,
     start,
     end,
     branchId: isAll ? undefined : branchId,
   });
   const debt = useQuery(api.analytics.customerDebt, { token, branchId: branchArg });
-  const valuation = useQuery(api.analytics.inventoryValuation, { token,
+  const valuation = useQuery(api.analytics.inventoryValuation, {
+    token,
     branchId: isAll ? undefined : branchId,
   });
 

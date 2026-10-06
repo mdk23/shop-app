@@ -10,6 +10,11 @@ const ROLE_VALIDATOR = v.union(
   v.literal("pos_seller")
 );
 
+// Returns the user document without its password hash.
+function withoutPasswordHash<T extends { passwordHash: string }>(user: T): Omit<T, "passwordHash"> {
+  return Object.fromEntries(Object.entries(user).filter(([key]) => key !== "passwordHash")) as Omit<T, "passwordHash">;
+}
+
 const STATUS_VALIDATOR = v.union(v.literal("active"), v.literal("disabled"));
 
 // ─────────────────────────────────────────────
@@ -72,7 +77,7 @@ export const list = query({
     await authorize(ctx, args.token, "users.manage");
     const users = await ctx.db.query("users").order("desc").collect();
     // Strip password hash from public response
-    return users.map(({ passwordHash: _h, ...rest }) => rest);
+    return users.map(withoutPasswordHash);
   },
 });
 
@@ -85,8 +90,7 @@ export const getById = query({
     await authorize(ctx, args.token, "users.manage");
     const user = await ctx.db.get(args.id);
     if (!user) return null;
-    const { passwordHash: _h, ...rest } = user;
-    return rest;
+    return withoutPasswordHash(user);
   },
 });
 
@@ -96,8 +100,7 @@ export const getUserForReset = internalQuery({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.id);
     if (!user) return null;
-    const { passwordHash: _h, ...rest } = user;
-    return rest;
+    return withoutPasswordHash(user);
   },
 });
 

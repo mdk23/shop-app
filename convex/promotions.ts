@@ -29,14 +29,8 @@ async function assertTargetExists(ctx: MutationCtx, target: Target): Promise<voi
   if (keys.length !== 1) {
     throw new Error("Each promotion target must point to exactly one product variant, product, category or collection.");
   }
-  const [key, id] = keys[0];
-  const table = {
-    productVariantId: "productVariants",
-    productId: "products",
-    categoryId: "categories",
-    collectionId: "collections",
-  }[key] as "productVariants" | "products" | "categories" | "collections";
-  if (!(await ctx.db.get(id as Id<typeof table>))) {
+  const [, id] = keys[0];
+  if (!(await ctx.db.get(id as Id<"productVariants" | "products" | "categories" | "collections">))) {
     throw new Error("Promotion target not found.");
   }
 }

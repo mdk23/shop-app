@@ -306,13 +306,6 @@ export const getPosContext = query({
       )
     );
 
-    const productIds = new Set<Id<"products">>();
-    for (const variant of variantMap.values()) if (variant) productIds.add(variant.productId);
-    const productMap = new Map(
-      await Promise.all(
-        [...productIds].map(async (id) => [id, await ctx.db.get(id)] as const)
-      )
-    );
 
     const stockMap = new Map<Id<"productVariants">, number>();
     if (args.branchId) {

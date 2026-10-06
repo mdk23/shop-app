@@ -32,7 +32,7 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
   const currentBranch =
     selectedBranchId === "all"
       ? null
-      : activeBranches?.find((b: any) => b._id === selectedBranchId);
+      : activeBranches?.find((b) => b._id === selectedBranchId);
 
   return (
     <div className="relative z-50" ref={dropdownRef}>
@@ -114,7 +114,7 @@ export function BranchSelector({ compact = false }: { compact?: boolean }) {
           {/* Active Store Branches */}
           {activeBranches && activeBranches.length > 0 && (
             <div className="border-t border-outline/20 pt-1 space-y-1">
-              {activeBranches.map((branch: any) => {
+              {activeBranches.map((branch) => {
                 const isSelected = selectedBranchId === branch._id;
                 return (
                   <button

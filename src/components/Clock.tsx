@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { format } from "date-fns";
+
+const subscribeNever = () => () => {};
 
 export function Clock() {
   const [time, setTime] = useState(new Date());
-  const [isMounted, setIsMounted] = useState(false);
+  // False on the server and during hydration, true once the client has mounted.
+  const isMounted = useSyncExternalStore(subscribeNever, () => true, () => false);
 
   useEffect(() => {
-    setIsMounted(true);
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);

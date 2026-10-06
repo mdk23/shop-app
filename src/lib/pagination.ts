@@ -59,16 +59,16 @@ export function usePagedQuery<Query extends PagedFunction>(
     | FunctionReturnType<Query>
     | undefined;
 
-  useEffect(() => {
-    if (result && !result.isDone && cursors[pageIndex + 1] === undefined) {
-      setCursors((prev) => {
-        const next = [...prev];
-        next[pageIndex + 1] = result.continueCursor;
-        return next;
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, pageIndex]);
+  // Remember where the next page starts as soon as this page's result arrives.
+  // Done during render, not in an effect; the guard makes it a one-time update per page.
+  if (result && !result.isDone && cursors[pageIndex + 1] === undefined) {
+    const continueCursor = result.continueCursor;
+    setCursors((prev) => {
+      const next = [...prev];
+      next[pageIndex + 1] = continueCursor;
+      return next;
+    });
+  }
 
   return {
     rows: (result?.page ?? []) as RowOf<Query>[],
@@ -93,9 +93,8 @@ export function useClientPage<T>(rows: T[], pageSize: number = PAGE_SIZE) {
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const clamped = Math.min(pageIndex, pageCount - 1);
 
-  useEffect(() => {
-    if (pageIndex > pageCount - 1) setPageIndex(pageCount - 1);
-  }, [pageIndex, pageCount]);
+  // Keep the page index in range if the rows shrink. Done during render, not in an effect.
+  if (pageIndex > pageCount - 1) setPageIndex(pageCount - 1);
 
   const page = rows.slice(clamped * pageSize, clamped * pageSize + pageSize);
 

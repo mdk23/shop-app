@@ -19,7 +19,6 @@ import {
   EmptyState,
   Pagination,
   Spinner,
-  Toolbar,
   inputClass,
 } from "@/components/ui";
 import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
@@ -274,7 +273,12 @@ function ReturnModal({
         const res = await exchange({
           token,
           saleId: sale._id,
-          returnItems: items.map(({ condition: _condition, ...rest }) => rest),
+          returnItems: items.map(({ saleItemId, quantity, reason, restock }) => ({
+            saleItemId,
+            quantity,
+            reason,
+            restock,
+          })),
           replacementItems: replacements.map((r) => ({
             productVariantId: r.variantId,
             quantity: r.quantity,

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { PageLayout } from "@/components/PageLayout";
-import { Card, StatCard, Spinner, Badge, Table, Th, Td } from "@/components/ui";
+import { Card, StatCard, Spinner, Badge, Table, Td } from "@/components/ui";
 import { useCurrency, useResolvedBranch, useToken } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
@@ -30,30 +30,33 @@ export default function DashboardPage() {
   const { branchId, isAll } = useResolvedBranch();
   const [range, setRange] = useState("7");
 
+  const [now] = useState(() => Date.now());
   const { start, end } = useMemo(() => {
-    const now = Date.now();
     if (range === "today") {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
       return { start: d.getTime(), end: now };
     }
     return { start: now - Number(range) * 86400000, end: now };
-  }, [range]);
+  }, [range, now]);
 
   const token = useToken();
   const branchArg = isAll ? undefined : branchId;
-  const metrics = useQuery(api.analytics.getDashboardMetrics, { token,
+  const metrics = useQuery(api.analytics.getDashboardMetrics, {
+    token,
     start,
     end,
     branchId: branchArg,
   });
   const today = useQuery(api.analytics.todaySnapshot, { token });
-  const trend = useQuery(api.analytics.salesTrend, { token,
+  const trend = useQuery(api.analytics.salesTrend, {
+    token,
     start,
     end,
     branchId: branchArg,
   });
-  const lowStock = useQuery(api.stock.lowStockSummary, { token,
+  const lowStock = useQuery(api.stock.lowStockSummary, {
+    token,
     branchId: branchArg,
   });
 

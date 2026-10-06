@@ -19,17 +19,13 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sessionReplaced, setSessionReplaced] = useState(false);
+  const [sessionReplaced, setSessionReplaced] = useState(
+    () => searchParams.get("reason") === "session_replaced"
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const redirectTo = searchParams.get("redirect") || "/pos";
-
-  useEffect(() => {
-    if (searchParams.get("reason") === "session_replaced") {
-      setSessionReplaced(true);
-    }
-  }, [searchParams]);
 
   // If already logged in, redirect immediately
   useEffect(() => {

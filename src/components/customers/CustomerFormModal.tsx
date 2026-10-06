@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -81,13 +81,13 @@ export function CustomerFormModal({
   // One-time seed of preference fields once the existing customer's
   // preferences load — not a controlled sync, so typing isn't clobbered by
   // the query's own reactivity.
+  // Prefill the saved preferences once, when the customer loads. Done during render, not in an effect.
   const [seeded, setSeeded] = useState(false);
-  useEffect(() => {
-    if (!existing || !context?.customer || seeded) return;
+  if (!seeded && existing && context?.customer) {
+    setSeeded(true);
     setCategoryIds(context.customer.preferredCategoryIds);
     setColorIds(context.customer.preferredColorIds);
-    setSeeded(true);
-  }, [existing, context, seeded]);
+  }
 
   const toggleCategory = (id: Id<"categories">) =>
     setCategoryIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));

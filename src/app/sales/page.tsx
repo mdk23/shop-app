@@ -58,15 +58,15 @@ export default function SalesPage() {
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<Id<"sales"> | null>(null);
 
+  const [now] = useState(() => Date.now());
   const { start, end } = useMemo(() => {
-    const now = Date.now();
     if (range === "today") {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
       return { start: d.getTime(), end: now };
     }
     return { start: now - Number(range) * 86400000, end: now };
-  }, [range]);
+  }, [range, now]);
 
   const sales = useQuery(api.sales.listByRange, {
     start,
