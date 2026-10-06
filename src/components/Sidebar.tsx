@@ -39,6 +39,11 @@ import {
   Percent,
   TrendingUp,
   Wallet,
+  Layers,
+  AlertTriangle,
+  Calculator,
+  Coins,
+  Scale,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -93,6 +98,8 @@ const menuGroups: MenuGroup[] = [
       { name: "Products", href: "/products", icon: Shirt, allowedRoles: MANAGER },
       { name: "Categories", href: "/products/categories", icon: Tags, allowedRoles: MANAGER },
       { name: "Promotions", href: "/promotions", icon: Percent, allowedRoles: MANAGER },
+      { name: "Offers", href: "/offers", icon: Layers, allowedRoles: MANAGER },
+      { name: "Size equivalences", href: "/settings/size-equivalences", icon: Scale, allowedRoles: MANAGER },
       { name: "Sizes", href: "/settings/sizes", icon: Ruler, allowedRoles: MANAGER },
       { name: "Colors", href: "/settings/colors", icon: Palette, allowedRoles: MANAGER },
     ],
@@ -108,6 +115,7 @@ const menuGroups: MenuGroup[] = [
       { name: "Stock Ledger", href: "/inventory/ledger", icon: ScrollText, allowedRoles: MANAGER },
       { name: "Stock counts", href: "/stock-counts", icon: ClipboardCheck, allowedRoles: MANAGER },
       { name: "Locations", href: "/settings/locations", icon: MapPin, allowedRoles: MANAGER },
+      { name: "Incidents", href: "/incidents", icon: AlertTriangle, allowedRoles: MANAGER },
     ],
   },
   {
@@ -120,6 +128,8 @@ const menuGroups: MenuGroup[] = [
       { name: "Goods received", href: "/receipts", icon: PackageCheck, allowedRoles: MANAGER },
       { name: "Shipments", href: "/shipments", icon: Ship, allowedRoles: MANAGER },
       { name: "Quality", href: "/quality", icon: ShieldCheck, allowedRoles: MANAGER },
+      { name: "Procurement planning", href: "/procurement-planning", icon: Calculator, allowedRoles: MANAGER },
+      { name: "Landed costs", href: "/landed-costs", icon: Coins, allowedRoles: MANAGER },
     ],
   },
   {

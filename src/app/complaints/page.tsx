@@ -31,6 +31,15 @@ import { Plus } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 type Status = "OPEN" | "RESOLVED" | "REJECTED";
+type Complaint = {
+  _id: Id<"complaints">;
+  customerId?: Id<"customers">;
+  customerName?: string;
+  description: string;
+  status: Status;
+  resolutionId?: Id<"resolutions">;
+  createdAt: number;
+};
 type Resolution = "TROCA" | "DEVOLUCAO" | "REEMBOLSO" | "CREDITO" | "REPARACAO" | "RECUSA";
 
 const STATUSES: ("ALL" | Status)[] = ["ALL", "OPEN", "RESOLVED", "REJECTED"];
@@ -62,6 +71,16 @@ export default function ComplaintsPage() {
   const page = useClientPage(complaints ?? []);
   const create = useMutation(api.complaints.create);
   const resolve = useMutation(api.complaints.resolve);
+  const followUps = useQuery(api.followUps.listFollowUps, {});
+  const commitFollowUp = useMutation(api.followUps.commitFollowUp);
+  const recordSatisfaction = useMutation(api.followUps.recordSatisfaction);
+  const supersede = useMutation(api.followUps.supersedeResolution);
+
+  const [promising, setPromising] = useState<Complaint | null>(null);
+  const [promise, setPromise] = useState("");
+  const [promiseDue, setPromiseDue] = useState("");
+  const [superseding, setSuperseding] = useState<Complaint | null>(null);
+  const [newResolution, setNewResolution] = useState<Resolution>("CREDITO");
 
   const [creating, setCreating] = useState(false);
   const [pickingCustomer, setPickingCustomer] = useState(false);
@@ -107,6 +126,79 @@ export default function ComplaintsPage() {
       setBusy(false);
     }
   };
+
+  const savePromise = async () => {
+    if (!promising?.customerId) return;
+    setBusy(true);
+    try {
+      await commitFollowUp({
+        token,
+        customerId: promising.customerId,
+        description: promise,
+        dueAt: promiseDue ? new Date(promiseDue).getTime() : undefined,
+        complaintId: promising._id,
+      });
+      toast.success(t("Promise recorded"));
+      setPromising(null);
+      setPromise("");
+      setPromiseDue("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed to save"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveSupersede = async () => {
+    if (!superseding?.resolutionId) return;
+    setBusy(true);
+    try {
+      await supersede({
+        token,
+        previousResolutionId: superseding.resolutionId,
+        resolutionType: newResolution,
+        complaintId: superseding._id,
+      });
+      toast.success(t("Resolution changed"));
+      setSuperseding(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const markSatisfied = async (followUpId: Id<"followUpCommitments">) => {
+    try {
+      await recordSatisfaction({ token, followUpId });
+      toast.success(t("Customer satisfied recorded"));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed"));
+    }
+  };
+
+  const extraActions = (c: Complaint) => (
+    <>
+      {c.customerId && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setPromising(c);
+            setPromise("");
+            setPromiseDue("");
+          }}
+        >
+          {t("Promise follow-up")}
+        </Button>
+      )}
+      {c.status === "RESOLVED" && c.resolutionId && (
+        <Button size="sm" variant="ghost" onClick={() => setSuperseding(c)}>
+          {t("Change resolution")}
+        </Button>
+      )}
+    </>
+  );
 
   return (
     <PageLayout title={t("Complaints")} subtitle={t("Problems customers report after a purchase")}>
@@ -170,6 +262,7 @@ export default function ComplaintsPage() {
                             {t("Resolve")}
                           </Button>
                         )}
+                        <div className="flex gap-1">{extraActions(c)}</div>
                       </Td>
                     </tr>
                   ))}
@@ -185,11 +278,14 @@ export default function ComplaintsPage() {
                   </div>
                   <p className="text-sm">{c.description}</p>
                   <p className="text-xs text-on-surface-variant">{formatDate(c.createdAt)}</p>
-                  {c.status === "OPEN" && (
-                    <Button size="sm" variant="secondary" onClick={() => setResolving(c._id)}>
-                      {t("Resolve")}
-                    </Button>
-                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.status === "OPEN" && (
+                      <Button size="sm" variant="secondary" onClick={() => setResolving(c._id)}>
+                        {t("Resolve")}
+                      </Button>
+                    )}
+                    {extraActions(c)}
+                  </div>
                 </div>
               ))}
             </div>
@@ -254,6 +350,102 @@ export default function ComplaintsPage() {
           </Field>
           <Field label={t("Notes")}>
             <TextInput value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
+        </div>
+      </Modal>
+
+      <section className="mt-6 space-y-2">
+        <h2 className="text-sm font-black uppercase tracking-widest">{t("Promises to customers")}</h2>
+        <Card>
+          {followUps === undefined ? (
+            <Spinner />
+          ) : followUps.length === 0 ? (
+            <EmptyState
+              title={t("No promises yet")}
+              message={t("When a complaint or return ends with a promise, it is tracked here until the customer confirms it.")}
+            />
+          ) : (
+            <div className="divide-y divide-outline/30">
+              {followUps.map((f) => (
+                <div key={f._id} className="p-4 flex flex-wrap justify-between gap-2 items-center">
+                  <div>
+                    <p className="text-sm font-bold">{f.description}</p>
+                    <p className="text-xs text-on-surface-variant">
+                      {f.customerName}
+                      {f.dueAt ? ` · ${t("due")} ${formatDate(f.dueAt)}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={f.satisfied ? "success" : "warning"}>
+                      {f.satisfied ? t("Customer satisfied") : t("Open")}
+                    </Badge>
+                    {!f.satisfied && (
+                      <Button size="sm" variant="secondary" onClick={() => markSatisfied(f._id)}>
+                        {t("Mark satisfied")}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <Modal
+        open={!!promising}
+        onClose={() => setPromising(null)}
+        title={t("Promise follow-up")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPromising(null)}>
+              {t("Cancel")}
+            </Button>
+            <Button onClick={savePromise} loading={busy} disabled={!promise.trim()}>
+              {t("Save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Field label={t("What was promised?")} required>
+            <Textarea value={promise} onChange={(e) => setPromise(e.target.value)} />
+          </Field>
+          <Field label={t("Due by")}>
+            <TextInput type="date" value={promiseDue} onChange={(e) => setPromiseDue(e.target.value)} />
+          </Field>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!superseding}
+        onClose={() => setSuperseding(null)}
+        title={t("Change resolution")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSuperseding(null)}>
+              {t("Cancel")}
+            </Button>
+            <Button onClick={saveSupersede} loading={busy}>
+              {t("Save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-on-surface-variant">
+            {t("The earlier decision is kept in the history. The complaint points to the new resolution.")}
+          </p>
+          <Field label={t("New resolution")} required>
+            <Select value={newResolution} onChange={(e) => setNewResolution(e.target.value as Resolution)}>
+              {RESOLUTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {t(r.label)}
+                </option>
+              ))}
+            </Select>
           </Field>
         </div>
       </Modal>

@@ -16,6 +16,10 @@ import {
   Td,
   Toolbar,
   PagedFooter,
+  Modal,
+  Field,
+  TextInput,
+  Select,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
 import { formatDate, cn } from "@/lib/utils";
@@ -25,6 +29,15 @@ import { useTranslation } from "@/contexts/LanguageContext";
 
 type Status = "OPEN" | "FULFILLED" | "CANCELLED";
 type Reason = "WRONG_SIZE" | "WRONG_COLOR" | "PRICE_TOO_HIGH" | "NOT_IN_STOCK" | "OTHER";
+type Outcome = "DISPONIVEL" | "ALTERNATIVA" | "PROPOSTA_FUTURA" | "SEM_SOLUCAO_ADEQUADA";
+type OfferLine = { description: string; price: string };
+
+const OUTCOMES: { value: Outcome; label: string }[] = [
+  { value: "DISPONIVEL", label: "Available now" },
+  { value: "ALTERNATIVA", label: "Alternative offered" },
+  { value: "PROPOSTA_FUTURA", label: "Future proposal" },
+  { value: "SEM_SOLUCAO_ADEQUADA", label: "Nothing suitable" },
+];
 
 const STATUSES: ("ALL" | Status)[] = ["ALL", "OPEN", "FULFILLED", "CANCELLED"];
 const STATUS_LABEL: Record<Status, string> = {
@@ -60,7 +73,36 @@ export default function RequestsPage() {
   const sizes = useQuery(api.sizes.list, {});
   const colors = useQuery(api.colors.list, {});
   const resolve = useMutation(api.wantList.resolve);
+  const respond = useMutation(api.demandResponses.record);
   const page = useClientPage(requests ?? []);
+
+  const [responding, setResponding] = useState<Id<"wantList"> | null>(null);
+  const [outcome, setOutcome] = useState<Outcome>("DISPONIVEL");
+  const [offers, setOffers] = useState<OfferLine[]>([{ description: "", price: "" }]);
+  const [busy, setBusy] = useState(false);
+
+  const closeResponse = () => {
+    setResponding(null);
+    setOutcome("DISPONIVEL");
+    setOffers([{ description: "", price: "" }]);
+  };
+
+  const saveResponse = async () => {
+    if (!responding) return;
+    setBusy(true);
+    try {
+      const items = offers
+        .filter((o) => o.description.trim())
+        .map((o) => ({ description: o.description, price: o.price ? Number(o.price) : undefined }));
+      await respond({ token, demandId: responding, outcome, items });
+      toast.success(t("Response recorded"));
+      closeResponse();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed to save"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const sizeName = (id?: string) => (sizes ?? []).find((s) => s._id === id)?.name ?? "—";
   const colorName = (id?: string) => (colors ?? []).find((c) => c._id === id)?.name ?? "—";
@@ -161,6 +203,9 @@ export default function RequestsPage() {
                       <Td>
                         {r.status === "OPEN" && (
                           <div className="flex gap-1">
+                            <Button size="sm" variant="secondary" onClick={() => setResponding(r._id)}>
+                              {t("Respond")}
+                            </Button>
                             <Button size="sm" variant="secondary" onClick={() => close(r._id, "FULFILLED")}>
                               {t("Mark fulfilled")}
                             </Button>
@@ -187,6 +232,9 @@ export default function RequestsPage() {
                   </p>
                   {r.status === "OPEN" && (
                     <div className="flex gap-1.5 pt-1">
+                      <Button size="sm" variant="secondary" onClick={() => setResponding(r._id)}>
+                        {t("Respond")}
+                      </Button>
                       <Button size="sm" variant="secondary" onClick={() => close(r._id, "FULFILLED")}>
                         {t("Mark fulfilled")}
                       </Button>
@@ -202,6 +250,70 @@ export default function RequestsPage() {
           </>
         )}
       </Card>
+
+      <Modal
+        open={responding !== null}
+        onClose={closeResponse}
+        title={t("Respond to request")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeResponse}>
+              {t("Cancel")}
+            </Button>
+            <Button onClick={saveResponse} loading={busy}>
+              {t("Save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Field label={t("What did we answer?")} required>
+            <Select value={outcome} onChange={(e) => setOutcome(e.target.value as Outcome)}>
+              {OUTCOMES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {t(o.label)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {outcome !== "SEM_SOLUCAO_ADEQUADA" && (
+            <Field label={t("What was offered")} required>
+              <div className="space-y-2">
+                {offers.map((o, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <TextInput
+                      value={o.description}
+                      onChange={(e) =>
+                        setOffers(offers.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))
+                      }
+                      placeholder={t("e.g. Same tee in black, size M")}
+                      className="flex-1"
+                    />
+                    <TextInput
+                      type="number"
+                      min={0}
+                      value={o.price}
+                      onChange={(e) =>
+                        setOffers(offers.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))
+                      }
+                      placeholder={t("Price")}
+                      className="w-24"
+                    />
+                  </div>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOffers([...offers, { description: "", price: "" }])}
+                >
+                  {t("Add another option")}
+                </Button>
+              </div>
+            </Field>
+          )}
+        </div>
+      </Modal>
     </PageLayout>
   );
 }
