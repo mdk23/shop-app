@@ -44,6 +44,5 @@ export const procurementTables = {
     landedCostId: v.id("landedCosts"),
     componentType: v.string(),
     componentValue: v.number(),
-    currencyId: v.optional(v.id("currencies")), // TEMP: removed after migration
   }).index("by_landed_cost", ["landedCostId"]),
 };

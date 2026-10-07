@@ -547,7 +547,7 @@ export default defineSchema({
     isGeneric: v.optional(v.boolean()),
     active: v.optional(v.boolean()),
     status: v.optional(
-      v.union(v.literal("ACTIVE"), v.literal("ARCHIVED"), v.literal("active"), v.literal("archived"))
+      v.union(v.literal("ACTIVE"), v.literal("ARCHIVED"))
     ),
     // Customer-centric POS fields — all optional, no migration needed.
     photoUrl: v.optional(v.string()),
@@ -776,7 +776,7 @@ export default defineSchema({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     taxNumber: v.optional(v.string()),
-    status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE"), v.literal("active"), v.literal("inactive")),
+    status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE")),
     paymentTerms: v.optional(v.string()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
@@ -856,7 +856,7 @@ export default defineSchema({
     openingAmount: v.number(),
     openedAt: v.number(),
     closedAt: v.optional(v.number()),
-    status: v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("open"), v.literal("closed")),
+    status: v.union(v.literal("OPEN"), v.literal("CLOSED")),
     notes: v.optional(v.string()),
     closingNotes: v.optional(v.string()),
     actualCash: v.optional(v.number()),
@@ -911,7 +911,7 @@ export default defineSchema({
       v.literal("manager"),
       v.literal("pos_seller")
     ),
-    status: v.union(v.literal("ACTIVE"), v.literal("DISABLED"), v.literal("active"), v.literal("disabled")),
+    status: v.union(v.literal("ACTIVE"), v.literal("DISABLED")),
     lastLogin: v.optional(v.number()),
     createdAt: v.number(),
     branchId: v.optional(v.id("branches")),
@@ -957,7 +957,7 @@ export default defineSchema({
     code: v.string(),
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
-    status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE"), v.literal("active"), v.literal("inactive")),
+    status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE")),
     isDefault: v.optional(v.boolean()),
     createdAt: v.number(),
   })
