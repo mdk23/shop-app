@@ -31,6 +31,7 @@ export const INVENTORY_MOVEMENT_TYPES = [
   "PURCHASE",
   "PURCHASE_RETURN",
   "SALE",
+  "SALE_CANCELLATION",
   "SALE_RETURN",
   "STOCK_ADJUSTMENT",
   "TRANSFER_IN",
@@ -39,6 +40,12 @@ export const INVENTORY_MOVEMENT_TYPES = [
   "LOSS",
   "FOUND",
 ] as const;
+
+export type InventoryMovementType = (typeof INVENTORY_MOVEMENT_TYPES)[number];
+
+export const movementTypeValidator = v.union(
+  ...INVENTORY_MOVEMENT_TYPES.map((type) => v.literal(type))
+);
 
 export default defineSchema({
   // ─────────────────────────────────────────────
@@ -179,7 +186,8 @@ export default defineSchema({
     validFrom: v.number(),
     validTo: v.optional(v.number()),
     active: v.boolean(),
-    createdByUsername: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdByUsername: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_active", ["active"]),
@@ -409,7 +417,7 @@ export default defineSchema({
     variantLabel: v.optional(v.string()),
     sku: v.optional(v.string()),
     branchId: v.optional(v.id("branches")),
-    movementType: v.string(), // see INVENTORY_MOVEMENT_TYPES
+    movementType: movementTypeValidator,
     quantity: v.number(), // negative for outflows
     unit: v.optional(v.string()),
     previousBalance: v.number(),
@@ -466,7 +474,7 @@ export default defineSchema({
       v.literal("CANCELLED")
     ),
     createdBy: v.id("users"),
-    createdByUsername: v.optional(v.string()),
+    createdByUsername: v.string(),
     notes: v.optional(v.string()),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
@@ -486,6 +494,7 @@ export default defineSchema({
   // second query.
   stockTransferReceipts: defineTable({
     transferId: v.id("stockTransfers"),
+    receivedBy: v.id("users"),
     receivedByUsername: v.string(),
     receivedAt: v.number(),
     lines: v.array(
@@ -504,6 +513,7 @@ export default defineSchema({
     branchId: v.id("branches"),
     status: v.union(v.literal("OPEN"), v.literal("CLOSED")),
     notes: v.optional(v.string()),
+    startedBy: v.id("users"),
     startedByUsername: v.string(),
     startedAt: v.number(),
     closedAt: v.optional(v.number()),
@@ -536,7 +546,9 @@ export default defineSchema({
     customerCode: v.optional(v.string()),
     isGeneric: v.optional(v.boolean()),
     active: v.optional(v.boolean()),
-    status: v.optional(v.union(v.literal("active"), v.literal("archived"))),
+    status: v.optional(
+      v.union(v.literal("ACTIVE"), v.literal("ARCHIVED"), v.literal("active"), v.literal("archived"))
+    ),
     // Customer-centric POS fields — all optional, no migration needed.
     photoUrl: v.optional(v.string()),
     tier: v.optional(
@@ -609,6 +621,7 @@ export default defineSchema({
     paymentTermId: v.optional(v.id("paymentTerms")),
     conditions: v.optional(v.string()),
     saleId: v.optional(v.id("sales")),
+    createdBy: v.id("users"),
     createdByUsername: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -634,6 +647,7 @@ export default defineSchema({
     amount: v.number(),
     method: v.string(),
     referenceExternal: v.optional(v.string()),
+    receivedBy: v.id("users"),
     receivedByUsername: v.string(),
     createdAt: v.number(),
   }).index("by_order", ["orderId"]),
@@ -661,6 +675,7 @@ export default defineSchema({
     status: v.union(v.literal("OPEN"), v.literal("RESOLVED"), v.literal("REJECTED")),
     resolutionId: v.optional(v.id("resolutions")),
     resolutionNotes: v.optional(v.string()),
+    createdBy: v.id("users"),
     createdByUsername: v.string(),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
@@ -710,6 +725,7 @@ export default defineSchema({
     ),
     convertedOrderId: v.optional(v.id("customerOrders")),
     proceededAt: v.optional(v.number()),
+    createdBy: v.id("users"),
     createdByUsername: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -733,6 +749,7 @@ export default defineSchema({
     ),
     summary: v.string(),
     occurredAt: v.number(),
+    createdBy: v.id("users"),
     createdByUsername: v.string(),
     createdAt: v.number(),
   }).index("by_customer", ["customerId", "occurredAt"]),
@@ -759,10 +776,9 @@ export default defineSchema({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     taxNumber: v.optional(v.string()),
-    status: v.union(v.literal("active"), v.literal("inactive")),
+    status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE"), v.literal("active"), v.literal("inactive")),
     paymentTerms: v.optional(v.string()),
     notes: v.optional(v.string()),
-    suppliedVariants: v.optional(v.array(v.id("productVariants"))),
     createdAt: v.number(),
   }).index("by_status", ["status"]),
 
@@ -773,17 +789,13 @@ export default defineSchema({
     orderDate: v.number(),
     expectedDeliveryDate: v.optional(v.number()),
     status: v.union(
-      v.literal("draft"),
-      v.literal("sent"),
-      v.literal("partially_received"),
-      v.literal("completed"),
-      v.literal("cancelled")
+      v.literal("DRAFT"),
+      v.literal("SENT"),
+      v.literal("PARTIALLY_RECEIVED"),
+      v.literal("COMPLETED"),
+      v.literal("CANCELLED")
     ),
-    paymentStatus: v.union(
-      v.literal("unpaid"),
-      v.literal("partially_paid"),
-      v.literal("paid")
-    ),
+    paymentStatus: v.union(v.literal("UNPAID"), v.literal("PARTIALLY_PAID"), v.literal("PAID")),
     totalAmount: v.number(),
     notes: v.optional(v.string()),
     createdAt: v.number(),
@@ -812,6 +824,7 @@ export default defineSchema({
     deliveryNoteRef: v.optional(v.string()),
     notes: v.optional(v.string()),
     unitsTotal: v.number(),
+    receivedBy: v.id("users"),
     receivedByUsername: v.string(),
     receivedAt: v.number(),
     createdAt: v.number(),
@@ -843,7 +856,7 @@ export default defineSchema({
     openingAmount: v.number(),
     openedAt: v.number(),
     closedAt: v.optional(v.number()),
-    status: v.union(v.literal("open"), v.literal("closed")),
+    status: v.union(v.literal("OPEN"), v.literal("CLOSED"), v.literal("open"), v.literal("closed")),
     notes: v.optional(v.string()),
     closingNotes: v.optional(v.string()),
     actualCash: v.optional(v.number()),
@@ -898,7 +911,7 @@ export default defineSchema({
       v.literal("manager"),
       v.literal("pos_seller")
     ),
-    status: v.union(v.literal("active"), v.literal("disabled")),
+    status: v.union(v.literal("ACTIVE"), v.literal("DISABLED"), v.literal("active"), v.literal("disabled")),
     lastLogin: v.optional(v.number()),
     createdAt: v.number(),
     branchId: v.optional(v.id("branches")),
@@ -944,7 +957,7 @@ export default defineSchema({
     code: v.string(),
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
-    status: v.union(v.literal("active"), v.literal("inactive")),
+    status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE"), v.literal("active"), v.literal("inactive")),
     isDefault: v.optional(v.boolean()),
     createdAt: v.number(),
   })
@@ -956,7 +969,8 @@ export default defineSchema({
     fee: v.number(),
     description: v.optional(v.string()),
     active: v.boolean(),
-    createdBy: v.string(),
+    createdBy: v.id("users"),
+    createdByUsername: v.string(),
     createdAt: v.number(),
   }).index("by_name", ["name"]),
 
@@ -1004,7 +1018,6 @@ export default defineSchema({
     productSales: v.optional(v.record(v.string(), v.number())),
     sizeSales: v.optional(v.record(v.string(), v.number())),
     colorSales: v.optional(v.record(v.string(), v.number())),
-    customerIds: v.optional(v.array(v.string())),
 
     fullyPaidCount: v.optional(v.number()),
     partiallyPaidCount: v.optional(v.number()),

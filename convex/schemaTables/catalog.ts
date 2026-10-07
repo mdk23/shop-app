@@ -15,7 +15,7 @@ export const catalogTables = {
     .index("by_to", ["toSizeId"]),
 
   fiscalIdentities: defineTable({
-    personId: v.optional(v.id("customers")),
+    customerId: v.optional(v.id("customers")),
     branchId: v.optional(v.id("branches")),
     identificationType: v.string(),
     number: v.string(),
@@ -23,6 +23,6 @@ export const catalogTables = {
     validFrom: v.number(),
     validTo: v.optional(v.number()),
   })
-    .index("by_person", ["personId"])
+    .index("by_customer", ["customerId"])
     .index("by_branch", ["branchId"]),
 };

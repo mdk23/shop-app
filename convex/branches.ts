@@ -15,7 +15,7 @@ export const listActive = query({
   handler: async (ctx) => {
     const branches = await ctx.db
       .query("branches")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
       .collect();
 
     // If no branches exist, return empty array
@@ -59,7 +59,7 @@ export const create = mutation({
       code: args.code.toUpperCase(),
       address: args.address,
       phone: args.phone,
-      status: "active",
+      status: "ACTIVE",
       isDefault: args.isDefault ?? false,
       createdAt: Date.now(),
     });
@@ -85,7 +85,7 @@ export const update = mutation({
     code: v.optional(v.string()),
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("active"), v.literal("inactive"))),
+    status: v.optional(v.union(v.literal("ACTIVE"), v.literal("INACTIVE"))),
     isDefault: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -133,7 +133,7 @@ export const ensureDefaultBranch = mutation({
         name: "Main Store",
         code: "MAIN",
         address: "Headquarters",
-        status: "active",
+        status: "ACTIVE",
         isDefault: true,
         createdAt: Date.now(),
       });

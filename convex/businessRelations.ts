@@ -4,12 +4,12 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
 /** Business relations this customer takes part in, with everyone on each relation. */
-export const listByPerson = query({
-  args: { personId: v.id("customers") },
+export const listByCustomer = query({
+  args: { customerId: v.id("customers") },
   handler: async (ctx, args) => {
     const mine = await ctx.db
       .query("relationParticipants")
-      .withIndex("by_person", (q) => q.eq("personId", args.personId))
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
       .collect();
     return await Promise.all(
       mine.map(async (p) => {
@@ -22,8 +22,8 @@ export const listByPerson = query({
           others.map(async (o) => ({
             _id: o._id,
             role: o.role,
-            name: (await ctx.db.get(o.personId))?.name ?? "—",
-            isThisCustomer: o.personId === args.personId,
+            name: (await ctx.db.get(o.customerId))?.name ?? "—",
+            isThisCustomer: o.customerId === args.customerId,
           }))
         );
         return { relationId: p.relationId, role: p.role, startedAt: relation?.startedAt, endedAt: relation?.endedAt, people };
@@ -36,14 +36,14 @@ export const listByPerson = query({
 export const open = mutation({
   args: {
     token: v.string(),
-    personId: v.id("customers"),
+    customerId: v.id("customers"),
     role: v.string(),
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "customers.manage");
     const role = args.role.trim();
     if (!role) throw new Error("Give the customer's role in the relation.");
-    if (!(await ctx.db.get(args.personId))) throw new Error("Customer not found.");
+    if (!(await ctx.db.get(args.customerId))) throw new Error("Customer not found.");
     const now = Date.now();
     const relationId = await ctx.db.insert("businessRelations", {
       startedAt: now,
@@ -51,7 +51,7 @@ export const open = mutation({
     });
     await ctx.db.insert("relationParticipants", {
       relationId,
-      personId: args.personId,
+      customerId: args.customerId,
       role,
       validFrom: now,
     });
@@ -60,7 +60,7 @@ export const open = mutation({
       username: actor.username,
       action: "relation.opened",
       entityType: "customer",
-      entityId: args.personId,
+      entityId: args.customerId,
       details: role,
     });
     return relationId;

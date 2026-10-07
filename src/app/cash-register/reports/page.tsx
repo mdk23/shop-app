@@ -36,7 +36,7 @@ export default function CashReportsPage() {
   const filterArgs = token
     ? {
         token,
-        status: (statusFilter || undefined) as "open" | "closed" | undefined,
+        status: (statusFilter || undefined) as "OPEN" | "CLOSED" | undefined,
         branchId: branch || undefined,
       }
     : "skip";
@@ -57,7 +57,7 @@ export default function CashReportsPage() {
     token
       ? {
           token,
-          status: (statusFilter || undefined) as "open" | "closed" | undefined,
+          status: (statusFilter || undefined) as "OPEN" | "CLOSED" | undefined,
           branchId: branch || undefined,
         }
       : "skip"
@@ -78,8 +78,8 @@ export default function CashReportsPage() {
           className="w-36"
         >
           <option value="">{t("All")}</option>
-          <option value="open">{t("Open")}</option>
-          <option value="closed">{t("Closed")}</option>
+          <option value="OPEN">{t("Open")}</option>
+          <option value="CLOSED">{t("Closed")}</option>
         </Select>
         {branches.length > 1 && (
           <Select value={branch} onChange={(e) => setBranch(e.target.value)} className="w-40">
@@ -119,8 +119,8 @@ export default function CashReportsPage() {
                   <Td className="text-xs">{new Date(s.openedAt).toLocaleString()}</Td>
                   <Td>{s.userName ?? s.username}</Td>
                   <Td>
-                    <Badge tone={s.status === "open" ? "info" : "neutral"}>
-                      {t(s.status === "open" ? "Open" : "Closed")}
+                    <Badge tone={s.status === "OPEN" ? "info" : "neutral"}>
+                      {t(s.status === "OPEN" ? "Open" : "Closed")}
                     </Badge>
                   </Td>
                   <Td className="text-right">{fmt(s.openingAmount)}</Td>

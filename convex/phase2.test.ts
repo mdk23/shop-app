@@ -15,7 +15,7 @@ async function seed() {
     const branchId = await ctx.db.insert("branches", {
       name: "Main",
       code: "MAIN",
-      status: "active",
+      status: "ACTIVE",
       isDefault: true,
       createdAt: now,
     });
@@ -89,14 +89,14 @@ async function seed() {
       phone1: "841234567",
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     const userId = await ctx.db.insert("users", {
       name: "admin",
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", {
@@ -274,7 +274,7 @@ describe("fiscal numbering", () => {
     const { t, ids, token } = await seed();
     await t.run((ctx) =>
       ctx.db.insert("fiscalIdentities", {
-        personId: ids.customerId,
+        customerId: ids.customerId,
         identificationType: "NUIT",
         number: "400123456",
         country: "MZ",

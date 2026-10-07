@@ -22,8 +22,8 @@ const TYPE_LABEL: Record<(typeof TYPES)[number], string> = {
 export function FichaContactosExtra({ customerId }: { customerId: Id<"customers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const contacts = useQuery(api.contactMeans.listByPerson, { personId: customerId });
-  const nuit = useQuery(api.fiscalIdentities.getNuit, { personId: customerId });
+  const contacts = useQuery(api.contactMeans.listByCustomer, { customerId: customerId });
+  const nuit = useQuery(api.fiscalIdentities.getNuit, { customerId: customerId });
   const add = useMutation(api.contactMeans.add);
   const retire = useMutation(api.contactMeans.retire);
   const setNuit = useMutation(api.fiscalIdentities.setNuit);
@@ -36,7 +36,7 @@ export function FichaContactosExtra({ customerId }: { customerId: Id<"customers"
   const save = async () => {
     setBusy(true);
     try {
-      await add({ token, personId: customerId, contactType: type, contactValue: value });
+      await add({ token, customerId: customerId, contactType: type, contactValue: value });
       toast.success(t("Contact added"));
       setValue("");
     } catch (e) {
@@ -49,7 +49,7 @@ export function FichaContactosExtra({ customerId }: { customerId: Id<"customers"
   const saveNuit = async () => {
     setBusy(true);
     try {
-      await setNuit({ token, personId: customerId, number: nuitInput });
+      await setNuit({ token, customerId: customerId, number: nuitInput });
       toast.success(t("Tax number saved"));
       setNuitInput("");
     } catch (e) {

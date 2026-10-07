@@ -100,7 +100,7 @@ export const addAssortmentItem = mutation({
     const id = await ctx.db.insert("assortmentItems", {
       assortmentId: args.assortmentId,
       productId: args.productId,
-      variantId: args.variantId,
+      productVariantId: args.variantId,
       validFrom: now,
     });
     await writeAudit(ctx, {

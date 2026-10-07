@@ -85,6 +85,7 @@ export async function receiveIntoStock(
     deliveryNoteRef: input.deliveryNoteRef?.trim() || undefined,
     notes: input.notes?.trim() || undefined,
     unitsTotal: plan.reduce((s, p) => s + p.rx.quantityReceived, 0),
+    receivedBy: actor._id,
     receivedByUsername: actor.username,
     receivedAt: now,
     createdAt: now,
@@ -127,7 +128,7 @@ export async function receiveIntoStock(
       .collect();
     const allComplete = updated.every((i) => i.quantityReceived >= i.quantityOrdered);
     const anyReceived = updated.some((i) => i.quantityReceived > 0);
-    const newStatus = allComplete ? "completed" : anyReceived ? "partially_received" : po.status;
+    const newStatus = allComplete ? "COMPLETED" : anyReceived ? "PARTIALLY_RECEIVED" : po.status;
     await ctx.db.patch(po._id, { status: newStatus });
   }
 

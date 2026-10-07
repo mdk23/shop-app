@@ -42,12 +42,12 @@ describe("module smoke tests", () => {
   test("relations: a business relation links participants", async () => {
     const t = convexTest(schema, modules);
     const count = await t.run(async (ctx) => {
-      const personId = await ctx.db.insert("customers", {
+      const customerId = await ctx.db.insert("customers", {
         name: "Jane",
         phone1: "841234567",
         isGeneric: false,
         active: true,
-        status: "active",
+        status: "ACTIVE",
       });
       const relationId = await ctx.db.insert("businessRelations", {
         startedAt: Date.now(),
@@ -55,7 +55,7 @@ describe("module smoke tests", () => {
       });
       await ctx.db.insert("relationParticipants", {
         relationId,
-        personId,
+        customerId,
         role: "CUSTOMER",
         validFrom: Date.now(),
       });
@@ -78,12 +78,20 @@ describe("module smoke tests", () => {
         phone1: "841234567",
         isGeneric: false,
         active: true,
-        status: "active",
+        status: "ACTIVE",
       });
       const branchId = await ctx.db.insert("branches", {
         name: "Main",
         code: "MAIN",
-        status: "active",
+        status: "ACTIVE",
+        createdAt: now,
+      });
+      const userId = await ctx.db.insert("users", {
+        name: "admin",
+        username: "admin",
+        passwordHash: "",
+        role: "admin",
+        status: "ACTIVE",
         createdAt: now,
       });
       const orderId = await ctx.db.insert("customerOrders", {
@@ -92,21 +100,16 @@ describe("module smoke tests", () => {
         branchId,
         status: "OPEN",
         totalAmount: 500,
+        createdBy: userId,
         createdByUsername: "admin",
         createdAt: now,
         updatedAt: now,
-      });
-      const currencyId = await ctx.db.insert("currencies", {
-        isoCode: "MZN",
-        name: "Metical",
-        decimalPlaces: 2,
       });
       await ctx.db.insert("commitmentAdjustments", {
         commitmentId: orderId,
         adjustmentType: "DISCOUNT",
         calculationMode: "VALOR",
         adjustmentValue: 50,
-        currencyId,
       });
       return ctx.db
         .query("commitmentAdjustments")
@@ -139,7 +142,7 @@ describe("module smoke tests", () => {
       const branchId = await ctx.db.insert("branches", {
         name: "Main",
         code: "MAIN",
-        status: "active",
+        status: "ACTIVE",
         createdAt: now,
       });
       const categoryId = await ctx.db.insert("categories", {
@@ -182,7 +185,7 @@ describe("module smoke tests", () => {
         username: "admin",
         passwordHash: "",
         role: "admin",
-        status: "active",
+        status: "ACTIVE",
         createdAt: now,
       });
       await ctx.db.insert("stockAdjustments", {

@@ -15,12 +15,12 @@ async function seed() {
     const branchId = await ctx.db.insert("branches", {
       name: "Main",
       code: "MAIN",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     const supplierId = await ctx.db.insert("suppliers", {
       name: "Supplier Co",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     const categoryId = await ctx.db.insert("categories", {
@@ -54,8 +54,8 @@ async function seed() {
       branchId,
       orderCode: "PO-00001",
       orderDate: now,
-      status: "sent",
-      paymentStatus: "unpaid",
+      status: "SENT",
+      paymentStatus: "UNPAID",
       totalAmount: 400,
       createdAt: now,
     });
@@ -72,7 +72,7 @@ async function seed() {
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", {
@@ -81,7 +81,7 @@ async function seed() {
       expiresAt: now + 3_600_000,
       createdAt: now,
     });
-    return { branchId, supplierId, variantId, poId };
+    return { branchId, supplierId, variantId, poId, userId };
   });
   return { t, token, ids };
 }
@@ -161,6 +161,7 @@ describe("quality issues, inspections and shipments", () => {
       ctx.db.insert("complaints", {
         description: "Fecho partido",
         status: "OPEN",
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
       })
@@ -184,6 +185,7 @@ describe("quality issues, inspections and shipments", () => {
         receiptNumber: "RC-00001",
         branchId: ids.branchId,
         unitsTotal: 3,
+        receivedBy: ids.userId,
         receivedByUsername: "admin",
         receivedAt: Date.now(),
         createdAt: Date.now(),
@@ -246,11 +248,12 @@ describe("receiving lists, locations and holds", () => {
           phone1: "1",
           isGeneric: false,
           active: true,
-          status: "active",
+          status: "ACTIVE",
         }),
         branchId: ids.branchId,
         status: "OPEN",
         totalAmount: 0,
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),

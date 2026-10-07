@@ -40,6 +40,7 @@ export const create = mutation({
       channel: args.channel,
       summary,
       occurredAt: args.occurredAt ?? now,
+      createdBy: actor._id,
       createdByUsername: actor.username,
       createdAt: now,
     });

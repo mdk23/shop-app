@@ -68,7 +68,8 @@ export const create = mutation({
       fee: args.fee,
       description: args.description,
       active: args.active,
-      createdBy: actor.name,
+      createdBy: actor._id,
+      createdByUsername: actor.username,
       createdAt: Date.now(),
     });
 

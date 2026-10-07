@@ -14,7 +14,6 @@ export const commitmentTables = {
       v.literal("PRECO_FIXO")
     ),
     adjustmentValue: v.number(),
-    currencyId: v.id("currencies"),
     promotionId: v.optional(v.id("promotions")),
   })
     .index("by_commitment", ["commitmentId"])

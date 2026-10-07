@@ -32,7 +32,7 @@ export const overview = query({
         return {
           ...need,
           items: await Promise.all(
-            items.map(async (item) => ({ ...item, label: await variantLabel(ctx, item.variantId) }))
+            items.map(async (item) => ({ ...item, label: await variantLabel(ctx, item.productVariantId) }))
           ),
         };
       })
@@ -50,7 +50,7 @@ export const overview = query({
               .query("decisionNeedCoverages")
               .withIndex("by_decision_item", (q) => q.eq("decisionItemId", item._id))
               .collect();
-            return { ...item, label: await variantLabel(ctx, item.variantId), coverages: coverages.length };
+            return { ...item, label: await variantLabel(ctx, item.productVariantId), coverages: coverages.length };
           })
         );
         return { ...decision, items: itemsOut };
@@ -73,7 +73,7 @@ export const createNeed = mutation({
       await ctx.db.insert("procurementNeedItems", {
         needId: id,
         productId: variant.productId,
-        variantId: item.variantId,
+        productVariantId: item.variantId,
         quantityRecognized: item.quantity,
       });
     }
@@ -104,7 +104,7 @@ export const createDecision = mutation({
       await ctx.db.insert("procurementDecisionItems", {
         decisionId: id,
         productId: variant.productId,
-        variantId: item.variantId,
+        productVariantId: item.variantId,
         quantityDecided: item.quantity,
       });
     }
@@ -133,7 +133,7 @@ export const coverNeed = mutation({
     const decisionItem = await ctx.db.get(args.decisionItemId);
     const needItem = await ctx.db.get(args.needItemId);
     if (!decisionItem || !needItem) throw new Error("Decision or need not found.");
-    if (decisionItem.variantId !== needItem.variantId) {
+    if (decisionItem.productVariantId !== needItem.productVariantId) {
       throw new Error("A decision can only cover a need for the same product variant.");
     }
     if (args.quantity <= 0) throw new Error("The covered quantity must be positive.");

@@ -171,7 +171,7 @@ export const create = mutation({
     if (args.refundMethod === "CASH") {
       const open = await ctx.db
         .query("cashRegisterSessions")
-        .withIndex("by_status", (q) => q.eq("status", "open"))
+        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
         .collect();
       session =
         open.find((s) => s.branchId === sale.branchId) ??

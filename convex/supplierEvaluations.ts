@@ -72,6 +72,7 @@ export const create = mutation({
       punctualityPercent: args.punctualityPercent,
       costScore: args.costScore,
       notes: args.notes?.trim() || undefined,
+      evaluatedBy: actor._id,
       evaluatedByUsername: actor.username,
       evaluatedAt: Date.now(),
     });

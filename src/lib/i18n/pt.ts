@@ -1158,4 +1158,5 @@ export const pt: Record<string, string> = {
   "Where was it found?": "Onde foi encontrado?",
   "Defective goods are recorded here and treated.": "Os produtos com defeito são registados e tratados aqui.",
   "No quality issues recorded": "Sem problemas de qualidade registados",
+  "Unpaid": "Por pagar",
 };

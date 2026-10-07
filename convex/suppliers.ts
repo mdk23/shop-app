@@ -5,7 +5,7 @@ import { writeAudit } from "./audit";
 
 export const list = query({
   args: {
-    status: v.optional(v.union(v.literal("active"), v.literal("inactive"))),
+    status: v.optional(v.union(v.literal("ACTIVE"), v.literal("INACTIVE"))),
     search: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -34,7 +34,7 @@ const SUPPLIER_FIELDS = {
   email: v.optional(v.string()),
   address: v.optional(v.string()),
   taxNumber: v.optional(v.string()),
-  status: v.union(v.literal("active"), v.literal("inactive")),
+  status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE")),
   paymentTerms: v.optional(v.string()),
   notes: v.optional(v.string()),
 };

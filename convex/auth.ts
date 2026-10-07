@@ -120,7 +120,7 @@ export const getSession = query({
     if (!session || session.expiresAt < Date.now()) return null;
 
     const user = await ctx.db.get(session.userId);
-    if (!user || user.status === "disabled") return null;
+    if (!user || user.status === "DISABLED") return null;
 
     return {
       sessionId: session._id,
@@ -235,7 +235,7 @@ export const listActiveSessions = query({
     }
 
     const caller = await ctx.db.get(session.userId);
-    if (!caller || caller.status === "disabled" || (caller.role !== "admin" && caller.role !== "manager")) {
+    if (!caller || caller.status === "DISABLED" || (caller.role !== "admin" && caller.role !== "manager")) {
       throw new Error("Unauthorized");
     }
 
@@ -289,7 +289,7 @@ export const terminateSession = mutation({
     }
 
     const caller = await ctx.db.get(session.userId);
-    if (!caller || caller.status === "disabled" || (caller.role !== "admin" && caller.role !== "manager")) {
+    if (!caller || caller.status === "DISABLED" || (caller.role !== "admin" && caller.role !== "manager")) {
       throw new Error("Unauthorized");
     }
 
@@ -323,7 +323,7 @@ export async function validateToken(ctx: QueryCtx | MutationCtx, token: string) 
   }
 
   const user = await ctx.db.get(session.userId);
-  if (!user || user.status === "disabled") {
+  if (!user || user.status === "DISABLED") {
     throw new Error("Your account is disabled.");
   }
 

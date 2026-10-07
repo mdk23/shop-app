@@ -17,7 +17,7 @@ async function seed() {
       phone1: "841234567",
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     const categoryId = await ctx.db.insert("categories", {
       name: "T-Shirts",
@@ -39,7 +39,7 @@ async function seed() {
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", { userId, token, expiresAt: now + 3_600_000, createdAt: now });
@@ -53,13 +53,13 @@ describe("customer tabs", () => {
     const { t, token, ids } = await seed();
     const id = await t.mutation(api.contactMeans.add, {
       token,
-      personId: ids.customerId,
+      customerId: ids.customerId,
       contactType: "WHATSAPP",
       contactValue: "845555555",
     });
     await t.mutation(api.contactMeans.retire, { token, id });
     await expect(t.mutation(api.contactMeans.retire, { token, id })).rejects.toThrow(/already retired/);
-    const rows = await t.query(api.contactMeans.listByPerson, { personId: ids.customerId });
+    const rows = await t.query(api.contactMeans.listByCustomer, { customerId: ids.customerId });
     expect(rows).toHaveLength(1);
     expect(rows[0].validTo).toBeDefined();
   });
@@ -67,14 +67,14 @@ describe("customer tabs", () => {
   test("a business relation lists everyone on it", async () => {
     const { t, token, ids } = await seed();
     const other = await t.run((ctx) =>
-      ctx.db.insert("customers", { name: "Coach", phone1: "1", isGeneric: false, active: true, status: "active" })
+      ctx.db.insert("customers", { name: "Coach", phone1: "1", isGeneric: false, active: true, status: "ACTIVE" })
     );
-    await t.mutation(api.businessRelations.open, { token, personId: ids.customerId, role: "Buyer for the school team" });
-    const relationId = (await t.query(api.businessRelations.listByPerson, { personId: ids.customerId }))[0].relationId;
+    await t.mutation(api.businessRelations.open, { token, customerId: ids.customerId, role: "Buyer for the school team" });
+    const relationId = (await t.query(api.businessRelations.listByCustomer, { customerId: ids.customerId }))[0].relationId;
     await t.run((ctx) =>
-      ctx.db.insert("relationParticipants", { relationId, personId: other, role: "Coach", validFrom: Date.now() })
+      ctx.db.insert("relationParticipants", { relationId, customerId: other, role: "Coach", validFrom: Date.now() })
     );
-    const rows = await t.query(api.businessRelations.listByPerson, { personId: ids.customerId });
+    const rows = await t.query(api.businessRelations.listByCustomer, { customerId: ids.customerId });
     expect(rows[0].people.map((p) => p.name).sort()).toEqual(["Coach", "Jane Doe"]);
     expect(rows[0].people.find((p) => p.isThisCustomer)?.name).toBe("Jane Doe");
   });
@@ -82,15 +82,15 @@ describe("customer tabs", () => {
   test("a new NUIT closes the previous one and must have nine digits", async () => {
     const { t, token, ids } = await seed();
     await expect(
-      t.mutation(api.fiscalIdentities.setNuit, { token, personId: ids.customerId, number: "123" })
+      t.mutation(api.fiscalIdentities.setNuit, { token, customerId: ids.customerId, number: "123" })
     ).rejects.toThrow(/nine digits/);
-    await t.mutation(api.fiscalIdentities.setNuit, { token, personId: ids.customerId, number: "400000001" });
-    await t.mutation(api.fiscalIdentities.setNuit, { token, personId: ids.customerId, number: "400000002" });
-    expect(await t.query(api.fiscalIdentities.getNuit, { personId: ids.customerId })).toBe("400000002");
+    await t.mutation(api.fiscalIdentities.setNuit, { token, customerId: ids.customerId, number: "400000001" });
+    await t.mutation(api.fiscalIdentities.setNuit, { token, customerId: ids.customerId, number: "400000002" });
+    expect(await t.query(api.fiscalIdentities.getNuit, { customerId: ids.customerId })).toBe("400000002");
     const rows = await t.run((ctx) =>
       ctx.db
         .query("fiscalIdentities")
-        .withIndex("by_person", (q) => q.eq("personId", ids.customerId))
+        .withIndex("by_customer", (q) => q.eq("customerId", ids.customerId))
         .collect()
     );
     expect(rows).toHaveLength(2);
@@ -153,7 +153,7 @@ describe("supplier scorecard", () => {
   test("averages evaluations and counts open non-conformities per supplier", async () => {
     const { t, token, ids } = await seed();
     const supplierId: Id<"suppliers"> = await t.run((ctx) =>
-      ctx.db.insert("suppliers", { name: "Supplier Co", status: "active", createdAt: Date.now() })
+      ctx.db.insert("suppliers", { name: "Supplier Co", status: "ACTIVE", createdAt: Date.now() })
     );
     await t.mutation(api.supplierEvaluations.create, {
       token,

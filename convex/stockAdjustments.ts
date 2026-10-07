@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { variantLabel } from "./inventory";
+import type { InventoryMovementType } from "./schema";
 
 const REASON = v.union(
   v.literal("PHYSICAL_COUNT"),
@@ -16,7 +17,7 @@ const REASON = v.union(
   v.literal("CORRECTION")
 );
 
-const MOVEMENT_TYPE_FOR_REASON: Record<string, string> = {
+const MOVEMENT_TYPE_FOR_REASON: Record<string, InventoryMovementType> = {
   PHYSICAL_COUNT: "STOCK_ADJUSTMENT",
   DAMAGED: "DAMAGE",
   MISSING: "LOSS",

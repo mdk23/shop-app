@@ -41,7 +41,7 @@ type Supplier = {
   taxNumber?: string;
   paymentTerms?: string;
   notes?: string;
-  status: "active" | "inactive";
+  status: "ACTIVE" | "INACTIVE";
 };
 
 export default function SuppliersPage() {
@@ -51,7 +51,7 @@ export default function SuppliersPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const rows = useQuery(api.suppliers.list, {
     search: search || undefined,
-    status: (statusFilter || undefined) as "active" | "inactive" | undefined,
+    status: (statusFilter || undefined) as "ACTIVE" | "INACTIVE" | undefined,
   });
   const page = useClientPage(rows ?? []);
   const remove = useMutation(api.suppliers.remove);
@@ -78,8 +78,8 @@ export default function SuppliersPage() {
           className="w-32"
         >
           <option value="">{t("Any status")}</option>
-          <option value="active">{t("Active")}</option>
-          <option value="inactive">{t("Inactive")}</option>
+          <option value="ACTIVE">{t("Active")}</option>
+          <option value="INACTIVE">{t("Inactive")}</option>
         </Select>
         <div className="ml-auto" />
         <Button
@@ -121,8 +121,8 @@ export default function SuppliersPage() {
                   <Td>{s.phone ?? "—"}</Td>
                   <Td className="text-on-surface-variant">{s.paymentTerms ?? "—"}</Td>
                   <Td>
-                    <Badge tone={s.status === "active" ? "success" : "neutral"}>
-                      {t(s.status === "active" ? "Active" : "Inactive")}
+                    <Badge tone={s.status === "ACTIVE" ? "success" : "neutral"}>
+                      {t(s.status === "ACTIVE" ? "Active" : "Inactive")}
                     </Badge>
                   </Td>
                   <Td>
@@ -215,7 +215,7 @@ function SupplierModal({
     taxNumber: existing?.taxNumber ?? "",
     paymentTerms: existing?.paymentTerms ?? "",
     notes: existing?.notes ?? "",
-    status: existing?.status ?? "active",
+    status: existing?.status ?? "ACTIVE",
   });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
@@ -234,7 +234,7 @@ function SupplierModal({
         taxNumber: f.taxNumber || undefined,
         paymentTerms: f.paymentTerms || undefined,
         notes: f.notes || undefined,
-        status: f.status as "active" | "inactive",
+        status: f.status as "ACTIVE" | "INACTIVE",
       };
       if (existing) await update({ ...payload, id: existing._id });
       else await create(payload);
@@ -295,8 +295,8 @@ function SupplierModal({
         </Field>
         <Field label={t("Status")}>
           <Select value={f.status} onChange={(e) => set("status", e.target.value)}>
-            <option value="active">{t("Active")}</option>
-            <option value="inactive">{t("Inactive")}</option>
+            <option value="ACTIVE">{t("Active")}</option>
+            <option value="INACTIVE">{t("Inactive")}</option>
           </Select>
         </Field>
       </div>

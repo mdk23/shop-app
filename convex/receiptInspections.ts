@@ -32,6 +32,7 @@ export const create = mutation({
       receiptId: args.receiptId,
       result: args.result,
       notes: args.notes?.trim() || undefined,
+      inspectedBy: actor._id,
       inspectedByUsername: actor.username,
       inspectedAt: Date.now(),
     });

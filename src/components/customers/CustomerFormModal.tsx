@@ -52,7 +52,7 @@ export function CustomerFormModal({
   const colors = useQuery(api.colors.list, {});
   const currentNuitValue = useQuery(
     api.fiscalIdentities.getNuit,
-    existing ? { personId: existing._id } : "skip"
+    existing ? { customerId: existing._id } : "skip"
   );
   const setNuitMutation = useMutation(api.fiscalIdentities.setNuit);
   const [nuit, setNuitValue] = useState<string | null>(null);
@@ -135,7 +135,7 @@ export function CustomerFormModal({
         preferredColorIds: colorIds,
       });
       if (nuitValue && nuitValue !== (currentNuitValue ?? "")) {
-        await setNuitMutation({ token, personId: id, number: nuitValue });
+        await setNuitMutation({ token, customerId: id, number: nuitValue });
       }
 
       onSaved?.(id);

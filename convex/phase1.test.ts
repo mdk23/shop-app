@@ -13,7 +13,7 @@ async function seed() {
     const branchId = await ctx.db.insert("branches", {
       name: "Main",
       code: "MAIN",
-      status: "active",
+      status: "ACTIVE",
       isDefault: true,
       createdAt: now,
     });
@@ -49,7 +49,7 @@ async function seed() {
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", {

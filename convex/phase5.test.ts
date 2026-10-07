@@ -15,19 +15,19 @@ async function seed() {
     const main = await ctx.db.insert("branches", {
       name: "Main",
       code: "MAIN",
-      status: "active",
+      status: "ACTIVE",
       isDefault: true,
       createdAt: now,
     });
     const second = await ctx.db.insert("branches", {
       name: "Second",
       code: "SEC",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     const supplierId = await ctx.db.insert("suppliers", {
       name: "Supplier Co",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     const categoryId = await ctx.db.insert("categories", {
@@ -78,7 +78,7 @@ async function seed() {
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", {
@@ -121,7 +121,7 @@ async function sentPurchaseOrder(
     orderDate: Date.now(),
     items: [{ productVariantId: ids.variantA, quantityOrdered: quantity, unitCost: 40 }],
   });
-  await t.mutation(api.purchaseOrders.updateStatus, { token, id: poId, status: "sent" });
+  await t.mutation(api.purchaseOrders.updateStatus, { token, id: poId, status: "SENT" });
   return poId;
 }
 
@@ -150,7 +150,7 @@ describe("purchase receipts", () => {
     expect(await stockOf(t, ids.main, ids.variantA)).toBe(12);
 
     const po = await t.run((ctx) => ctx.db.get(poId));
-    expect(po?.status).toBe("completed");
+    expect(po?.status).toBe("COMPLETED");
   });
 
   test("goods without an order are recorded as unannounced and need a unit cost", async () => {

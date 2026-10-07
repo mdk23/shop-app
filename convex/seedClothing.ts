@@ -92,7 +92,7 @@ export const seed = mutation({
     let branch =
       (await ctx.db
         .query("branches")
-        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
         .filter((q) => q.eq(q.field("isDefault"), true))
         .first()) ?? (await ctx.db.query("branches").first());
     if (!branch) {
@@ -100,7 +100,7 @@ export const seed = mutation({
         name: "Main Store",
         code: "MAIN",
         address: "Headquarters",
-        status: "active",
+        status: "ACTIVE",
         isDefault: true,
         createdAt: Date.now(),
       });
@@ -118,7 +118,7 @@ export const seed = mutation({
         phone1: "000000000",
         isGeneric: true,
         active: true,
-        status: "active",
+        status: "ACTIVE",
       });
     }
     await ensureDefaultSettings(ctx);
@@ -253,7 +253,7 @@ export const seed = mutation({
         existing?._id ??
           (await ctx.db.insert("suppliers", {
             name,
-            status: "active",
+            status: "ACTIVE",
             createdAt: Date.now(),
           }))
       );

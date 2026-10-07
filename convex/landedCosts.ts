@@ -4,15 +4,6 @@ import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
-async function mznCurrency(ctx: MutationCtx): Promise<Id<"currencies">> {
-  const existing = await ctx.db
-    .query("currencies")
-    .withIndex("by_iso_code", (q) => q.eq("isoCode", "MZN"))
-    .unique();
-  if (existing) return existing._id;
-  return await ctx.db.insert("currencies", { isoCode: "MZN", name: "Metical", symbol: "MT", decimalPlaces: 2 });
-}
-
 export const list = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -51,14 +42,13 @@ function validateComponents(components: ComponentInput[]) {
   }
 }
 
+/** Values are in the shop's currency (settings `currency` / `currencySymbol`), like every other amount. */
 async function insertComponents(ctx: MutationCtx, landedCostId: Id<"landedCosts">, components: ComponentInput[]) {
-  const currencyId = await mznCurrency(ctx);
   for (const c of components) {
     await ctx.db.insert("landedCostComponents", {
       landedCostId,
       componentType: c.componentType.trim(),
       componentValue: c.value,
-      currencyId,
     });
   }
 }

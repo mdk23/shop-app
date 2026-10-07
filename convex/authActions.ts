@@ -28,7 +28,7 @@ export const login = action({
       throw new ConvexError("USER_NOT_FOUND");
     }
 
-    if (user.status === "disabled") {
+    if (user.status === "DISABLED") {
       throw new ConvexError("ACCOUNT_DISABLED");
     }
 

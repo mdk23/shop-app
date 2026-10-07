@@ -34,8 +34,8 @@ export const ensureDevSession = mutation({
     let userId: Id<"users">;
     if (existingUser) {
       userId = existingUser._id;
-      if (existingUser.status !== "active" || existingUser.role !== "admin") {
-        await ctx.db.patch(userId, { status: "active", role: "admin" });
+      if (existingUser.status !== "ACTIVE" || existingUser.role !== "admin") {
+        await ctx.db.patch(userId, { status: "ACTIVE", role: "admin" });
       }
     } else {
       userId = await ctx.db.insert("users", {
@@ -43,7 +43,7 @@ export const ensureDevSession = mutation({
         username: "dev",
         passwordHash: "dev-bypass-no-password",
         role: "admin",
-        status: "active",
+        status: "ACTIVE",
         createdAt: Date.now(),
       });
     }

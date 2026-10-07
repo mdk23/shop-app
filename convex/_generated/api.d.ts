@@ -41,6 +41,7 @@ import type * as lib_phone from "../lib/phone.js";
 import type * as lib_receiving from "../lib/receiving.js";
 import type * as locations from "../locations.js";
 import type * as metrics from "../metrics.js";
+import type * as migrations from "../migrations.js";
 import type * as offers from "../offers.js";
 import type * as payments from "../payments.js";
 import type * as permissions from "../permissions.js";
@@ -122,6 +123,7 @@ declare const fullApi: ApiFromModules<{
   "lib/receiving": typeof lib_receiving;
   locations: typeof locations;
   metrics: typeof metrics;
+  migrations: typeof migrations;
   offers: typeof offers;
   payments: typeof payments;
   permissions: typeof permissions;

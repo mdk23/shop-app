@@ -49,6 +49,7 @@ export const start = mutation({
       branchId: args.branchId,
       status: "OPEN",
       notes: args.notes?.trim() || undefined,
+      startedBy: actor._id,
       startedByUsername: actor.username,
       startedAt: now,
     });

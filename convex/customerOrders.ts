@@ -177,6 +177,7 @@ export const create = mutation({
       totalAmount,
       expectedDate: args.expectedDate,
       notes: args.notes?.trim() || undefined,
+      createdBy: actor._id,
       createdByUsername: actor.username,
       createdAt: now,
       updatedAt: now,
@@ -236,6 +237,7 @@ export const addDeposit = mutation({
       amount: args.amount,
       method: args.method,
       referenceExternal: args.referenceExternal?.trim() || undefined,
+      receivedBy: actor._id,
       receivedByUsername: actor.username,
       createdAt: Date.now(),
     });

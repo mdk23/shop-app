@@ -11,7 +11,7 @@ export const procurementTables = {
   procurementNeedItems: defineTable({
     needId: v.id("procurementNeeds"),
     productId: v.optional(v.id("products")),
-    variantId: v.optional(v.id("productVariants")),
+    productVariantId: v.optional(v.id("productVariants")),
     quantityRecognized: v.optional(v.number()),
   }).index("by_need", ["needId"]),
 
@@ -23,7 +23,7 @@ export const procurementTables = {
   procurementDecisionItems: defineTable({
     decisionId: v.id("procurementDecisions"),
     productId: v.optional(v.id("products")),
-    variantId: v.optional(v.id("productVariants")),
+    productVariantId: v.optional(v.id("productVariants")),
     quantityDecided: v.optional(v.number()),
   }).index("by_decision", ["decisionId"]),
 
@@ -44,6 +44,6 @@ export const procurementTables = {
     landedCostId: v.id("landedCosts"),
     componentType: v.string(),
     componentValue: v.number(),
-    currencyId: v.id("currencies"),
+    currencyId: v.optional(v.id("currencies")), // TEMP: removed after migration
   }).index("by_landed_cost", ["landedCostId"]),
 };

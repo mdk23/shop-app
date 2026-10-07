@@ -83,7 +83,7 @@ export const listFollowUps = query({
           .query("relationParticipants")
           .withIndex("by_relation", (q) => q.eq("relationId", row.relationId))
           .first();
-        const customer = participant ? await ctx.db.get(participant.personId) : null;
+        const customer = participant ? await ctx.db.get(participant.customerId) : null;
         return {
           ...row,
           customerName: customer?.name ?? "—",
@@ -119,7 +119,7 @@ export const commitFollowUp = mutation({
     const now = Date.now();
     const existing = await ctx.db
       .query("relationParticipants")
-      .withIndex("by_person", (q) => q.eq("personId", args.customerId))
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
       .first();
     let relationId: Id<"businessRelations">;
     if (existing) {
@@ -128,7 +128,7 @@ export const commitFollowUp = mutation({
       relationId = await ctx.db.insert("businessRelations", { startedAt: now, registeredAt: now });
       await ctx.db.insert("relationParticipants", {
         relationId,
-        personId: args.customerId,
+        customerId: args.customerId,
         role: "cliente",
         validFrom: now,
       });

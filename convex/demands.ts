@@ -148,6 +148,7 @@ export const create = mutation({
       branchId: args.branchId,
       stage: args.proceeding ? "PROCEEDING" : "OPEN",
       proceededAt: args.proceeding ? now : undefined,
+      createdBy: actor._id,
       createdByUsername: actor.username,
       createdAt: now,
       updatedAt: now,

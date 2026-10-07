@@ -28,11 +28,11 @@ export const listPaged = query({
     branchId: v.optional(v.id("branches")),
     status: v.optional(
       v.union(
-        v.literal("draft"),
-        v.literal("sent"),
-        v.literal("partially_received"),
-        v.literal("completed"),
-        v.literal("cancelled")
+        v.literal("DRAFT"),
+        v.literal("SENT"),
+        v.literal("PARTIALLY_RECEIVED"),
+        v.literal("COMPLETED"),
+        v.literal("CANCELLED")
       )
     ),
     paginationOpts: paginationOptsValidator,
@@ -135,8 +135,8 @@ export const create = mutation({
       orderCode,
       orderDate: args.orderDate,
       expectedDeliveryDate: args.expectedDeliveryDate,
-      status: "draft",
-      paymentStatus: "unpaid",
+      status: "DRAFT",
+      paymentStatus: "UNPAID",
       totalAmount,
       notes: args.notes,
       createdAt: now,
@@ -178,7 +178,7 @@ export const update = mutation({
     const actor = await authorize(ctx, args.token, "purchasing.manage");
     const po = await ctx.db.get(args.id);
     if (!po) throw new Error("Purchase order not found.");
-    if (po.status !== "draft")
+    if (po.status !== "DRAFT")
       throw new Error("Only draft purchase orders can be edited.");
 
     const totalAmount = args.items.reduce(
@@ -224,17 +224,17 @@ export const updateStatus = mutation({
   args: {
     token: v.string(),
     id: v.id("purchaseOrders"),
-    status: v.union(v.literal("sent"), v.literal("cancelled")),
+    status: v.union(v.literal("SENT"), v.literal("CANCELLED")),
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "purchasing.manage");
     const po = await ctx.db.get(args.id);
     if (!po) throw new Error("Purchase order not found.");
-    if (args.status === "sent" && po.status !== "draft")
+    if (args.status === "SENT" && po.status !== "DRAFT")
       throw new Error("Only a draft can be sent.");
     if (
-      args.status === "cancelled" &&
-      (po.status === "completed" || po.status === "partially_received")
+      args.status === "CANCELLED" &&
+      (po.status === "COMPLETED" || po.status === "PARTIALLY_RECEIVED")
     )
       throw new Error("Cannot cancel a purchase order that has received stock.");
     await ctx.db.patch(args.id, { status: args.status });
@@ -256,7 +256,7 @@ export const remove = mutation({
     const actor = await authorize(ctx, args.token, "purchasing.manage");
     const po = await ctx.db.get(args.id);
     if (!po) throw new Error("Purchase order not found.");
-    if (po.status !== "draft" && po.status !== "cancelled")
+    if (po.status !== "DRAFT" && po.status !== "CANCELLED")
       throw new Error("Only draft or cancelled purchase orders can be deleted.");
     const items = await ctx.db
       .query("purchaseOrderItems")
@@ -293,7 +293,7 @@ export const receiveItems = mutation({
     const actor = await authorize(ctx, args.token, "purchasing.receive");
     const po = await ctx.db.get(args.id);
     if (!po) throw new Error("Purchase order not found.");
-    if (po.status !== "sent" && po.status !== "partially_received")
+    if (po.status !== "SENT" && po.status !== "PARTIALLY_RECEIVED")
       throw new Error("Only sent or partially received purchase orders can receive stock.");
 
     const branchId = args.branchId ?? po.branchId;
@@ -315,9 +315,9 @@ export const updatePaymentStatus = mutation({
     token: v.string(),
     id: v.id("purchaseOrders"),
     paymentStatus: v.union(
-      v.literal("unpaid"),
-      v.literal("partially_paid"),
-      v.literal("paid")
+      v.literal("UNPAID"),
+      v.literal("PARTIALLY_PAID"),
+      v.literal("PAID")
     ),
   },
   handler: async (ctx, args) => {

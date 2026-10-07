@@ -249,8 +249,8 @@ export default function SettingsPage() {
                     <Td className="font-mono text-xs">{b.code}</Td>
                     <Td className="text-on-surface-variant">{b.address ?? "—"}</Td>
                     <Td>
-                      <Badge tone={b.status === "active" ? "success" : "neutral"}>
-                        {t(b.status === "active" ? "Active" : "Inactive")}
+                      <Badge tone={b.status === "ACTIVE" ? "success" : "neutral"}>
+                        {t(b.status === "ACTIVE" ? "Active" : "Inactive")}
                       </Badge>
                     </Td>
                     <Td>

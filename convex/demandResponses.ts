@@ -74,7 +74,7 @@ export const record = mutation({
       await ctx.db.insert("demandResponseItems", {
         responseId: id,
         productId: variant?.productId,
-        variantId: item.variantId,
+        productVariantId: item.variantId,
         presentedDescription: item.description.trim(),
         proposedQuantity: item.quantity,
         proposedPrice: item.price,

@@ -69,8 +69,8 @@ export default function SupplierDetailPage() {
         <Button variant="ghost" onClick={() => router.push("/suppliers")}>
           <ArrowLeft className="w-3.5 h-3.5" /> {t("Back")}
         </Button>
-        <Badge tone={supplier.status === "active" ? "success" : "neutral"}>
-          {supplier.status === "active" ? t("Active") : t("Inactive")}
+        <Badge tone={supplier.status === "ACTIVE" ? "success" : "neutral"}>
+          {supplier.status === "ACTIVE" ? t("Active") : t("Inactive")}
         </Badge>
       </div>
 

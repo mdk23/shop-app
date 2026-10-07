@@ -24,6 +24,7 @@ export const afterSalesTables = {
     treatmentNotes: v.optional(v.string()),
     treatedAt: v.optional(v.number()),
     recognizedAt: v.number(),
+    createdBy: v.id("users"),
     createdByUsername: v.string(),
   })
     .index("by_supplier", ["supplierId"])

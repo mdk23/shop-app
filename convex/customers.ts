@@ -100,7 +100,7 @@ export const listPaginated = query({
   handler: async (ctx, args) => {
     let q = ctx.db.query("customers").order("desc");
     if (!args.showArchived) {
-      q = q.filter((qq) => qq.neq(qq.field("status"), "archived"));
+      q = q.filter((qq) => qq.neq(qq.field("status"), "ARCHIVED"));
     }
     return await q.paginate(args.paginationOpts);
   },
@@ -121,7 +121,7 @@ export const search = query({
     return candidates
       .filter(
         (c) =>
-          (args.showArchived || c.status !== "archived") &&
+          (args.showArchived || c.status !== "ARCHIVED") &&
           (c.name.toLowerCase().includes(term) ||
             c.phone1.includes(term) ||
             (c.phone2 ?? "").includes(term) ||
@@ -161,7 +161,7 @@ export const findByPhone = query({
       match = candidates.find((c) => normalizePhone(c.phone1) === normalized) ?? null;
     }
 
-    if (!match || match.isGeneric || match.status === "archived") return null;
+    if (!match || match.isGeneric || match.status === "ARCHIVED") return null;
     return {
       _id: match._id,
       name: match.name,
@@ -477,7 +477,7 @@ export const create = mutation({
       customerCode: `C-${String(seq).padStart(5, "0")}`,
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     await writeAudit(ctx, {
       userId: actor._id,
@@ -504,7 +504,7 @@ export const getOrCreateGeneric = mutation({
       phone1: "000000000",
       isGeneric: true,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
   },
 });
@@ -533,7 +533,7 @@ export const archive = mutation({
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found.");
     if (customer.isGeneric) throw new Error("Cannot archive the walk-in customer.");
-    await ctx.db.patch(args.id, { status: "archived", active: false });
+    await ctx.db.patch(args.id, { status: "ARCHIVED", active: false });
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -548,7 +548,7 @@ export const unarchive = mutation({
   args: { token: v.string(), id: v.id("customers") },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "customers.manage");
-    await ctx.db.patch(args.id, { status: "active", active: true });
+    await ctx.db.patch(args.id, { status: "ACTIVE", active: true });
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -582,7 +582,7 @@ export const createMinimal = mutation({
       customerCode: `C-${String(seq).padStart(5, "0")}`,
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
       whatsappOptIn: args.whatsappOptIn ?? false,
     });
     await writeAudit(ctx, {

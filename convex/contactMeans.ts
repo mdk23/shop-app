@@ -4,12 +4,12 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
 /** Contacts beyond the customer's own phones and email, with validity so old numbers are kept. */
-export const listByPerson = query({
-  args: { personId: v.id("customers") },
+export const listByCustomer = query({
+  args: { customerId: v.id("customers") },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("contactMeans")
-      .withIndex("by_person", (q) => q.eq("personId", args.personId))
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
       .order("desc")
       .collect();
   },
@@ -18,7 +18,7 @@ export const listByPerson = query({
 export const add = mutation({
   args: {
     token: v.string(),
-    personId: v.id("customers"),
+    customerId: v.id("customers"),
     contactType: v.union(v.literal("PHONE"), v.literal("EMAIL"), v.literal("WHATSAPP"), v.literal("OTHER")),
     contactValue: v.string(),
   },
@@ -26,10 +26,10 @@ export const add = mutation({
     const actor = await authorize(ctx, args.token, "customers.manage");
     const value = args.contactValue.trim();
     if (!value) throw new Error("Write the contact.");
-    if (!(await ctx.db.get(args.personId))) throw new Error("Customer not found.");
+    if (!(await ctx.db.get(args.customerId))) throw new Error("Customer not found.");
     const now = Date.now();
     const id = await ctx.db.insert("contactMeans", {
-      personId: args.personId,
+      customerId: args.customerId,
       contactType: args.contactType,
       contactValue: value,
       validFrom: now,
@@ -40,7 +40,7 @@ export const add = mutation({
       username: actor.username,
       action: "customer.contact_added",
       entityType: "customer",
-      entityId: args.personId,
+      entityId: args.customerId,
       details: `${args.contactType}: ${value}`,
     });
     return id;
@@ -61,7 +61,7 @@ export const retire = mutation({
       username: actor.username,
       action: "customer.contact_retired",
       entityType: "customer",
-      entityId: row.personId,
+      entityId: row.customerId,
       details: row.contactValue,
     });
   },

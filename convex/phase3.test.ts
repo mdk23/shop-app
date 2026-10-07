@@ -16,14 +16,14 @@ async function seed() {
       phone1: "841234567",
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     const userId = await ctx.db.insert("users", {
       name: "admin",
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", {

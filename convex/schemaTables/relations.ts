@@ -5,13 +5,13 @@ import { v } from "convex/values";
 // assortments (M02). Demand is `demands`; supplier identity is suppliers.
 export const relationTables = {
   contactMeans: defineTable({
-    personId: v.id("customers"),
+    customerId: v.id("customers"),
     contactType: v.string(),
     contactValue: v.string(),
     validFrom: v.number(),
     validTo: v.optional(v.number()),
     registeredAt: v.number(),
-  }).index("by_person", ["personId"]),
+  }).index("by_customer", ["customerId"]),
 
   businessRelations: defineTable({
     startedAt: v.number(),
@@ -21,13 +21,13 @@ export const relationTables = {
 
   relationParticipants: defineTable({
     relationId: v.id("businessRelations"),
-    personId: v.id("customers"),
+    customerId: v.id("customers"),
     role: v.string(),
     validFrom: v.number(),
     validTo: v.optional(v.number()),
   })
     .index("by_relation", ["relationId"])
-    .index("by_person", ["personId"]),
+    .index("by_customer", ["customerId"]),
 
   interactionDemands: defineTable({
     interactionId: v.id("customerInteractions"),
@@ -56,14 +56,13 @@ export const relationTables = {
   demandResponseItems: defineTable({
     responseId: v.id("demandResponses"),
     productId: v.optional(v.id("products")),
-    variantId: v.optional(v.id("productVariants")),
+    productVariantId: v.optional(v.id("productVariants")),
     presentedDescription: v.string(),
     proposedQuantity: v.optional(v.number()),
     proposedPrice: v.optional(v.number()),
-    currencyId: v.optional(v.id("currencies")),
   })
     .index("by_response", ["responseId"])
-    .index("by_variant", ["variantId"]),
+    .index("by_variant", ["productVariantId"]),
 
   offers: defineTable({
     description: v.string(),
@@ -87,7 +86,7 @@ export const relationTables = {
   assortmentItems: defineTable({
     assortmentId: v.id("assortments"),
     productId: v.id("products"),
-    variantId: v.optional(v.id("productVariants")),
+    productVariantId: v.optional(v.id("productVariants")),
     validFrom: v.number(),
     validTo: v.optional(v.number()),
   })

@@ -80,6 +80,7 @@ export const create = mutation({
       saleId: args.saleId,
       description,
       status: "OPEN",
+      createdBy: actor._id,
       createdByUsername: actor.username,
       createdAt: Date.now(),
     });

@@ -37,6 +37,17 @@ async function seedVariant(ctx: Parameters<Parameters<ReturnType<typeof convexTe
   return { productId, variantId };
 }
 
+async function seedUser(ctx: Parameters<Parameters<ReturnType<typeof convexTest>["run"]>[0]>[0]) {
+  return await ctx.db.insert("users", {
+    name: "admin",
+    username: "admin",
+    passwordHash: "",
+    role: "admin",
+    status: "ACTIVE",
+    createdAt: Date.now(),
+  });
+}
+
 describe("diagram tables are registered", () => {
   test("every new planning and supply-chain table is in the schema", () => {
     const registered = Object.keys(schema.tables);
@@ -59,6 +70,7 @@ describe("planning", () => {
         stage: "LOST",
         reason: "PRICE",
         conditions: "Only with a discount",
+        createdBy: await seedUser(ctx),
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -96,13 +108,14 @@ describe("supply chain", () => {
       const now = Date.now();
       const supplierId = await ctx.db.insert("suppliers", {
         name: "Supplier Co",
-        status: "active",
+        status: "ACTIVE",
         createdAt: now,
       });
       await ctx.db.insert("supplierEvaluations", {
         supplierId,
         qualityScore: 4,
         punctualityPercent: 90,
+        evaluatedBy: await seedUser(ctx),
         evaluatedByUsername: "admin",
         evaluatedAt: now,
       });
@@ -139,6 +152,7 @@ describe("supply chain", () => {
         source: "RECEIPT",
         description: "Costura solta",
         recognizedAt: Date.now(),
+        createdBy: await seedUser(ctx),
         createdByUsername: "admin",
       });
       await ctx.db.insert("qualityIssueItems", { issueId, productVariantId: variantId, affectedQuantity: 2 });
@@ -177,7 +191,7 @@ describe("locations and request fields", () => {
       const branchId = await ctx.db.insert("branches", {
         name: "Main",
         code: "MAIN",
-        status: "active",
+        status: "ACTIVE",
         createdAt: Date.now(),
       });
       await ctx.db.insert("locations", { branchId, name: "Armazém", locationType: "CENTRAL" });
@@ -199,6 +213,7 @@ describe("locations and request fields", () => {
         neededBy: 1_900_000_000_000,
         intendedUse: "Corrida na praia",
         stage: "OPEN",
+        createdBy: await seedUser(ctx),
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),

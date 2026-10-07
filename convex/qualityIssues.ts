@@ -115,6 +115,7 @@ export const create = mutation({
       supplierId,
       receiptItemId: args.receiptItemId,
       recognizedAt: Date.now(),
+      createdBy: actor._id,
       createdByUsername: actor.username,
     });
     for (const item of args.items) {

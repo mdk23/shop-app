@@ -86,6 +86,7 @@ export const create = mutation({
       validFrom: args.validFrom,
       validTo: args.validTo,
       active: true,
+      createdBy: actor._id,
       createdByUsername: actor.username,
       createdAt: now,
       updatedAt: now,

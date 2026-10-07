@@ -139,7 +139,6 @@ export interface SaleMetricDeltas {
   fullyPaidCount: number;
   partiallyPaidCount: number;
   pendingCount: number;
-  customerId?: string;
   paymentMethods?: MethodRecord;
   categorySales?: NumRecord;
   productSales?: NumRecord;
@@ -192,7 +191,6 @@ async function getOrCreateDailyMetrics(ctx: MutationCtx, dateString: string) {
     productSales: {},
     sizeSales: {},
     colorSales: {},
-    customerIds: [],
   });
   return (await ctx.db.get(id))!;
 }
@@ -245,12 +243,6 @@ export async function applyDailyMetrics(
     sizeSales: mergeNumRecord(m.sizeSales, d.sizeSales),
     colorSales: mergeNumRecord(m.colorSales, d.colorSales),
   };
-
-  if (d.customerId) {
-    const set = new Set(m.customerIds ?? []);
-    if (d.totalSales > 0) set.add(d.customerId);
-    patch.customerIds = Array.from(set);
-  }
 
   await ctx.db.patch(m._id, patch);
 }

@@ -14,7 +14,7 @@ async function seed() {
     const branchId = await ctx.db.insert("branches", {
       name: "Main",
       code: "MAIN",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     const customerId = await ctx.db.insert("customers", {
@@ -22,14 +22,14 @@ async function seed() {
       phone1: "841234567",
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     const userId = await ctx.db.insert("users", {
       name: "admin",
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", {
@@ -38,7 +38,7 @@ async function seed() {
       expiresAt: now + 3_600_000,
       createdAt: now,
     });
-    return { branchId, customerId };
+    return { branchId, customerId, userId };
   });
   return { t, token, ids };
 }
@@ -85,6 +85,7 @@ describe("opportunities (demands that proceeded)", () => {
         branchId: ids.branchId,
         status: "OPEN",
         totalAmount: 500,
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -108,7 +109,7 @@ describe("opportunities (demands that proceeded)", () => {
       proceeding: true,
     });
     const otherCustomer = await t.run((ctx) =>
-      ctx.db.insert("customers", { name: "Other", phone1: "1", isGeneric: false, active: true, status: "active" })
+      ctx.db.insert("customers", { name: "Other", phone1: "1", isGeneric: false, active: true, status: "ACTIVE" })
     );
     const orderId = await t.run((ctx) =>
       ctx.db.insert("customerOrders", {
@@ -117,6 +118,7 @@ describe("opportunities (demands that proceeded)", () => {
         branchId: ids.branchId,
         status: "OPEN",
         totalAmount: 100,
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -138,6 +140,7 @@ describe("list queries for the new pages", () => {
         branchId: ids.branchId,
         status: "READY",
         totalAmount: 250,
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),

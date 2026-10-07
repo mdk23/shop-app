@@ -36,7 +36,7 @@ type User = {
   name: string;
   username: string;
   role: UserRole;
-  status: "active" | "disabled";
+  status: "ACTIVE" | "DISABLED";
   lastLogin?: number;
 };
 
@@ -76,7 +76,7 @@ function Content() {
     const c = { admin: 0, manager: 0, pos_seller: 0, disabled: 0 };
     for (const u of (users ?? []) as User[]) {
       c[u.role] += 1;
-      if (u.status === "disabled") c.disabled += 1;
+      if (u.status === "DISABLED") c.disabled += 1;
     }
     return c;
   }, [users]);
@@ -152,7 +152,7 @@ function Content() {
                     </Td>
                     <Td>
                       <button onClick={() => setConfirmToggle(u)}>
-                        <Badge tone={u.status === "active" ? "success" : "error"}>
+                        <Badge tone={u.status === "ACTIVE" ? "success" : "error"}>
                           {u.status}
                         </Badge>
                       </button>
@@ -265,21 +265,21 @@ function Content() {
       <ConfirmDialog
         open={!!confirmToggle}
         onClose={() => setConfirmToggle(null)}
-        title={confirmToggle?.status === "active" ? "Disable user" : "Enable user"}
+        title={confirmToggle?.status === "ACTIVE" ? "Disable user" : "Enable user"}
         message={
-          confirmToggle?.status === "active"
+          confirmToggle?.status === "ACTIVE"
             ? `@${confirmToggle?.username} will be logged out immediately.`
             : `@${confirmToggle?.username} will be able to log in again.`
         }
-        danger={confirmToggle?.status === "active"}
-        confirmLabel={confirmToggle?.status === "active" ? "Disable" : "Enable"}
+        danger={confirmToggle?.status === "ACTIVE"}
+        confirmLabel={confirmToggle?.status === "ACTIVE" ? "Disable" : "Enable"}
         onConfirm={async () => {
           if (!confirmToggle) return;
           try {
             await setStatus({
               token,
               id: confirmToggle._id,
-              status: confirmToggle.status === "active" ? "disabled" : "active",
+              status: confirmToggle.status === "ACTIVE" ? "DISABLED" : "ACTIVE",
             });
             toast.success("Updated");
           } catch (e) {

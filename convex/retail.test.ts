@@ -14,14 +14,14 @@ async function seed() {
     const branchId = await ctx.db.insert("branches", {
       name: "Main",
       code: "MAIN",
-      status: "active",
+      status: "ACTIVE",
       isDefault: true,
       createdAt: Date.now(),
     });
     const branch2Id = await ctx.db.insert("branches", {
       name: "Second",
       code: "SEC",
-      status: "active",
+      status: "ACTIVE",
       createdAt: Date.now(),
     });
     const categoryId = await ctx.db.insert("categories", {
@@ -62,14 +62,14 @@ async function seed() {
       phone1: "0",
       isGeneric: true,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     const namedCustomerId = await ctx.db.insert("customers", {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
 
     const mkUser = async (username: string, role: "admin" | "pos_seller") => {
@@ -78,7 +78,7 @@ async function seed() {
         username,
         passwordHash: "",
         role,
-        status: "active",
+        status: "ACTIVE",
         createdAt: Date.now(),
       });
       const token = `tok-${username}`;
@@ -327,7 +327,7 @@ describe("returns", () => {
         phone1: "123",
         isGeneric: false,
         active: true,
-        status: "active",
+        status: "ACTIVE",
       })
     );
     const saleId = (await t.mutation(api.sales.create, {
@@ -402,7 +402,7 @@ describe("purchase orders", () => {
     const supplierId = await t.run(async (ctx) =>
       ctx.db.insert("suppliers", {
         name: "Acme",
-        status: "active",
+        status: "ACTIVE",
         createdAt: Date.now(),
       })
     );
@@ -420,7 +420,7 @@ describe("purchase orders", () => {
     await t.mutation(api.purchaseOrders.updateStatus, {
       token: ids.admin.token,
       id: poId,
-      status: "sent",
+      status: "SENT",
     });
 
     await t.mutation(api.purchaseOrders.receiveItems, {
@@ -429,7 +429,7 @@ describe("purchase orders", () => {
       items: [{ productVariantId: ids.variantId, quantityReceived: 60 }],
     });
     let po = await t.run(async (ctx) => ctx.db.get(poId));
-    expect(po?.status).toBe("partially_received");
+    expect(po?.status).toBe("PARTIALLY_RECEIVED");
     expect(await stockAt()).toBe(60);
 
     await t.mutation(api.purchaseOrders.receiveItems, {
@@ -438,7 +438,7 @@ describe("purchase orders", () => {
       items: [{ productVariantId: ids.variantId, quantityReceived: 40 }],
     });
     po = await t.run(async (ctx) => ctx.db.get(poId));
-    expect(po?.status).toBe("completed");
+    expect(po?.status).toBe("COMPLETED");
     expect(await stockAt()).toBe(100);
 
     const movement = await t.run(async (ctx) => {

@@ -32,7 +32,7 @@ export const create = mutation({
     if (args.purchaseOrderId) {
       purchaseOrder = await ctx.db.get(args.purchaseOrderId);
       if (!purchaseOrder) throw new Error("Purchase order not found.");
-      if (purchaseOrder.status !== "sent" && purchaseOrder.status !== "partially_received") {
+      if (purchaseOrder.status !== "SENT" && purchaseOrder.status !== "PARTIALLY_RECEIVED") {
         throw new Error("Only sent or partially received purchase orders can receive stock.");
       }
     } else if (!args.supplierId || !args.branchId) {
@@ -86,11 +86,11 @@ export const openOrders = query({
   handler: async (ctx) => {
     const sent = await ctx.db
       .query("purchaseOrders")
-      .withIndex("by_status", (q) => q.eq("status", "sent"))
+      .withIndex("by_status", (q) => q.eq("status", "SENT"))
       .collect();
     const partial = await ctx.db
       .query("purchaseOrders")
-      .withIndex("by_status", (q) => q.eq("status", "partially_received"))
+      .withIndex("by_status", (q) => q.eq("status", "PARTIALLY_RECEIVED"))
       .collect();
     return await Promise.all(
       [...sent, ...partial].map(async (po) => {

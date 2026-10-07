@@ -44,11 +44,11 @@ async function resolveOpenSession(
 ): Promise<Doc<"cashRegisterSessions"> | null> {
   if (provided) {
     const s = await ctx.db.get(provided);
-    if (s && s.status === "open") return s;
+    if (s && s.status === "OPEN") return s;
   }
   const open = await ctx.db
     .query("cashRegisterSessions")
-    .withIndex("by_status", (q) => q.eq("status", "open"))
+    .withIndex("by_status", (q) => q.eq("status", "OPEN"))
     .collect();
   return open.find((s) => s.branchId === branchId) ?? open.find((s) => !s.branchId) ?? null;
 }
@@ -448,7 +448,6 @@ export async function performSale(
       fullyPaidCount: status === "COMPLETED" ? 1 : 0,
       partiallyPaidCount: status === "PARTIALLY_PAID" ? 1 : 0,
       pendingCount: status === "PENDING" ? 1 : 0,
-      customerId: customer.isGeneric ? undefined : args.customerId,
       paymentMethods: {},
       categorySales: {},
       productSales: {},
@@ -559,7 +558,7 @@ export const cancel = mutation({
     if (cashPaid > 0) {
       const open = await ctx.db
         .query("cashRegisterSessions")
-        .withIndex("by_status", (q) => q.eq("status", "open"))
+        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
         .collect();
       const session =
         open.find((s) => s.branchId === sale.branchId) ?? open.find((s) => !s.branchId);

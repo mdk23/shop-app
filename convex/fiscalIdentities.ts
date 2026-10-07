@@ -5,22 +5,22 @@ import { writeAudit } from "./audit";
 import { currentNuit } from "./lib/fiscal";
 
 export const getNuit = query({
-  args: { personId: v.id("customers") },
-  handler: async (ctx, args) => currentNuit(ctx, args.personId),
+  args: { customerId: v.id("customers") },
+  handler: async (ctx, args) => currentNuit(ctx, args.customerId),
 });
 
 /** Records a new NUIT for the customer and closes the previous one, keeping history. */
 export const setNuit = mutation({
-  args: { token: v.string(), personId: v.id("customers"), number: v.string() },
+  args: { token: v.string(), customerId: v.id("customers"), number: v.string() },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "customers.manage");
     const number = args.number.trim();
     if (!/^\d{9}$/.test(number)) throw new Error("A NUIT has nine digits.");
-    if (!(await ctx.db.get(args.personId))) throw new Error("Customer not found.");
+    if (!(await ctx.db.get(args.customerId))) throw new Error("Customer not found.");
     const now = Date.now();
     const rows = await ctx.db
       .query("fiscalIdentities")
-      .withIndex("by_person", (q) => q.eq("personId", args.personId))
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
       .collect();
     for (const row of rows) {
       if (row.identificationType === "NUIT" && row.validTo === undefined) {
@@ -29,7 +29,7 @@ export const setNuit = mutation({
       }
     }
     const id = await ctx.db.insert("fiscalIdentities", {
-      personId: args.personId,
+      customerId: args.customerId,
       identificationType: "NUIT",
       number,
       country: "MZ",
@@ -40,7 +40,7 @@ export const setNuit = mutation({
       username: actor.username,
       action: "customer.nuit_set",
       entityType: "customer",
-      entityId: args.personId,
+      entityId: args.customerId,
     });
     return id;
   },

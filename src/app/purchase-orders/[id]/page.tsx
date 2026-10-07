@@ -12,19 +12,19 @@ import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 const STATUS_TONE = {
-  draft: "neutral",
-  sent: "info",
-  partially_received: "warning",
-  completed: "success",
-  cancelled: "error",
+  DRAFT: "neutral",
+  SENT: "info",
+  PARTIALLY_RECEIVED: "warning",
+  COMPLETED: "success",
+  CANCELLED: "error",
 } as const;
 
 const STATUS_LABEL = {
-  draft: "Draft",
-  sent: "Sent to supplier",
-  partially_received: "Partly received",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  DRAFT: "Draft",
+  SENT: "Sent to supplier",
+  PARTIALLY_RECEIVED: "Partly received",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
 } as const;
 
 export default function PurchaseOrderDetailPage() {

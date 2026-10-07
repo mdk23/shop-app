@@ -15,7 +15,7 @@ function withoutPasswordHash<T extends { passwordHash: string }>(user: T): Omit<
   return Object.fromEntries(Object.entries(user).filter(([key]) => key !== "passwordHash")) as Omit<T, "passwordHash">;
 }
 
-const STATUS_VALIDATOR = v.union(v.literal("active"), v.literal("disabled"));
+const STATUS_VALIDATOR = v.union(v.literal("ACTIVE"), v.literal("DISABLED"));
 
 // ─────────────────────────────────────────────
 // INTERNAL QUERIES / MUTATIONS
@@ -54,7 +54,7 @@ export const insertUser = internalMutation({
       username: args.username,
       passwordHash: args.passwordHash,
       role: args.role,
-      status: "active",
+      status: "ACTIVE",
       createdAt: Date.now(),
     });
   },
@@ -164,7 +164,7 @@ export const setStatus = mutation({
     await ctx.db.patch(args.id, { status: args.status });
 
     // If disabling, invalidate all active sessions
-    if (args.status === "disabled") {
+    if (args.status === "DISABLED") {
       const sessions = await ctx.db
         .query("userSessions")
         .withIndex("by_user", (q) => q.eq("userId", args.id))
@@ -177,8 +177,8 @@ export const setStatus = mutation({
     await ctx.db.insert("auditLogs", {
       userId: actor._id,
       username: actor.username,
-      action: args.status === "active" ? "user_enabled" : "user_disabled",
-      details: `User "${target.username}" ${args.status === "active" ? "enabled" : "disabled"}`,
+      action: args.status === "ACTIVE" ? "user_enabled" : "user_disabled",
+      details: `User "${target.username}" ${args.status === "ACTIVE" ? "enabled" : "DISABLED"}`,
       createdAt: Date.now(),
     });
   },

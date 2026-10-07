@@ -30,11 +30,25 @@ import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
 const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error"> = {
-  draft: "neutral",
-  sent: "info",
-  partially_received: "warning",
-  completed: "success",
-  cancelled: "error",
+  DRAFT: "neutral",
+  SENT: "info",
+  PARTIALLY_RECEIVED: "warning",
+  COMPLETED: "success",
+  CANCELLED: "error",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
+  SENT: "Sent to supplier",
+  PARTIALLY_RECEIVED: "Partly received",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+};
+
+const PAYMENT_LABEL: Record<string, string> = {
+  UNPAID: "Unpaid",
+  PARTIALLY_PAID: "Partially paid",
+  PAID: "Paid",
 };
 
 type Line = PickedVariant & { quantityOrdered: number; unitCost: number };
@@ -44,7 +58,7 @@ export default function PurchaseOrdersPage() {
   const token = useToken();
   const fmt = useCurrency();
   const { branchId, branches } = useResolvedBranch();
-  const suppliers = useQuery(api.suppliers.list, { status: "active" });
+  const suppliers = useQuery(api.suppliers.list, { status: "ACTIVE" });
   const [statusFilter, setStatusFilter] = useState("");
   const {
     rows: list,
@@ -110,11 +124,11 @@ export default function PurchaseOrdersPage() {
           className="w-44"
         >
           <option value="">{t("All statuses")}</option>
-          <option value="draft">{t("Draft")}</option>
-          <option value="sent">{t("Sent")}</option>
-          <option value="partially_received">{t("Partially received")}</option>
-          <option value="completed">{t("Completed")}</option>
-          <option value="cancelled">{t("Cancelled")}</option>
+          <option value="DRAFT">{t("Draft")}</option>
+          <option value="SENT">{t("Sent")}</option>
+          <option value="PARTIALLY_RECEIVED">{t("Partially received")}</option>
+          <option value="COMPLETED">{t("Completed")}</option>
+          <option value="CANCELLED">{t("Cancelled")}</option>
         </Select>
         <div className="ml-auto" />
         <Button onClick={() => setOpen(true)}>
@@ -155,12 +169,12 @@ export default function PurchaseOrdersPage() {
                   <Td className="text-right font-bold">{fmt(po.totalAmount)}</Td>
                   <Td>
                     <Badge tone={STATUS_TONE[po.status]}>
-                      {po.status.replace(/_/g, " ")}
+                      {t(STATUS_LABEL[po.status])}
                     </Badge>
                   </Td>
                   <Td>
-                    <Badge tone={po.paymentStatus === "paid" ? "success" : "neutral"}>
-                      {po.paymentStatus.replace("_", " ")}
+                    <Badge tone={po.paymentStatus === "PAID" ? "success" : "neutral"}>
+                      {t(PAYMENT_LABEL[po.paymentStatus])}
                     </Badge>
                   </Td>
                   <Td>
@@ -368,7 +382,7 @@ function PODetail({
       footer={
         po && (
           <div className="flex flex-wrap gap-2">
-            {po.status === "draft" && (
+            {po.status === "DRAFT" && (
               <>
                 <Button
                   variant="danger"
@@ -383,7 +397,7 @@ function PODetail({
                   loading={busy}
                   onClick={() =>
                     run(
-                      () => updateStatus({ token, id, status: "sent" }),
+                      () => updateStatus({ token, id, status: "SENT" }),
                       t("Marked as sent")
                     )
                   }
@@ -392,18 +406,18 @@ function PODetail({
                 </Button>
               </>
             )}
-            {(po.status === "sent" || po.status === "partially_received") && (
+            {(po.status === "SENT" || po.status === "PARTIALLY_RECEIVED") && (
               <Button loading={busy} onClick={doReceive}>
                 {t("Receive entered qty")}
               </Button>
             )}
-            {po.paymentStatus !== "paid" && po.status !== "cancelled" && (
+            {po.paymentStatus !== "PAID" && po.status !== "CANCELLED" && (
               <Button
                 variant="secondary"
                 loading={busy}
                 onClick={() =>
                   run(
-                    () => updatePayment({ token, id, paymentStatus: "paid" }),
+                    () => updatePayment({ token, id, paymentStatus: "PAID" }),
                     t("Marked paid")
                   )
                 }
@@ -425,7 +439,7 @@ function PODetail({
               <Th className="text-right">{t("Ordered")}</Th>
               <Th className="text-right">{t("Received")}</Th>
               <Th className="text-right">{t("Unit cost")}</Th>
-              {(po.status === "sent" || po.status === "partially_received") && (
+              {(po.status === "SENT" || po.status === "PARTIALLY_RECEIVED") && (
                 <Th className="text-right w-24">{t("Receive")}</Th>
               )}
             </tr>
@@ -439,7 +453,7 @@ function PODetail({
                 <Td className="text-right">{it.quantityOrdered}</Td>
                 <Td className="text-right font-bold">{it.quantityReceived}</Td>
                 <Td className="text-right">{fmt(it.unitCost)}</Td>
-                {(po.status === "sent" || po.status === "partially_received") && (
+                {(po.status === "SENT" || po.status === "PARTIALLY_RECEIVED") && (
                   <Td>
                     <input
                       type="number"

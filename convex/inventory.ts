@@ -13,6 +13,7 @@ import { validateToken } from "./auth";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { syncGlobalStockCounters } from "./metrics";
+import { movementTypeValidator } from "./schema";
 
 // ─────────────────────────────────────────────
 // VARIANT CONTEXT + STOCK CACHE HELPERS
@@ -84,7 +85,7 @@ async function resolveActor(
   }
   const fallback = await ctx.db
     .query("users")
-    .withIndex("by_status", (q) => q.eq("status", "active"))
+    .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
     .first();
   if (fallback) return { userId: fallback._id, username: fallback.username };
   const systemId = await ctx.db.insert("users", {
@@ -92,7 +93,7 @@ async function resolveActor(
     username: "system",
     passwordHash: "",
     role: "admin",
-    status: "active",
+    status: "ACTIVE",
     createdAt: Date.now(),
   });
   return { userId: systemId, username: "system" };
@@ -113,7 +114,7 @@ export const mutateStock = internalMutation({
     productVariantId: v.id("productVariants"),
     branchId: v.id("branches"),
     quantity: v.number(), // positive to add, negative to deduct
-    movementType: v.string(),
+    movementType: movementTypeValidator,
     referenceType: v.optional(v.string()),
     referenceId: v.optional(v.string()),
     costPerUnit: v.optional(v.number()),

@@ -35,7 +35,7 @@ async function openSessionForBranch(
 ): Promise<Doc<"cashRegisterSessions"> | null> {
   const open = await ctx.db
     .query("cashRegisterSessions")
-    .withIndex("by_status", (q) => q.eq("status", "open"))
+    .withIndex("by_status", (q) => q.eq("status", "OPEN"))
     .collect();
   if (open.length === 0) return null;
   if (branchId) {
@@ -147,7 +147,7 @@ export const getSessionWithMovements = query({
 export const listSessionsPaged = query({
   args: {
     token: v.string(),
-    status: v.optional(v.union(v.literal("open"), v.literal("closed"))),
+    status: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"))),
     branchId: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
@@ -201,7 +201,7 @@ export const listSessionsPaged = query({
 export const sessionTotals = query({
   args: {
     token: v.string(),
-    status: v.optional(v.union(v.literal("open"), v.literal("closed"))),
+    status: v.optional(v.union(v.literal("OPEN"), v.literal("CLOSED"))),
     branchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -265,7 +265,7 @@ export const openSession = mutation({
 
     const open = await ctx.db
       .query("cashRegisterSessions")
-      .withIndex("by_status", (q) => q.eq("status", "open"))
+      .withIndex("by_status", (q) => q.eq("status", "OPEN"))
       .collect();
     if (open.some((s) => s.branchId === targetBranchId)) {
       throw new Error(
@@ -279,7 +279,7 @@ export const openSession = mutation({
       username: user.username,
       openingAmount: args.openingAmount,
       openedAt: now,
-      status: "open",
+      status: "OPEN",
       notes: args.notes,
       branchId: targetBranchId,
     });
@@ -315,7 +315,7 @@ export const closeSession = mutation({
     const user = await authorize(ctx, args.token, "cash_register.close");
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Cash register session not found.");
-    if (session.status === "closed") throw new Error("Session already closed.");
+    if (session.status === "CLOSED") throw new Error("Session already closed.");
 
     const movements = await ctx.db
       .query("cashRegisterMovements")
@@ -340,7 +340,7 @@ export const closeSession = mutation({
     }
 
     await ctx.db.patch(args.sessionId, {
-      status: "closed",
+      status: "CLOSED",
       closedAt: now,
       actualCash: args.actualCash,
       difference,
@@ -390,7 +390,7 @@ export const addMovement = mutation({
     if (!args.description.trim()) throw new Error("A description is required.");
 
     const session = await ctx.db.get(args.sessionId);
-    if (!session || session.status === "closed")
+    if (!session || session.status === "CLOSED")
       throw new Error("No active cash register session.");
 
     if (args.type === "cash_out") {

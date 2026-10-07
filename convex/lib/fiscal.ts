@@ -8,11 +8,11 @@ export const round2 = (n: number) => Math.round(n * 100) / 100;
 /** The customer's open NUIT, if one is recorded in fiscalIdentities. */
 export async function currentNuit(
   ctx: QueryCtx | MutationCtx,
-  personId: Id<"customers">
+  customerId: Id<"customers">
 ): Promise<string | undefined> {
   const rows = await ctx.db
     .query("fiscalIdentities")
-    .withIndex("by_person", (q) => q.eq("personId", personId))
+    .withIndex("by_customer", (q) => q.eq("customerId", customerId))
     .collect();
   return rows.find((r) => r.identificationType === "NUIT" && r.validTo === undefined)?.number;
 }

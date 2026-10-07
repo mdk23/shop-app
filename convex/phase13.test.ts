@@ -3,7 +3,6 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -12,13 +11,13 @@ async function seed() {
   const token = "tok-admin";
   const ids = await t.run(async (ctx) => {
     const now = Date.now();
-    const branchId = await ctx.db.insert("branches", { name: "Main", code: "MAIN", status: "active", isDefault: true, createdAt: now });
+    const branchId = await ctx.db.insert("branches", { name: "Main", code: "MAIN", status: "ACTIVE", isDefault: true, createdAt: now });
     const customerId = await ctx.db.insert("customers", {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
       active: true,
-      status: "active",
+      status: "ACTIVE",
     });
     const categoryId = await ctx.db.insert("categories", { name: "T-Shirts", active: true, createdAt: now, updatedAt: now });
     const productId = await ctx.db.insert("products", {
@@ -48,11 +47,11 @@ async function seed() {
       username: "admin",
       passwordHash: "",
       role: "admin",
-      status: "active",
+      status: "ACTIVE",
       createdAt: now,
     });
     await ctx.db.insert("userSessions", { userId, token, expiresAt: now + 3_600_000, createdAt: now });
-    return { branchId, customerId, productId, variantId, sizeA, sizeB };
+    return { branchId, customerId, productId, variantId, sizeA, sizeB, userId };
   });
   return { t, token, ids };
 }
@@ -102,6 +101,7 @@ describe("follow-ups and resolution succession", () => {
         customerId: ids.customerId,
         description: "Broken zip",
         status: "RESOLVED",
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         resolutionId,
@@ -164,6 +164,7 @@ describe("procurement planning and demand responses", () => {
         stage: "OPEN",
         reason: "STOCK",
         quantity: 1,
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -190,6 +191,7 @@ describe("procurement planning and demand responses", () => {
         stage: "OPEN",
         reason: "STOCK",
         quantity: 1,
+        createdBy: ids.userId,
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),

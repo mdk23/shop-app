@@ -171,6 +171,7 @@ export const receive = mutation({
     const now = Date.now();
     await ctx.db.insert("stockTransferReceipts", {
       transferId: args.transferId,
+      receivedBy: actor._id,
       receivedByUsername: actor.username,
       receivedAt: now,
       lines,
