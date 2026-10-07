@@ -13,7 +13,6 @@ export const procurementTables = {
     productId: v.optional(v.id("products")),
     variantId: v.optional(v.id("productVariants")),
     quantityRecognized: v.optional(v.number()),
-    unitId: v.optional(v.id("units")),
   }).index("by_need", ["needId"]),
 
   procurementDecisions: defineTable({

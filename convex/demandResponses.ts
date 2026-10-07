@@ -12,7 +12,7 @@ const OUTCOME = v.union(
 
 export const listByDemand = query({
   args: {
-    token: v.string(), demandId: v.id("wantList") },
+    token: v.string(), demandId: v.id("demands") },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "customers.view");
     const responses = await ctx.db
@@ -39,7 +39,7 @@ export const listByDemand = query({
 export const record = mutation({
   args: {
     token: v.string(),
-    demandId: v.id("wantList"),
+    demandId: v.id("demands"),
     outcome: OUTCOME,
     interactionId: v.optional(v.id("customerInteractions")),
     items: v.array(
@@ -53,7 +53,7 @@ export const record = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "customers.manage");
-    if (!(await ctx.db.get(args.demandId))) throw new Error("Request not found.");
+    if (!(await ctx.db.get(args.demandId))) throw new Error("Demand not found.");
     if (args.outcome !== "SEM_SOLUCAO_ADEQUADA" && args.items.length === 0) {
       throw new Error("Describe what was offered.");
     }
@@ -92,7 +92,7 @@ export const record = mutation({
       userId: actor._id,
       username: actor.username,
       action: "demand.responded",
-      entityType: "wantList",
+      entityType: "demand",
       entityId: args.demandId,
       details: args.outcome,
     });

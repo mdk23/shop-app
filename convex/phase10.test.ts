@@ -43,37 +43,41 @@ async function seed() {
   return { t, token, ids };
 }
 
-describe("opportunities", () => {
-  test("a lost opportunity needs a reason and is listed under its stage", async () => {
+describe("opportunities (demands that proceeded)", () => {
+  test("a lost opportunity needs a reason and stays on the board", async () => {
     const { t, token, ids } = await seed();
-    const id = await t.mutation(api.opportunities.create, {
+    const id = await t.mutation(api.demands.create, {
       token,
       description: "Sapatilhas pretas",
       customerId: ids.customerId,
+      proceeding: true,
     });
-    await expect(
-      t.mutation(api.opportunities.setStage, { token, id, stage: "NOT_PROCEEDING" })
-    ).rejects.toThrow(/Say why/);
+    await expect(t.mutation(api.demands.setStage, { token, id, stage: "LOST" })).rejects.toThrow(/Say why/);
 
-    await t.mutation(api.opportunities.setStage, {
-      token,
-      id,
-      stage: "NOT_PROCEEDING",
-      reasonNotProceeding: "PRICE",
-    });
-    const lost = await t.query(api.opportunities.list, { stage: "NOT_PROCEEDING" });
-    expect(lost).toHaveLength(1);
-    expect(lost[0]).toMatchObject({ reasonNotProceeding: "PRICE", customerName: "Jane Doe" });
+    await t.mutation(api.demands.setStage, { token, id, stage: "LOST", reason: "PRICE" });
+    const board = await t.query(api.demands.listOpportunities, {});
+    expect(board).toHaveLength(1);
+    expect(board[0]).toMatchObject({ stage: "LOST", reason: "PRICE", customerName: "Jane Doe" });
+  });
+
+  test("a request joins the board once it proceeds", async () => {
+    const { t, token } = await seed();
+    const id = await t.mutation(api.demands.create, { token, description: "Casaco" });
+    expect(await t.query(api.demands.listOpportunities, {})).toHaveLength(0);
+    await t.mutation(api.demands.setStage, { token, id, stage: "PROCEEDING" });
+    const board = await t.query(api.demands.listOpportunities, {});
+    expect(board.map((d) => d._id)).toEqual([id]);
+    expect(await t.query(api.demands.list, {})).toHaveLength(1);
   });
 
   test("a proceeding opportunity converts into an order of the same customer", async () => {
     const { t, token, ids } = await seed();
-    const id = await t.mutation(api.opportunities.create, {
+    const id = await t.mutation(api.demands.create, {
       token,
       description: "Ténis",
       customerId: ids.customerId,
+      proceeding: true,
     });
-    await t.mutation(api.opportunities.setStage, { token, id, stage: "PROCEEDING" });
     const orderId = await t.run((ctx) =>
       ctx.db.insert("customerOrders", {
         orderNumber: "CE-00001",
@@ -86,21 +90,22 @@ describe("opportunities", () => {
         updatedAt: Date.now(),
       })
     );
-    await t.mutation(api.opportunities.markConverted, { token, id, orderId });
+    await t.mutation(api.demands.markConverted, { token, id, orderId });
 
-    const converted = await t.query(api.opportunities.list, { stage: "CONVERTED" });
+    const converted = await t.query(api.demands.list, { stage: "CONVERTED" });
     expect(converted[0].convertedOrderId).toBe(orderId);
     await expect(
-      t.mutation(api.opportunities.setStage, { token, id, stage: "OPEN" })
-    ).rejects.toThrow(/converted/);
+      t.mutation(api.demands.setStage, { token, id, stage: "LOST", reason: "OTHER" })
+    ).rejects.toThrow(/already closed/);
   });
 
   test("an order from another customer cannot convert the opportunity", async () => {
     const { t, token, ids } = await seed();
-    const id = await t.mutation(api.opportunities.create, {
+    const id = await t.mutation(api.demands.create, {
       token,
       description: "Casaco",
       customerId: ids.customerId,
+      proceeding: true,
     });
     const otherCustomer = await t.run((ctx) =>
       ctx.db.insert("customers", { name: "Other", phone1: "1", isGeneric: false, active: true, status: "active" })
@@ -117,7 +122,7 @@ describe("opportunities", () => {
         updatedAt: Date.now(),
       })
     );
-    await expect(t.mutation(api.opportunities.markConverted, { token, id, orderId })).rejects.toThrow(
+    await expect(t.mutation(api.demands.markConverted, { token, id, orderId })).rejects.toThrow(
       /different customer/
     );
   });
@@ -147,17 +152,17 @@ describe("list queries for the new pages", () => {
 
   test("requests are filtered by reason and status", async () => {
     const { t, token, ids } = await seed();
-    await t.mutation(api.wantList.create, {
+    await t.mutation(api.demands.create, {
       token,
       customerId: ids.customerId,
       description: "Preto M",
-      reason: "WRONG_COLOR",
+      reason: "COLOR",
     });
-    await t.mutation(api.wantList.create, { token, description: "Azul L", reason: "NOT_IN_STOCK" });
-    const byReason = await t.query(api.wantList.list, { reason: "WRONG_COLOR" });
+    await t.mutation(api.demands.create, { token, description: "Azul L", reason: "STOCK" });
+    const byReason = await t.query(api.demands.list, { reason: "COLOR" });
     expect(byReason.map((r) => r.description)).toEqual(["Preto M"]);
     expect(byReason[0].customerName).toBe("Jane Doe");
-    const open = await t.query(api.wantList.list, { status: "OPEN" });
+    const open = await t.query(api.demands.list, { stage: "OPEN" });
     expect(open).toHaveLength(2);
   });
 

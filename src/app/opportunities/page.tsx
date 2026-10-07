@@ -3,41 +3,27 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
 import { Button, Card, Field, TextInput, Textarea, Select, Modal, Badge, Spinner, Toolbar } from "@/components/ui";
+import { LostDemandModal } from "@/components/demands/LostDemandModal";
 import { useToken, useCurrency } from "@/lib/useShop";
+import { DEMAND_REASON_LABEL, DEMAND_STAGE_LABEL, type DemandStage } from "@/lib/demands";
 import { CustomerSearchPanel } from "@/components/pos/CustomerSearchPanel";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
-type Stage = "OPEN" | "PROCEEDING" | "CONVERTED" | "NOT_PROCEEDING";
-type Reason = "PRICE" | "SIZE" | "COLOR" | "STOCK" | "OTHER";
-
-const COLUMNS: { stage: Stage; label: string }[] = [
-  { stage: "OPEN", label: "Open" },
-  { stage: "PROCEEDING", label: "Proceeding" },
-  { stage: "CONVERTED", label: "Converted" },
-  { stage: "NOT_PROCEEDING", label: "Did not proceed" },
-];
-
-const REASONS: { value: Reason; label: string }[] = [
-  { value: "PRICE", label: "Price too high" },
-  { value: "SIZE", label: "No size" },
-  { value: "COLOR", label: "No color" },
-  { value: "STOCK", label: "Not in stock" },
-  { value: "OTHER", label: "Other" },
-];
+// The board shows demands that proceeded (see `demands.listOpportunities`).
+const COLUMNS: DemandStage[] = ["PROCEEDING", "CONVERTED", "FULFILLED", "LOST"];
 
 export default function OpportunitiesPage() {
   const { t } = useTranslation();
   const token = useToken();
   const fmt = useCurrency();
-  const opportunities = useQuery(api.opportunities.list, {});
-  const create = useMutation(api.opportunities.create);
-  const setStage = useMutation(api.opportunities.setStage);
-  const markConverted = useMutation(api.opportunities.markConverted);
+  const opportunities = useQuery(api.demands.listOpportunities, {});
+  const create = useMutation(api.demands.create);
+  const markConverted = useMutation(api.demands.markConverted);
 
   const [creating, setCreating] = useState(false);
   const [pickingCustomer, setPickingCustomer] = useState(false);
@@ -47,9 +33,8 @@ export default function OpportunitiesPage() {
   const [conditions, setConditions] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [lostId, setLostId] = useState<Id<"opportunities"> | null>(null);
-  const [lostReason, setLostReason] = useState<Reason>("PRICE");
-  const [convertId, setConvertId] = useState<Id<"opportunities"> | null>(null);
+  const [losing, setLosing] = useState<Doc<"demands"> | null>(null);
+  const [convertId, setConvertId] = useState<Id<"demands"> | null>(null);
   const [orderId, setOrderId] = useState("");
 
   const convertCustomer = opportunities?.find((o) => o._id === convertId)?.customerId;
@@ -79,6 +64,7 @@ export default function OpportunitiesPage() {
         customerId: customerId ?? undefined,
         estimatedValue: estimate ? Number(estimate) : undefined,
         conditions: conditions || undefined,
+        proceeding: true,
       });
       toast.success(t("Opportunity added"));
       resetCreate();
@@ -86,25 +72,6 @@ export default function OpportunitiesPage() {
       toast.error(e instanceof Error ? e.message : t("Failed to save"));
     } finally {
       setBusy(false);
-    }
-  };
-
-  const move = async (id: Id<"opportunities">, stage: "PROCEEDING" | "OPEN") => {
-    try {
-      await setStage({ token, id, stage });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Failed"));
-    }
-  };
-
-  const confirmLost = async () => {
-    if (!lostId) return;
-    try {
-      await setStage({ token, id: lostId, stage: "NOT_PROCEEDING", reasonNotProceeding: lostReason });
-      toast.success(t("Recorded"));
-      setLostId(null);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Failed"));
     }
   };
 
@@ -133,13 +100,13 @@ export default function OpportunitiesPage() {
         <Spinner />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {COLUMNS.map((col) => {
-            const items = opportunities.filter((o) => o.stage === col.stage);
+          {COLUMNS.map((stage) => {
+            const items = opportunities.filter((o) => o.stage === stage);
             return (
-              <div key={col.stage} className="space-y-2">
+              <div key={stage} className="space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
-                    {t(col.label)}
+                    {t(DEMAND_STAGE_LABEL[stage])}
                   </p>
                   <Badge tone="neutral">{items.length}</Badge>
                 </div>
@@ -154,25 +121,16 @@ export default function OpportunitiesPage() {
                       {o.estimatedValue !== undefined ? ` · ${fmt(o.estimatedValue)}` : ""}
                     </p>
                     {o.conditions && <p className="text-xs">{o.conditions}</p>}
-                    {o.reasonNotProceeding && (
-                      <p className="text-xs text-error">
-                        {t(REASONS.find((r) => r.value === o.reasonNotProceeding)?.label ?? "Other")}
-                      </p>
+                    {o.stage === "LOST" && o.reason && (
+                      <p className="text-xs text-error">{t(DEMAND_REASON_LABEL[o.reason])}</p>
                     )}
-                    {(o.stage === "OPEN" || o.stage === "PROCEEDING") && (
+                    {o.stage === "PROCEEDING" && (
                       <div className="flex flex-wrap gap-1.5 pt-1">
-                        {o.stage === "OPEN" && (
-                          <Button size="sm" variant="secondary" onClick={() => move(o._id, "PROCEEDING")}>
-                            {t("Proceed")}
-                          </Button>
-                        )}
-                        {o.stage === "PROCEEDING" && (
-                          <Button size="sm" onClick={() => setConvertId(o._id)}>
-                            {t("Convert to order")}
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" onClick={() => setLostId(o._id)}>
-                          {t("Did not proceed")}
+                        <Button size="sm" onClick={() => setConvertId(o._id)}>
+                          {t("Convert to order")}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setLosing(o)}>
+                          {t("Lost")}
                         </Button>
                       </div>
                     )}
@@ -218,30 +176,7 @@ export default function OpportunitiesPage() {
         </div>
       </Modal>
 
-      <Modal
-        open={!!lostId}
-        onClose={() => setLostId(null)}
-        title={t("Why did it not go ahead?")}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setLostId(null)}>
-              {t("Cancel")}
-            </Button>
-            <Button onClick={confirmLost}>{t("Save")}</Button>
-          </>
-        }
-      >
-        <Field label={t("Reason")} required>
-          <Select value={lostReason} onChange={(e) => setLostReason(e.target.value as Reason)}>
-            {REASONS.map((r) => (
-              <option key={r.value} value={r.value}>
-                {t(r.label)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </Modal>
+      <LostDemandModal demand={losing} onClose={() => setLosing(null)} />
 
       <Modal
         open={!!convertId}

@@ -28,6 +28,7 @@ import type * as customerProfile from "../customerProfile.js";
 import type * as customers from "../customers.js";
 import type * as deliveryFees from "../deliveryFees.js";
 import type * as demandResponses from "../demandResponses.js";
+import type * as demands from "../demands.js";
 import type * as devAuth from "../devAuth.js";
 import type * as fiscalIdentities from "../fiscalIdentities.js";
 import type * as followUps from "../followUps.js";
@@ -39,11 +40,8 @@ import type * as lib_fiscal from "../lib/fiscal.js";
 import type * as lib_phone from "../lib/phone.js";
 import type * as lib_receiving from "../lib/receiving.js";
 import type * as locations from "../locations.js";
-import type * as materialIncidents from "../materialIncidents.js";
 import type * as metrics from "../metrics.js";
-import type * as nonConformities from "../nonConformities.js";
 import type * as offers from "../offers.js";
-import type * as opportunities from "../opportunities.js";
 import type * as payments from "../payments.js";
 import type * as permissions from "../permissions.js";
 import type * as phase1Backfill from "../phase1Backfill.js";
@@ -54,7 +52,7 @@ import type * as products from "../products.js";
 import type * as promotions from "../promotions.js";
 import type * as purchaseOrders from "../purchaseOrders.js";
 import type * as purchaseReceipts from "../purchaseReceipts.js";
-import type * as qualityIncidents from "../qualityIncidents.js";
+import type * as qualityIssues from "../qualityIssues.js";
 import type * as receiptInspections from "../receiptInspections.js";
 import type * as sales from "../sales.js";
 import type * as salesReturns from "../salesReturns.js";
@@ -83,7 +81,6 @@ import type * as supplyRelations from "../supplyRelations.js";
 import type * as taxRates from "../taxRates.js";
 import type * as users from "../users.js";
 import type * as usersActions from "../usersActions.js";
-import type * as wantList from "../wantList.js";
 
 import type {
   ApiFromModules,
@@ -112,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   customers: typeof customers;
   deliveryFees: typeof deliveryFees;
   demandResponses: typeof demandResponses;
+  demands: typeof demands;
   devAuth: typeof devAuth;
   fiscalIdentities: typeof fiscalIdentities;
   followUps: typeof followUps;
@@ -123,11 +121,8 @@ declare const fullApi: ApiFromModules<{
   "lib/phone": typeof lib_phone;
   "lib/receiving": typeof lib_receiving;
   locations: typeof locations;
-  materialIncidents: typeof materialIncidents;
   metrics: typeof metrics;
-  nonConformities: typeof nonConformities;
   offers: typeof offers;
-  opportunities: typeof opportunities;
   payments: typeof payments;
   permissions: typeof permissions;
   phase1Backfill: typeof phase1Backfill;
@@ -138,7 +133,7 @@ declare const fullApi: ApiFromModules<{
   promotions: typeof promotions;
   purchaseOrders: typeof purchaseOrders;
   purchaseReceipts: typeof purchaseReceipts;
-  qualityIncidents: typeof qualityIncidents;
+  qualityIssues: typeof qualityIssues;
   receiptInspections: typeof receiptInspections;
   sales: typeof sales;
   salesReturns: typeof salesReturns;
@@ -167,7 +162,6 @@ declare const fullApi: ApiFromModules<{
   taxRates: typeof taxRates;
   users: typeof users;
   usersActions: typeof usersActions;
-  wantList: typeof wantList;
 }>;
 
 /**

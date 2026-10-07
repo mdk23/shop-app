@@ -669,10 +669,14 @@ export default defineSchema({
     .index("by_sale", ["saleId"])
     .index("by_status", ["status"]),
 
-  // Demand the shop could not meet (or a customer asked to be told about). Records
-  // lost sales so buying can see what people wanted; `customerId` is optional for
-  // walk-in requests.
-  wantList: defineTable({
+  // Customer demand: something a customer wants, from first ask to the outcome.
+  // OPEN → PROCEEDING → CONVERTED (became a customer order) or FULFILLED (met some
+  // other way) or LOST. CONVERTED, FULFILLED and LOST are final.
+  // Two views of one table: Procuras lists every demand; Oportunidades lists the
+  // ones that proceeded (`proceededAt` set), so a lost opportunity stays on it.
+  // `reason` says why the sale did not happen (set when recorded or when lost), so
+  // lost sales can be counted by cause. `customerId` is optional for walk-ins.
+  demands: defineTable({
     customerId: v.optional(v.id("customers")),
     description: v.string(),
     productId: v.optional(v.id("products")),
@@ -680,31 +684,41 @@ export default defineSchema({
     categoryId: v.optional(v.id("categories")),
     sizeId: v.optional(v.id("sizes")),
     colorId: v.optional(v.id("colors")),
-    maxPrice: v.optional(v.number()),
+    maxPrice: v.optional(v.number()), // customer's budget
+    estimatedValue: v.optional(v.number()), // what the sale would be worth
     quantity: v.optional(v.number()),
     neededBy: v.optional(v.number()),
     intendedUse: v.optional(v.string()),
-    // Why the sale did not happen, for counting lost sales by cause.
+    conditions: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    branchId: v.optional(v.id("branches")),
+    stage: v.union(
+      v.literal("OPEN"),
+      v.literal("PROCEEDING"),
+      v.literal("CONVERTED"),
+      v.literal("FULFILLED"),
+      v.literal("LOST")
+    ),
     reason: v.optional(
       v.union(
-        v.literal("WRONG_SIZE"),
-        v.literal("WRONG_COLOR"),
-        v.literal("PRICE_TOO_HIGH"),
-        v.literal("NOT_IN_STOCK"),
+        v.literal("SIZE"),
+        v.literal("COLOR"),
+        v.literal("PRICE"),
+        v.literal("STOCK"),
         v.literal("OTHER")
       )
     ),
-    branchId: v.optional(v.id("branches")),
-    status: v.union(v.literal("OPEN"), v.literal("FULFILLED"), v.literal("CANCELLED")),
-    notes: v.optional(v.string()),
+    convertedOrderId: v.optional(v.id("customerOrders")),
+    proceededAt: v.optional(v.number()),
     createdByUsername: v.string(),
-    resolvedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    closedAt: v.optional(v.number()),
   })
     .index("by_customer", ["customerId"])
-    .index("by_status", ["status"])
-    .index("by_reason", ["reason"]),
+    .index("by_stage", ["stage"])
+    .index("by_reason", ["reason"])
+    .index("by_proceeded_at", ["proceededAt"]),
 
   // Contacts with a customer (calls, WhatsApp, visits). Follow-up notes that used to
   // live only in `customers.notes`.

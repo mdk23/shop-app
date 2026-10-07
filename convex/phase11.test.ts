@@ -134,33 +134,47 @@ describe("supplier evaluation and relations", () => {
   });
 });
 
-describe("non-conformities, inspections and shipments", () => {
-  test("a non-conformity gets one treatment and is then closed", async () => {
+describe("quality issues, inspections and shipments", () => {
+  test("a quality issue gets one treatment and is then closed", async () => {
     const { t, token, ids } = await seed();
-    const ncId = await t.mutation(api.nonConformities.create, {
+    const issueId = await t.mutation(api.qualityIssues.create, {
       token,
-      variantId: ids.variantId,
+      source: "RECEIPT",
       supplierId: ids.supplierId,
       description: "Costura solta",
-      affectedQuantity: 2,
+      items: [{ productVariantId: ids.variantId, affectedQuantity: 2 }],
     });
-    let rows = await t.query(api.nonConformities.list, { supplierId: ids.supplierId });
-    expect(rows[0].open).toBe(true);
+    let rows = await t.query(api.qualityIssues.list, { token, supplierId: ids.supplierId });
+    expect(rows[0]).toMatchObject({ open: true, affectedQuantity: 2 });
 
-    await t.mutation(api.nonConformities.treat, {
-      token,
-      nonConformityId: ncId,
-      treatmentType: "RETURN_TO_SUPPLIER",
-    });
+    await t.mutation(api.qualityIssues.treat, { token, id: issueId, treatment: "RETURN_TO_SUPPLIER" });
     await expect(
-      t.mutation(api.nonConformities.treat, {
-        token,
-        nonConformityId: ncId,
-        treatmentType: "DESTROY",
-      })
+      t.mutation(api.qualityIssues.treat, { token, id: issueId, treatment: "DESTROY" })
     ).rejects.toThrow(/already has a treatment/);
-    rows = await t.query(api.nonConformities.list, {});
+    rows = await t.query(api.qualityIssues.list, { token });
     expect(rows[0].open).toBe(false);
+  });
+
+  test("a customer-found issue can be linked to a complaint", async () => {
+    const { t, token, ids } = await seed();
+    const complaintId = await t.run((ctx) =>
+      ctx.db.insert("complaints", {
+        description: "Fecho partido",
+        status: "OPEN",
+        createdByUsername: "admin",
+        createdAt: Date.now(),
+      })
+    );
+    await t.mutation(api.qualityIssues.create, {
+      token,
+      source: "CUSTOMER",
+      complaintId,
+      description: "Fecho partido",
+      items: [{ productVariantId: ids.variantId, affectedQuantity: 1 }],
+    });
+    const rows = await t.query(api.qualityIssues.list, { token, source: "CUSTOMER" });
+    expect(rows[0].complaintIds).toEqual([complaintId]);
+    expect(await t.query(api.qualityIssues.list, { token, source: "RECEIPT" })).toHaveLength(0);
   });
 
   test("a discrepancy inspection needs a note", async () => {

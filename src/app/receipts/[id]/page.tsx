@@ -33,7 +33,7 @@ export default function ReceiptDetailPage() {
   const receiptId = params.id as Id<"purchaseReceipts">;
   const receipt = useQuery(api.purchaseReceipts.get, { id: receiptId });
   const inspections = useQuery(api.receiptInspections.listByReceipt, { receiptId });
-  const createNc = useMutation(api.nonConformities.create);
+  const createIssue = useMutation(api.qualityIssues.create);
 
   const [target, setTarget] = useState<Line | null>(null);
   const [description, setDescription] = useState("");
@@ -60,15 +60,15 @@ export default function ReceiptDetailPage() {
     if (!description.trim()) return toast.error(t("Describe the problem."));
     setBusy(true);
     try {
-      await createNc({
+      await createIssue({
         token,
-        variantId: target.productVariantId,
+        source: "RECEIPT",
         supplierId: receipt.supplierId ?? undefined,
         receiptItemId: target._id,
         description,
-        affectedQuantity: Number(quantity),
+        items: [{ productVariantId: target.productVariantId, affectedQuantity: Number(quantity) }],
       });
-      toast.success(t("Non-conformity recorded"));
+      toast.success(t("Quality issue recorded"));
       setTarget(null);
       setDescription("");
       setQuantity("1");

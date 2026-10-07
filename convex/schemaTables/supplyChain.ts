@@ -1,8 +1,8 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// Supplier side: evaluation, partnership terms, origin inspection, non-conformities,
-// shipments and customs. Supply commitments are purchaseOrders; their progress is
+// Supplier side: evaluation, partnership terms, receipt inspection, shipments and
+// customs. Defects in received goods are `qualityIssues` with source RECEIPT. Supply commitments are purchaseOrders; their progress is
 // purchaseOrders.status plus purchaseReceipts.
 export const supplyChainTables = {
   supplierEvaluations: defineTable({
@@ -43,29 +43,6 @@ export const supplyChainTables = {
     inspectedByUsername: v.string(),
     inspectedAt: v.number(),
   }).index("by_receipt", ["receiptId"]),
-
-  nonConformities: defineTable({
-    receiptItemId: v.optional(v.id("purchaseReceiptItems")),
-    variantId: v.id("productVariants"),
-    supplierId: v.optional(v.id("suppliers")),
-    description: v.string(),
-    affectedQuantity: v.number(),
-    recognizedAt: v.number(),
-  })
-    .index("by_supplier", ["supplierId"])
-    .index("by_variant", ["variantId"]),
-
-  nonConformityTreatments: defineTable({
-    nonConformityId: v.id("nonConformities"),
-    treatmentType: v.union(
-      v.literal("RETURN_TO_SUPPLIER"),
-      v.literal("DISCOUNT"),
-      v.literal("ACCEPT_AS_IS"),
-      v.literal("DESTROY")
-    ),
-    notes: v.optional(v.string()),
-    decidedAt: v.number(),
-  }).index("by_non_conformity", ["nonConformityId"]),
 
   shipments: defineTable({
     purchaseOrderId: v.optional(v.id("purchaseOrders")),

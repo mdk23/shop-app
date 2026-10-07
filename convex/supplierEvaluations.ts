@@ -18,7 +18,7 @@ export const listBySupplier = query({
   },
 });
 
-/** Average quality and punctuality per supplier, plus how many non-conformities are still open. */
+/** Average quality and punctuality per supplier, plus how many of its quality issues are still open. */
 export const scorecard = query({
   args: {},
   handler: async (ctx) => {
@@ -30,17 +30,10 @@ export const scorecard = query({
           .withIndex("by_supplier", (q) => q.eq("supplierId", s._id))
           .collect();
         const issues = await ctx.db
-          .query("nonConformities")
+          .query("qualityIssues")
           .withIndex("by_supplier", (q) => q.eq("supplierId", s._id))
           .collect();
-        let openIssues = 0;
-        for (const issue of issues) {
-          const t = await ctx.db
-            .query("nonConformityTreatments")
-            .withIndex("by_non_conformity", (q) => q.eq("nonConformityId", issue._id))
-            .first();
-          if (!t) openIssues += 1;
-        }
+        const openIssues = issues.filter((issue) => issue.treatment === undefined).length;
         const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
         return {
           supplierId: s._id,
@@ -48,8 +41,8 @@ export const scorecard = query({
           evaluations: evals.length,
           avgQuality: avg(evals.map((e) => e.qualityScore)),
           avgPunctuality: avg(evals.map((e) => e.punctualityPercent)),
-          nonConformities: issues.length,
-          openNonConformities: openIssues,
+          qualityIssues: issues.length,
+          openQualityIssues: openIssues,
         };
       })
     );

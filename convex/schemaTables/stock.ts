@@ -1,8 +1,8 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// Material incidents (damage, loss). Stock effects are the ledger movements they
-// point to in `movementId`; the shop's location is `branches`.
+// Stock locations inside a branch. Damage and loss are recorded as stockAdjustments
+// (reasons DAMAGED / MISSING), which write the matching ledger movements.
 export const stockTables = {
   // Where stock physically sits within the business. Stock quantities stay per branch
   // in the ledger; a location names the custody point inside a branch.
@@ -11,18 +11,4 @@ export const stockTables = {
     name: v.string(),
     locationType: v.union(v.literal("CENTRAL"), v.literal("STORE"), v.literal("CUSTODY")),
   }).index("by_branch", ["branchId"]),
-
-  materialIncidents: defineTable({
-    incidentType: v.string(),
-    occurredAt: v.number(),
-    knownAt: v.optional(v.number()),
-  }),
-
-  materialIncidentItems: defineTable({
-    incidentId: v.id("materialIncidents"),
-    variantId: v.id("productVariants"),
-    movementId: v.optional(v.id("inventoryMovements")),
-  })
-    .index("by_incident", ["incidentId"])
-    .index("by_movement", ["movementId"]),
 };

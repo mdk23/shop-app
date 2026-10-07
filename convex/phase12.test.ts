@@ -179,14 +179,14 @@ describe("supplier scorecard", () => {
         updatedAt: Date.now(),
       })
     );
-    await t.mutation(api.nonConformities.create, {
+    await t.mutation(api.qualityIssues.create, {
       token,
-      variantId,
+      source: "RECEIPT",
       supplierId,
       description: "Mancha",
-      affectedQuantity: 1,
+      items: [{ productVariantId: variantId, affectedQuantity: 1 }],
     });
     const card = (await t.query(api.supplierEvaluations.scorecard, {})).find((s) => s.supplierId === supplierId);
-    expect(card).toMatchObject({ evaluations: 2, avgQuality: 3, avgPunctuality: 90, openNonConformities: 1 });
+    expect(card).toMatchObject({ evaluations: 2, avgQuality: 3, avgPunctuality: 90, openQualityIssues: 1 });
   });
 });

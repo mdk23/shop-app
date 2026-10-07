@@ -3,12 +3,9 @@ import { v } from "convex/values";
 
 // Catalogue and fiscal identity. Tax on a sale is the line-level tax on saleItems;
 // fiscal document numbers come from documentSeries and counters.
+// Brands are not modelled: the shop sells one brand, and customers.preferredBrands is
+// free text.
 export const catalogTables = {
-  brands: defineTable({
-    name: v.string(),
-    createdAt: v.number(),
-  }).index("by_name", ["name"]),
-
   sizeEquivalences: defineTable({
     fromSizeId: v.id("sizes"),
     toSizeId: v.id("sizes"),

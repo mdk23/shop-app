@@ -13,11 +13,10 @@ import { useTranslation } from "@/contexts/LanguageContext";
 export default function CommercialSettingsPage() {
   const { t } = useTranslation();
   return (
-    <PageLayout title={t("Commercial settings")} subtitle={t("Payment terms, pricing policy and IVA rates")}>
+    <PageLayout title={t("Commercial settings")} subtitle={t("Payment terms and pricing policy")}>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <PaymentTermsCard />
         <PricingPolicyCard />
-        <TaxRatesCard />
       </div>
     </PageLayout>
   );
@@ -160,91 +159,6 @@ function PricingPolicyCard() {
         </Button>
       </div>
       <p className="text-xs text-on-surface-variant">{t("A new policy replaces the current one from today; the old one stays in history.")}</p>
-    </Card>
-  );
-}
-
-function TaxRatesCard() {
-  const { t } = useTranslation();
-  const token = useToken();
-  const rates = useQuery(api.taxRates.list, {});
-  const create = useMutation(api.taxRates.create);
-  const deactivate = useMutation(api.taxRates.deactivate);
-  const [name, setName] = useState("");
-  const [percentage, setPercentage] = useState("16");
-  const [exemption, setExemption] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      await create({
-        token,
-        name,
-        percentage: Number(percentage),
-        exemptionCode: exemption || undefined,
-      });
-      toast.success(t("IVA rate added"));
-      setName("");
-      setExemption("");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("Failed to save"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Card className="p-4 space-y-3 xl:col-span-2">
-      <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{t("IVA rates")}</p>
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
-        <Field label={t("Name")}>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. IVA 16%")} />
-        </Field>
-        <Field label={t("Percent")}>
-          <TextInput type="number" min={0} max={100} value={percentage} onChange={(e) => setPercentage(e.target.value)} />
-        </Field>
-        <Field label={t("Exemption code")}>
-          <TextInput value={exemption} onChange={(e) => setExemption(e.target.value)} />
-        </Field>
-        <Button onClick={save} loading={busy} disabled={!name.trim()}>
-          {t("Add rate")}
-        </Button>
-      </div>
-      {rates === undefined ? (
-        <Spinner />
-      ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>{t("Name")}</Th>
-              <Th className="text-right">{t("Percent")}</Th>
-              <Th>{t("Exemption code")}</Th>
-              <Th>{t("Status")}</Th>
-              <Th />
-            </tr>
-          </thead>
-          <tbody>
-            {rates.map((r) => (
-              <tr key={r._id}>
-                <Td>{r.name}</Td>
-                <Td className="text-right">{r.percentage}%</Td>
-                <Td>{r.exemptionCode ?? "—"}</Td>
-                <Td>
-                  <Badge tone={r.active ? "success" : "neutral"}>{r.active ? t("Active") : t("Inactive")}</Badge>
-                </Td>
-                <Td>
-                  {r.active && (
-                    <Button size="sm" variant="ghost" onClick={() => deactivate({ token, id: r._id })}>
-                      {t("Deactivate")}
-                    </Button>
-                  )}
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
     </Card>
   );
 }

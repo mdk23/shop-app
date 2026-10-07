@@ -14,6 +14,13 @@ import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
+const TREATMENT_LABEL = {
+  RETURN_TO_SUPPLIER: "Return to supplier",
+  DISCOUNT: "Discount from supplier",
+  ACCEPT_AS_IS: "Accept as is",
+  DESTROY: "Destroy",
+} as const;
+
 type Tab = "EVALUATION" | "TERMS" | "QUALITY" | "SHIPMENTS";
 const TABS: { key: Tab; label: string }[] = [
   { key: "EVALUATION", label: "Evaluation" },
@@ -282,9 +289,10 @@ function TermsTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
 
 function QualityTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
   const { t } = useTranslation();
-  const rows = useQuery(api.nonConformities.list, { supplierId });
+  const token = useToken();
+  const rows = useQuery(api.qualityIssues.list, { token, supplierId });
   if (rows === undefined) return <Spinner />;
-  if (rows.length === 0) return <p className="text-sm text-on-surface-variant">{t("No non-conformities recorded")}</p>;
+  if (rows.length === 0) return <p className="text-sm text-on-surface-variant">{t("No quality issues recorded")}</p>;
   return (
     <Card>
       <div className="overflow-x-auto">
@@ -302,12 +310,10 @@ function QualityTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
             {rows.map((r) => (
               <tr key={r._id}>
                 <Td>{formatDate(r.recognizedAt)}</Td>
-                <Td>
-                  {r.productName} <span className="text-on-surface-variant">{r.variantLabel}</span>
-                </Td>
+                <Td>{r.items.map((i) => i.label).join(" · ")}</Td>
                 <Td className="text-right">{r.affectedQuantity}</Td>
                 <Td>{r.description}</Td>
-                <Td>{r.open ? <Badge tone="warning">{t("Open")}</Badge> : t(r.treatments[0].treatmentType)}</Td>
+                <Td>{r.treatment ? t(TREATMENT_LABEL[r.treatment]) : <Badge tone="warning">{t("Open")}</Badge>}</Td>
               </tr>
             ))}
           </tbody>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
 import {
   Button,
@@ -21,14 +21,22 @@ import {
   TextInput,
   Select,
 } from "@/components/ui";
+import { LostDemandModal } from "@/components/demands/LostDemandModal";
 import { useToken } from "@/lib/useShop";
 import { formatDate, cn } from "@/lib/utils";
 import { useClientPage } from "@/lib/pagination";
+import {
+  DEMAND_REASONS,
+  DEMAND_REASON_LABEL,
+  DEMAND_STAGE_LABEL,
+  DEMAND_STAGE_TONE,
+  isClosedStage,
+  type DemandReason,
+  type DemandStage,
+} from "@/lib/demands";
 import { toast } from "sonner";
 import { useTranslation } from "@/contexts/LanguageContext";
 
-type Status = "OPEN" | "FULFILLED" | "CANCELLED";
-type Reason = "WRONG_SIZE" | "WRONG_COLOR" | "PRICE_TOO_HIGH" | "NOT_IN_STOCK" | "OTHER";
 type Outcome = "DISPONIVEL" | "ALTERNATIVA" | "PROPOSTA_FUTURA" | "SEM_SOLUCAO_ADEQUADA";
 type OfferLine = { description: string; price: string };
 
@@ -39,47 +47,30 @@ const OUTCOMES: { value: Outcome; label: string }[] = [
   { value: "SEM_SOLUCAO_ADEQUADA", label: "Nothing suitable" },
 ];
 
-const STATUSES: ("ALL" | Status)[] = ["ALL", "OPEN", "FULFILLED", "CANCELLED"];
-const STATUS_LABEL: Record<Status, string> = {
-  OPEN: "Open",
-  FULFILLED: "Fulfilled",
-  CANCELLED: "Cancelled",
-};
-const STATUS_TONE: Record<Status, "info" | "success" | "error"> = {
-  OPEN: "info",
-  FULFILLED: "success",
-  CANCELLED: "error",
-};
-
-const REASONS: { value: Reason; label: string }[] = [
-  { value: "WRONG_SIZE", label: "Wrong size" },
-  { value: "WRONG_COLOR", label: "Wrong color" },
-  { value: "PRICE_TOO_HIGH", label: "Price too high" },
-  { value: "NOT_IN_STOCK", label: "Not in stock" },
-  { value: "OTHER", label: "Other" },
-];
+const STAGES: ("ALL" | DemandStage)[] = ["ALL", "OPEN", "PROCEEDING", "CONVERTED", "FULFILLED", "LOST"];
 
 export default function RequestsPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const [status, setStatus] = useState<"ALL" | Status>("OPEN");
-  const [reason, setReason] = useState<Reason | "ALL">("ALL");
+  const [stage, setStage] = useState<"ALL" | DemandStage>("OPEN");
+  const [reason, setReason] = useState<DemandReason | "ALL">("ALL");
 
-  const requests = useQuery(api.wantList.list, {
-    status: status === "ALL" ? undefined : status,
+  const demands = useQuery(api.demands.list, {
+    stage: stage === "ALL" ? undefined : stage,
     reason: reason === "ALL" ? undefined : reason,
   });
-  const counts = useQuery(api.wantList.countByReason, {});
+  const counts = useQuery(api.demands.countByReason, {});
   const sizes = useQuery(api.sizes.list, {});
   const colors = useQuery(api.colors.list, {});
-  const resolve = useMutation(api.wantList.resolve);
+  const changeStage = useMutation(api.demands.setStage);
   const respond = useMutation(api.demandResponses.record);
-  const page = useClientPage(requests ?? []);
+  const page = useClientPage(demands ?? []);
 
-  const [responding, setResponding] = useState<Id<"wantList"> | null>(null);
+  const [responding, setResponding] = useState<Id<"demands"> | null>(null);
   const [outcome, setOutcome] = useState<Outcome>("DISPONIVEL");
   const [offers, setOffers] = useState<OfferLine[]>([{ description: "", price: "" }]);
   const [busy, setBusy] = useState(false);
+  const [losing, setLosing] = useState<Doc<"demands"> | null>(null);
 
   const closeResponse = () => {
     setResponding(null);
@@ -107,16 +98,36 @@ export default function RequestsPage() {
   const sizeName = (id?: string) => (sizes ?? []).find((s) => s._id === id)?.name ?? "—";
   const colorName = (id?: string) => (colors ?? []).find((c) => c._id === id)?.name ?? "—";
 
-  const close = async (id: Id<"wantList">, outcome: "FULFILLED" | "CANCELLED") => {
+  const move = async (id: Id<"demands">, next: "PROCEEDING" | "FULFILLED") => {
     try {
-      await resolve({ token, id, outcome });
-      toast.success(t("Request updated"));
+      await changeStage({ token, id, stage: next });
+      toast.success(next === "PROCEEDING" ? t("Moved to opportunities") : t("Request updated"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("Failed"));
     }
   };
 
   const total = Object.values(counts ?? {}).reduce((s, n) => s + n, 0);
+
+  const actions = (r: Doc<"demands">) =>
+    !isClosedStage(r.stage) && (
+      <>
+        <Button size="sm" variant="secondary" onClick={() => setResponding(r._id)}>
+          {t("Respond")}
+        </Button>
+        {r.stage === "OPEN" && (
+          <Button size="sm" variant="secondary" onClick={() => move(r._id, "PROCEEDING")}>
+            {t("Proceed")}
+          </Button>
+        )}
+        <Button size="sm" variant="secondary" onClick={() => move(r._id, "FULFILLED")}>
+          {t("Mark fulfilled")}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setLosing(r)}>
+          {t("Lost")}
+        </Button>
+      </>
+    );
 
   return (
     <PageLayout title={t("Requests")} subtitle={t("What customers asked for and did not get")}>
@@ -125,7 +136,7 @@ export default function RequestsPage() {
           {t("Why sales were lost")} · {total}
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {REASONS.map((r) => (
+          {DEMAND_REASONS.map((r) => (
             <button
               key={r.value}
               onClick={() => setReason(reason === r.value ? "ALL" : r.value)}
@@ -145,27 +156,27 @@ export default function RequestsPage() {
 
       <Toolbar>
         <div className="flex flex-wrap gap-1.5">
-          {STATUSES.map((s) => (
+          {STAGES.map((s) => (
             <button
               key={s}
-              onClick={() => setStatus(s)}
+              onClick={() => setStage(s)}
               className={cn(
                 "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
-                status === s
+                stage === s
                   ? "bg-primary text-on-primary border-primary"
                   : "bg-surface-container-low text-on-surface-variant border-outline"
               )}
             >
-              {s === "ALL" ? t("All") : t(STATUS_LABEL[s])}
+              {s === "ALL" ? t("All") : t(DEMAND_STAGE_LABEL[s])}
             </button>
           ))}
         </div>
       </Toolbar>
 
       <Card>
-        {requests === undefined ? (
+        {demands === undefined ? (
           <Spinner />
-        ) : requests.length === 0 ? (
+        ) : demands.length === 0 ? (
           <EmptyState
             title={t("No requests here")}
             message={t("Requests are recorded from a customer's profile when the shop cannot meet them.")}
@@ -196,24 +207,12 @@ export default function RequestsPage() {
                       <Td>{colorName(r.colorId)}</Td>
                       <Td>{r.quantity ?? "—"}</Td>
                       <Td>{r.maxPrice ?? "—"}</Td>
-                      <Td>{r.reason ? t(REASONS.find((x) => x.value === r.reason)?.label ?? "Other") : "—"}</Td>
+                      <Td>{r.reason ? t(DEMAND_REASON_LABEL[r.reason]) : "—"}</Td>
                       <Td>
-                        <Badge tone={STATUS_TONE[r.status]}>{t(STATUS_LABEL[r.status])}</Badge>
+                        <Badge tone={DEMAND_STAGE_TONE[r.stage]}>{t(DEMAND_STAGE_LABEL[r.stage])}</Badge>
                       </Td>
                       <Td>
-                        {r.status === "OPEN" && (
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="secondary" onClick={() => setResponding(r._id)}>
-                              {t("Respond")}
-                            </Button>
-                            <Button size="sm" variant="secondary" onClick={() => close(r._id, "FULFILLED")}>
-                              {t("Mark fulfilled")}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => close(r._id, "CANCELLED")}>
-                              {t("Cancel request")}
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex gap-1">{actions(r)}</div>
                       </Td>
                     </tr>
                   ))}
@@ -225,28 +224,16 @@ export default function RequestsPage() {
                 <div key={r._id} className="p-3 rounded-xl border border-outline bg-surface-container-low space-y-1">
                   <div className="flex justify-between gap-2">
                     <span className="font-bold text-sm">{r.description}</span>
-                    <Badge tone={STATUS_TONE[r.status]}>{t(STATUS_LABEL[r.status])}</Badge>
+                    <Badge tone={DEMAND_STAGE_TONE[r.stage]}>{t(DEMAND_STAGE_LABEL[r.stage])}</Badge>
                   </div>
                   <p className="text-xs text-on-surface-variant">
                     {r.customerName ?? t("Walk-in")} · {formatDate(r.createdAt)}
                   </p>
-                  {r.status === "OPEN" && (
-                    <div className="flex gap-1.5 pt-1">
-                      <Button size="sm" variant="secondary" onClick={() => setResponding(r._id)}>
-                        {t("Respond")}
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => close(r._id, "FULFILLED")}>
-                        {t("Mark fulfilled")}
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => close(r._id, "CANCELLED")}>
-                        {t("Cancel request")}
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-1.5 pt-1">{actions(r)}</div>
                 </div>
               ))}
             </div>
-            <PagedFooter paged={page} loading={requests === undefined} />
+            <PagedFooter paged={page} loading={demands === undefined} />
           </>
         )}
       </Card>
@@ -314,6 +301,8 @@ export default function RequestsPage() {
           )}
         </div>
       </Modal>
+
+      <LostDemandModal demand={losing} onClose={() => setLosing(null)} />
     </PageLayout>
   );
 }

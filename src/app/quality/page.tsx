@@ -27,8 +27,15 @@ import { useToken } from "@/lib/useShop";
 import { formatDate, cn } from "@/lib/utils";
 import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+
+type Source = "RECEIPT" | "STOCK" | "CUSTOMER";
+const SOURCE_LABEL: Record<Source, string> = {
+  RECEIPT: "On receipt",
+  STOCK: "In store",
+  CUSTOMER: "From a customer",
+};
 
 type Treatment = "RETURN_TO_SUPPLIER" | "DISCOUNT" | "ACCEPT_AS_IS" | "DESTROY";
 const TREATMENTS: { value: Treatment; label: string }[] = [
@@ -38,49 +45,56 @@ const TREATMENTS: { value: Treatment; label: string }[] = [
   { value: "DESTROY", label: "Destroy" },
 ];
 
+type Line = PickedVariant & { quantity: number };
+
 export default function QualityPage() {
   const { t } = useTranslation();
   const token = useToken();
   const [onlyOpen, setOnlyOpen] = useState(true);
-  const rows = useQuery(api.nonConformities.list, {});
+  const [source, setSource] = useState<Source | "ALL">("ALL");
+  const rows = useQuery(api.qualityIssues.list, { token, source: source === "ALL" ? undefined : source });
   const suppliers = useQuery(api.suppliers.list, {});
-  const create = useMutation(api.nonConformities.create);
-  const treat = useMutation(api.nonConformities.treat);
+  const openComplaints = useQuery(api.complaints.list, { status: "OPEN" });
+  const create = useMutation(api.qualityIssues.create);
+  const treat = useMutation(api.qualityIssues.treat);
 
   const shown = (rows ?? []).filter((r) => (onlyOpen ? r.open : true));
   const page = useClientPage(shown);
 
   const [creating, setCreating] = useState(false);
-  const [variant, setVariant] = useState<PickedVariant | null>(null);
+  const [newSource, setNewSource] = useState<Source>("STOCK");
+  const [lines, setLines] = useState<Line[]>([]);
   const [supplierId, setSupplierId] = useState("");
+  const [complaintId, setComplaintId] = useState("");
   const [description, setDescription] = useState("");
-  const [quantity, setQuantity] = useState("1");
   const [busy, setBusy] = useState(false);
 
-  const [treating, setTreating] = useState<Id<"nonConformities"> | null>(null);
+  const [treating, setTreating] = useState<Id<"qualityIssues"> | null>(null);
   const [treatment, setTreatment] = useState<Treatment>("RETURN_TO_SUPPLIER");
   const [notes, setNotes] = useState("");
 
   const closeCreate = () => {
     setCreating(false);
-    setVariant(null);
+    setNewSource("STOCK");
+    setLines([]);
     setSupplierId("");
+    setComplaintId("");
     setDescription("");
-    setQuantity("1");
   };
 
   const saveNew = async () => {
-    if (!variant) return toast.error(t("Choose the product."));
+    if (lines.length === 0) return toast.error(t("Choose the product."));
     setBusy(true);
     try {
       await create({
         token,
-        variantId: variant.variantId,
-        supplierId: supplierId ? (supplierId as Id<"suppliers">) : undefined,
+        source: newSource,
         description,
-        affectedQuantity: Number(quantity),
+        supplierId: supplierId ? (supplierId as Id<"suppliers">) : undefined,
+        complaintId: complaintId ? (complaintId as Id<"complaints">) : undefined,
+        items: lines.map((l) => ({ productVariantId: l.variantId, affectedQuantity: l.quantity })),
       });
-      toast.success(t("Non-conformity recorded"));
+      toast.success(t("Quality issue recorded"));
       closeCreate();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("Failed to save"));
@@ -93,7 +107,7 @@ export default function QualityPage() {
     if (!treating) return;
     setBusy(true);
     try {
-      await treat({ token, nonConformityId: treating, treatmentType: treatment, notes: notes || undefined });
+      await treat({ token, id: treating, treatment, notes: notes || undefined });
       toast.success(t("Treatment recorded"));
       setTreating(null);
       setNotes("");
@@ -104,28 +118,33 @@ export default function QualityPage() {
     }
   };
 
+  const chip = (active: boolean) =>
+    cn(
+      "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
+      active
+        ? "bg-primary text-on-primary border-primary"
+        : "bg-surface-container-low text-on-surface-variant border-outline"
+    );
+
   return (
-    <PageLayout title={t("Quality")} subtitle={t("Goods that did not meet the order")}>
+    <PageLayout title={t("Quality")} subtitle={t("Defects found on receipt, in store or by customers")}>
       <Toolbar>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {[true, false].map((flag) => (
-            <button
-              key={String(flag)}
-              onClick={() => setOnlyOpen(flag)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-colors",
-                onlyOpen === flag
-                  ? "bg-primary text-on-primary border-primary"
-                  : "bg-surface-container-low text-on-surface-variant border-outline"
-              )}
-            >
+            <button key={String(flag)} onClick={() => setOnlyOpen(flag)} className={chip(onlyOpen === flag)}>
               {flag ? t("Open") : t("All")}
+            </button>
+          ))}
+          <span className="w-px bg-outline/40 mx-1" />
+          {(["ALL", "RECEIPT", "STOCK", "CUSTOMER"] as const).map((s) => (
+            <button key={s} onClick={() => setSource(s)} className={chip(source === s)}>
+              {s === "ALL" ? t("Any source") : t(SOURCE_LABEL[s])}
             </button>
           ))}
         </div>
         <div className="ml-auto" />
         <Button onClick={() => setCreating(true)}>
-          <Plus className="w-3.5 h-3.5" /> {t("Record non-conformity")}
+          <Plus className="w-3.5 h-3.5" /> {t("Record quality issue")}
         </Button>
       </Toolbar>
 
@@ -135,7 +154,7 @@ export default function QualityPage() {
         ) : shown.length === 0 ? (
           <EmptyState
             title={t("Nothing open")}
-            message={t("Goods that arrive wrong or damaged are recorded here and treated.")}
+            message={t("Defective goods are recorded here and treated.")}
           />
         ) : (
           <>
@@ -144,9 +163,11 @@ export default function QualityPage() {
                 <thead>
                   <tr>
                     <Th>{t("Date")}</Th>
-                    <Th>{t("Item")}</Th>
+                    <Th>{t("Source")}</Th>
+                    <Th>{t("Items")}</Th>
                     <Th className="text-right">{t("Qty")}</Th>
                     <Th>{t("Problem")}</Th>
+                    <Th>{t("Supplier")}</Th>
                     <Th>{t("Treatment")}</Th>
                     <Th />
                   </tr>
@@ -156,15 +177,28 @@ export default function QualityPage() {
                     <tr key={r._id} className="hover:bg-surface-container-low">
                       <Td>{formatDate(r.recognizedAt)}</Td>
                       <Td>
-                        {r.productName} <span className="text-on-surface-variant">{r.variantLabel}</span>
+                        <Badge tone="neutral">{t(SOURCE_LABEL[r.source])}</Badge>
                       </Td>
+                      <Td>{r.items.map((i) => i.label).join(" · ")}</Td>
                       <Td className="text-right">{r.affectedQuantity}</Td>
-                      <Td>{r.description}</Td>
                       <Td>
-                        {r.open ? (
-                          <Badge tone="warning">{t("Open")}</Badge>
+                        {r.description}
+                        {r.complaintIds.length > 0 && (
+                          <span className="ml-1">
+                            <Badge tone="info">
+                              {r.complaintIds.length} {t("linked complaint(s)")}
+                            </Badge>
+                          </span>
+                        )}
+                      </Td>
+                      <Td>{r.supplierName ?? "—"}</Td>
+                      <Td>
+                        {r.treatment ? (
+                          <Badge tone="success">
+                            {t(TREATMENTS.find((x) => x.value === r.treatment)?.label ?? "Other")}
+                          </Badge>
                         ) : (
-                          <Badge tone="success">{t(TREATMENTS.find((x) => x.value === r.treatments[0].treatmentType)?.label ?? "Other")}</Badge>
+                          <Badge tone="warning">{t("Open")}</Badge>
                         )}
                       </Td>
                       <Td>
@@ -187,39 +221,89 @@ export default function QualityPage() {
       <Modal
         open={creating}
         onClose={closeCreate}
-        title={t("Record non-conformity")}
-        size="sm"
+        title={t("Record quality issue")}
+        size="lg"
         footer={
           <>
             <Button variant="ghost" onClick={closeCreate}>
               {t("Cancel")}
             </Button>
-            <Button onClick={saveNew} loading={busy}>
+            <Button onClick={saveNew} loading={busy} disabled={!description.trim() || lines.length === 0}>
               {t("Save")}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label={t("Product")} required>
-            <VariantPicker placeholder={t("Search product or SKU")} onPick={setVariant} />
-            {variant && <p className="text-xs mt-1">{variant.label} ({variant.sku})</p>}
-          </Field>
-          <Field label={t("Supplier")}>
-            <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">{t("Not known")}</option>
-              {(suppliers ?? []).map((s) => (
-                <option key={s._id} value={s._id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={t("Quantity affected")} required>
-            <TextInput type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Field label={t("Where was it found?")} required>
+              <Select value={newSource} onChange={(e) => setNewSource(e.target.value as Source)}>
+                {(Object.keys(SOURCE_LABEL) as Source[]).map((s) => (
+                  <option key={s} value={s}>
+                    {t(SOURCE_LABEL[s])}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={t("Supplier")}>
+              <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+                <option value="">{t("Not known")}</option>
+                {(suppliers ?? []).map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          {newSource === "CUSTOMER" && (
+            <Field label={t("Linked complaint")}>
+              <Select value={complaintId} onChange={(e) => setComplaintId(e.target.value)}>
+                <option value="">{t("None")}</option>
+                {(openComplaints ?? []).map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {(c.customerName ?? t("Walk-in")) + " — " + c.description.slice(0, 40)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <Field label={t("What is wrong?")} required>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+          </Field>
+          <Field label={t("Affected products")} required>
+            <div className="space-y-2">
+              <VariantPicker
+                placeholder={t("Search product to add…")}
+                onPick={(v) => {
+                  if (lines.some((l) => l.variantId === v.variantId)) return;
+                  setLines([...lines, { ...v, quantity: 1 }]);
+                }}
+              />
+              {lines.map((line, i) => (
+                <div key={line.variantId} className="flex items-center gap-2 p-2 rounded-lg bg-surface-container-low">
+                  <span className="flex-1 text-sm font-bold truncate">{line.label}</span>
+                  <TextInput
+                    type="number"
+                    min={1}
+                    value={line.quantity}
+                    onChange={(e) =>
+                      setLines(lines.map((l, j) => (j === i ? { ...l, quantity: Number(e.target.value) } : l)))
+                    }
+                    className="w-20"
+                    aria-label={t("Affected quantity")}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLines(lines.filter((_, j) => j !== i))}
+                    className="p-1.5 text-on-surface-variant hover:text-error"
+                    aria-label={t("Remove")}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </Field>
         </div>
       </Modal>
@@ -227,7 +311,7 @@ export default function QualityPage() {
       <Modal
         open={!!treating}
         onClose={() => setTreating(null)}
-        title={t("Treat non-conformity")}
+        title={t("Treat quality issue")}
         size="sm"
         footer={
           <>

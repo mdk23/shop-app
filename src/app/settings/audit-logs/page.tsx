@@ -25,14 +25,14 @@ export default function AuditLogsPage() {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const isSearching = search.trim().length > 0;
+  const token = useToken();
 
   // Default browse: real cursor pagination, indexed by creation time — reads
   // only 15 documents per page, however deep the audit trail grows.
-  const paged = usePagedQuery(api.auth.getAuditLogsPaged, isSearching ? "skip" : {});
+  const paged = usePagedQuery(api.auth.getAuditLogsPaged, isSearching ? "skip" : { token });
 
   // Free-text filter isn't index-backed, so searching falls back to a capped
   // scan (300 most recent) filtered + paginated client-side.
-  const token = useToken();
   const scanned = useQuery(api.auth.getAuditLogs, isSearching ? { token, limit: 300 } : "skip");
   const term = search.trim().toLowerCase();
   const filtered = useMemo(() => {

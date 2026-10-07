@@ -39,27 +39,6 @@ describe("SQL model tables", () => {
 });
 
 describe("module smoke tests", () => {
-  test("governance: units are indexed by dimension and symbol", async () => {
-    const t = convexTest(schema, modules);
-    await t.run((ctx) => ctx.db.insert("units", { name: "Metro", symbol: "m", dimension: "LENGTH" }));
-    const found = await t.run((ctx) =>
-      ctx.db
-        .query("units")
-        .withIndex("by_dimension_and_symbol", (q) => q.eq("dimension", "LENGTH").eq("symbol", "m"))
-        .unique()
-    );
-    expect(found?.name).toBe("Metro");
-  });
-
-  test("catalog: brands are indexed by name", async () => {
-    const t = convexTest(schema, modules);
-    await t.run((ctx) => ctx.db.insert("brands", { name: "Nike", createdAt: Date.now() }));
-    const found = await t.run((ctx) =>
-      ctx.db.query("brands").withIndex("by_name", (q) => q.eq("name", "Nike")).unique()
-    );
-    expect(found?.name).toBe("Nike");
-  });
-
   test("relations: a business relation links participants", async () => {
     const t = convexTest(schema, modules);
     const count = await t.run(async (ctx) => {

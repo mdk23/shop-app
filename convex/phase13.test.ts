@@ -57,82 +57,6 @@ async function seed() {
   return { t, token, ids };
 }
 
-async function stockOf(
-  t: Awaited<ReturnType<typeof seed>>["t"],
-  ids: { branchId: Id<"branches">; variantId: Id<"productVariants"> },
-  quantity: number
-) {
-  await t.run((ctx) =>
-    ctx.db.insert("variantStock", {
-      branchId: ids.branchId,
-      productVariantId: ids.variantId,
-      quantity,
-      updatedAt: Date.now(),
-    })
-  );
-}
-
-describe("material incidents", () => {
-  test("damage takes stock out through the ledger and keeps the link", async () => {
-    const { t, token, ids } = await seed();
-    await stockOf(t, ids, 5);
-    await t.mutation(api.materialIncidents.create, {
-      token,
-      branchId: ids.branchId,
-      incidentType: "DAMAGE",
-      occurredAt: Date.now(),
-      items: [{ variantId: ids.variantId, quantity: 2 }],
-    });
-    const rows = await t.query(api.materialIncidents.list, { token });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].items[0].movementId).toBeDefined();
-    const movements = await t.run((ctx) => ctx.db.query("inventoryMovements").collect());
-    expect(movements.some((m) => m.movementType === "DAMAGE" && m.quantity === -2)).toBe(true);
-    const stock = await t.run((ctx) => ctx.db.query("variantStock").first());
-    expect(stock?.quantity).toBe(3);
-  });
-
-  test("a loss larger than the stock on hand is refused", async () => {
-    const { t, token, ids } = await seed();
-    await stockOf(t, ids, 1);
-    await expect(
-      t.mutation(api.materialIncidents.create, {
-        token,
-        branchId: ids.branchId,
-        incidentType: "LOSS",
-        occurredAt: Date.now(),
-        items: [{ variantId: ids.variantId, quantity: 2 }],
-      })
-    ).rejects.toThrow(/Insufficient stock/);
-  });
-
-  test("other incidents only record, with no stock movement", async () => {
-    const { t, token, ids } = await seed();
-    await t.mutation(api.materialIncidents.create, {
-      token,
-      branchId: ids.branchId,
-      incidentType: "OTHER",
-      occurredAt: Date.now(),
-      items: [{ variantId: ids.variantId, quantity: 1 }],
-    });
-    const rows = await t.query(api.materialIncidents.list, { token });
-    expect(rows[0].items[0].movementId).toBeUndefined();
-  });
-
-  test("quantities must be positive", async () => {
-    const { t, token, ids } = await seed();
-    await expect(
-      t.mutation(api.materialIncidents.create, {
-        token,
-        branchId: ids.branchId,
-        incidentType: "LOSS",
-        occurredAt: Date.now(),
-        items: [{ variantId: ids.variantId, quantity: 0 }],
-      })
-    ).rejects.toThrow(/positive/);
-  });
-});
-
 describe("size equivalences", () => {
   test("two different sizes can be linked, the same size cannot", async () => {
     const { t, token, ids } = await seed();
@@ -233,12 +157,12 @@ describe("procurement planning and demand responses", () => {
   test("a response with items records and links to the request", async () => {
     const { t, token, ids } = await seed();
     const demandId = await t.run((ctx) =>
-      ctx.db.insert("wantList", {
+      ctx.db.insert("demands", {
         customerId: ids.customerId,
         description: "Black tee, size M",
         productId: ids.productId,
-        status: "OPEN",
-        reason: "NOT_IN_STOCK",
+        stage: "OPEN",
+        reason: "STOCK",
         quantity: 1,
         createdByUsername: "admin",
         createdAt: Date.now(),
@@ -259,12 +183,12 @@ describe("procurement planning and demand responses", () => {
   test("an offer needs at least one item unless nothing suitable was found", async () => {
     const { t, token, ids } = await seed();
     const demandId = await t.run((ctx) =>
-      ctx.db.insert("wantList", {
+      ctx.db.insert("demands", {
         customerId: ids.customerId,
         description: "Black tee, size M",
         productId: ids.productId,
-        status: "OPEN",
-        reason: "NOT_IN_STOCK",
+        stage: "OPEN",
+        reason: "STOCK",
         quantity: 1,
         createdByUsername: "admin",
         createdAt: Date.now(),
@@ -294,5 +218,35 @@ describe("landed costs", () => {
     await expect(
       t.mutation(api.landedCosts.create, { token, calculatedFor: Date.now(), components: [{ componentType: "x", value: -1 }] })
     ).rejects.toThrow(/negative/);
+  });
+
+  test("editing replaces the components, deleting removes the calculation", async () => {
+    const { t, token } = await seed();
+    const id = await t.mutation(api.landedCosts.create, {
+      token,
+      calculatedFor: Date.now(),
+      components: [{ componentType: "freight", value: 1200 }],
+    });
+    await t.mutation(api.landedCosts.update, {
+      token,
+      id,
+      calculatedFor: Date.now(),
+      methodVersion: "v2",
+      components: [
+        { componentType: "insurance", value: 100 },
+        { componentType: "handling", value: 50 },
+      ],
+    });
+    let rows = await t.query(api.landedCosts.list, { token });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].methodVersion).toBe("v2");
+    expect(rows[0].components.map((c) => c.componentType)).toEqual(["insurance", "handling"]);
+    expect(rows[0].total).toBe(150);
+
+    await t.mutation(api.landedCosts.remove, { token, id });
+    rows = await t.query(api.landedCosts.list, { token });
+    expect(rows).toHaveLength(0);
+    const orphans = await t.run((ctx) => ctx.db.query("landedCostComponents").collect());
+    expect(orphans).toHaveLength(0);
   });
 });

@@ -2,7 +2,7 @@ import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // Customer relations and demand responses (SQL module M01), plus offers and
-// assortments (M02). Demand is wantList; supplier identity is suppliers.
+// assortments (M02). Demand is `demands`; supplier identity is suppliers.
 export const relationTables = {
   contactMeans: defineTable({
     personId: v.id("customers"),
@@ -31,7 +31,7 @@ export const relationTables = {
 
   interactionDemands: defineTable({
     interactionId: v.id("customerInteractions"),
-    demandId: v.id("wantList"),
+    demandId: v.id("demands"),
     role: v.string(),
     registeredAt: v.number(),
   })
@@ -39,7 +39,7 @@ export const relationTables = {
     .index("by_demand", ["demandId"]),
 
   demandResponses: defineTable({
-    demandId: v.id("wantList"),
+    demandId: v.id("demands"),
     interactionId: v.optional(v.id("customerInteractions")),
     outcome: v.union(
       v.literal("DISPONIVEL"),

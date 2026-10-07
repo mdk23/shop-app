@@ -3,7 +3,7 @@
 import { Sidebar } from "./Sidebar";
 import { Clock } from "./Clock";
 import { SidebarProvider, useSidebar } from "./SidebarContext";
-import { Menu, ChevronDown, LogOut } from "lucide-react";
+import { Menu, ChevronDown, LogOut, Info } from "lucide-react";
 
 import { BranchSelector } from "./BranchSelector";
 import { ThemeSelector } from "./ThemeSelector";
@@ -98,18 +98,62 @@ function UserProfileMenu() {
   );
 }
 
+/** ⓘ button beside the page title; click shows what the page is for. */
+function PageInfo({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={t("About this page")}
+        aria-expanded={open}
+        className={cn(
+          "p-1 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors",
+          open && "text-primary bg-surface-container"
+        )}
+      >
+        <Info className="w-4 h-4 lg:w-5 lg:h-5" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-surface border border-outline/40 rounded-2xl shadow-xl z-50 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">
+            {t("About this page")}
+          </p>
+          <p className="text-sm text-on-surface leading-snug">{text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LayoutContent({
   children,
   isFullWidth,
   headerActions,
   title,
   subtitle,
+  info,
 }: {
   children: React.ReactNode;
   isFullWidth?: boolean;
   headerActions?: React.ReactNode;
   title?: string;
   subtitle?: string;
+  info?: string;
 }) {
   const { toggleOpen } = useSidebar();
 
@@ -127,9 +171,12 @@ function LayoutContent({
             </button>
             {title && (
               <div className="flex flex-col justify-center min-w-0">
-                <h2 className="text-lg lg:text-2xl font-display text-on-surface truncate uppercase tracking-tighter leading-tight">
-                  {title}
-                </h2>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <h2 className="text-lg lg:text-2xl font-display text-on-surface truncate uppercase tracking-tighter leading-tight">
+                    {title}
+                  </h2>
+                  {info && <PageInfo text={info} />}
+                </div>
                 {subtitle && (
                   <p className="text-[9px] lg:text-[11px] text-on-surface-variant font-bold uppercase tracking-widest opacity-60 truncate leading-none mt-0.5">
                     {subtitle}
@@ -182,16 +229,25 @@ export function PageLayout({
   headerActions,
   title,
   subtitle,
+  info,
 }: {
   children: React.ReactNode;
   isFullWidth?: boolean;
   headerActions?: React.ReactNode;
   title?: string;
   subtitle?: string;
+  /** Description shown behind an ⓘ button next to the title, instead of under it. */
+  info?: string;
 }) {
   return (
     <SidebarProvider>
-      <LayoutContent isFullWidth={isFullWidth} headerActions={headerActions} title={title} subtitle={subtitle}>
+      <LayoutContent
+        isFullWidth={isFullWidth}
+        headerActions={headerActions}
+        title={title}
+        subtitle={subtitle}
+        info={info}
+      >
         {children}
       </LayoutContent>
     </SidebarProvider>

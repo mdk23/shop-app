@@ -3,29 +3,20 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Card, Button, Field, TextInput, Select, Spinner } from "@/components/ui";
+import { LostDemandModal } from "@/components/demands/LostDemandModal";
 import { useToken } from "@/lib/useShop";
 import { formatDate } from "@/lib/utils";
+import {
+  DEMAND_REASONS,
+  DEMAND_REASON_LABEL,
+  DEMAND_STAGE_LABEL,
+  isClosedStage,
+  type DemandReason,
+} from "@/lib/demands";
 import { toast } from "sonner";
 import { useTranslation } from "@/contexts/LanguageContext";
-
-const STATUS_LABEL = {
-  OPEN: "Open",
-  FULFILLED: "Fulfilled",
-  CANCELLED: "Cancelled",
-} as const;
-
-const REASONS = ["WRONG_SIZE", "WRONG_COLOR", "PRICE_TOO_HIGH", "NOT_IN_STOCK", "OTHER"] as const;
-type Reason = (typeof REASONS)[number];
-
-const REASON_LABEL: Record<Reason, string> = {
-  WRONG_SIZE: "Wrong size",
-  WRONG_COLOR: "Wrong color",
-  PRICE_TOO_HIGH: "Price too high",
-  NOT_IN_STOCK: "Not in stock",
-  OTHER: "Other",
-};
 
 /**
  * What this customer asked for and we didn't have (or was told we'd source).
@@ -34,17 +25,18 @@ const REASON_LABEL: Record<Reason, string> = {
 export function FichaProcuras({ customerId }: { customerId: Id<"customers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const requests = useQuery(api.wantList.listOpen, { customerId });
+  const requests = useQuery(api.demands.listByCustomer, { customerId });
   const sizes = useQuery(api.sizes.list, {});
   const colors = useQuery(api.colors.list, {});
-  const create = useMutation(api.wantList.create);
-  const resolve = useMutation(api.wantList.resolve);
+  const create = useMutation(api.demands.create);
+  const setStage = useMutation(api.demands.setStage);
+  const [losing, setLosing] = useState<Doc<"demands"> | null>(null);
 
   const [description, setDescription] = useState("");
   const [sizeId, setSizeId] = useState("");
   const [colorId, setColorId] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
-  const [reason, setReason] = useState<Reason | "">("");
+  const [reason, setReason] = useState<DemandReason | "">("");
   const [busy, setBusy] = useState(false);
 
   const add = async () => {
@@ -73,9 +65,9 @@ export function FichaProcuras({ customerId }: { customerId: Id<"customers"> }) {
     }
   };
 
-  const close = async (id: Id<"wantList">, outcome: "FULFILLED" | "CANCELLED") => {
+  const fulfil = async (id: Id<"demands">) => {
     try {
-      await resolve({ token, id, outcome });
+      await setStage({ token, id, stage: "FULFILLED" });
       toast.success(t("Request updated"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("Failed"));
@@ -128,11 +120,11 @@ export function FichaProcuras({ customerId }: { customerId: Id<"customers"> }) {
               />
             </Field>
             <Field label={t("Reason")}>
-              <Select value={reason} onChange={(e) => setReason(e.target.value as Reason | "")}>
+              <Select value={reason} onChange={(e) => setReason(e.target.value as DemandReason | "")}>
                 <option value="">{t("Not recorded")}</option>
-                {REASONS.map((r) => (
-                  <option key={r} value={r}>
-                    {t(REASON_LABEL[r])}
+                {DEMAND_REASONS.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {t(r.label)}
                   </option>
                 ))}
               </Select>
@@ -164,20 +156,20 @@ export function FichaProcuras({ customerId }: { customerId: Id<"customers"> }) {
                     sizeName(r.sizeId) && `${t("Size")} ${sizeName(r.sizeId)}`,
                     colorName(r.colorId) && `${t("Color")} ${colorName(r.colorId)}`,
                     r.maxPrice !== undefined && `${t("Budget")} ${r.maxPrice}`,
-                    r.reason && t(REASON_LABEL[r.reason]),
-                    `${formatDate(r.createdAt)} · ${t(STATUS_LABEL[r.status])}`,
+                    r.reason && t(DEMAND_REASON_LABEL[r.reason]),
+                    `${formatDate(r.createdAt)} · ${t(DEMAND_STAGE_LABEL[r.stage])}`,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
               </div>
-              {r.status === "OPEN" && (
+              {!isClosedStage(r.stage) && (
                 <div className="flex gap-1.5 shrink-0">
-                  <Button size="sm" variant="secondary" onClick={() => close(r._id, "FULFILLED")}>
+                  <Button size="sm" variant="secondary" onClick={() => fulfil(r._id)}>
                     {t("Mark fulfilled")}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => close(r._id, "CANCELLED")}>
-                    {t("Cancel request")}
+                  <Button size="sm" variant="ghost" onClick={() => setLosing(r)}>
+                    {t("Lost")}
                   </Button>
                 </div>
               )}
@@ -185,6 +177,8 @@ export function FichaProcuras({ customerId }: { customerId: Id<"customers"> }) {
           ))}
         </div>
       )}
+
+      <LostDemandModal demand={losing} onClose={() => setLosing(null)} />
     </div>
   );
 }

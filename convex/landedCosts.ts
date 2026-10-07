@@ -34,39 +34,59 @@ export const list = query({
   },
 });
 
+const componentsValidator = v.array(
+  v.object({
+    componentType: v.string(),
+    value: v.number(),
+  })
+);
+
+type ComponentInput = { componentType: string; value: number };
+
+function validateComponents(components: ComponentInput[]) {
+  if (components.length === 0) throw new Error("Add at least one cost component.");
+  for (const c of components) {
+    if (!c.componentType.trim()) throw new Error("Name each cost component.");
+    if (c.value < 0) throw new Error("Costs cannot be negative.");
+  }
+}
+
+async function insertComponents(ctx: MutationCtx, landedCostId: Id<"landedCosts">, components: ComponentInput[]) {
+  const currencyId = await mznCurrency(ctx);
+  for (const c of components) {
+    await ctx.db.insert("landedCostComponents", {
+      landedCostId,
+      componentType: c.componentType.trim(),
+      componentValue: c.value,
+      currencyId,
+    });
+  }
+}
+
+async function deleteComponents(ctx: MutationCtx, landedCostId: Id<"landedCosts">) {
+  const existing = await ctx.db
+    .query("landedCostComponents")
+    .withIndex("by_landed_cost", (q) => q.eq("landedCostId", landedCostId))
+    .collect();
+  for (const c of existing) await ctx.db.delete(c._id);
+}
+
 /** One landed-cost calculation: the goods plus freight, insurance, duties and handling. */
 export const create = mutation({
   args: {
     token: v.string(),
     calculatedFor: v.number(),
     methodVersion: v.optional(v.string()),
-    components: v.array(
-      v.object({
-        componentType: v.string(),
-        value: v.number(),
-      })
-    ),
+    components: componentsValidator,
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "purchasing.manage");
-    if (args.components.length === 0) throw new Error("Add at least one cost component.");
-    for (const c of args.components) {
-      if (!c.componentType.trim()) throw new Error("Name each cost component.");
-      if (c.value < 0) throw new Error("Costs cannot be negative.");
-    }
-    const currencyId = await mznCurrency(ctx);
+    validateComponents(args.components);
     const id = await ctx.db.insert("landedCosts", {
       calculatedFor: args.calculatedFor,
       methodVersion: args.methodVersion?.trim() || "manual",
     });
-    for (const c of args.components) {
-      await ctx.db.insert("landedCostComponents", {
-        landedCostId: id,
-        componentType: c.componentType.trim(),
-        componentValue: c.value,
-        currencyId,
-      });
-    }
+    await insertComponents(ctx, id, args.components);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -76,5 +96,56 @@ export const create = mutation({
       details: `${args.components.length} component(s)`,
     });
     return id;
+  },
+});
+
+/** Edit a calculation: date, method and the full list of cost components (replaced wholesale). */
+export const update = mutation({
+  args: {
+    token: v.string(),
+    id: v.id("landedCosts"),
+    calculatedFor: v.number(),
+    methodVersion: v.optional(v.string()),
+    components: componentsValidator,
+  },
+  handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
+    const cost = await ctx.db.get(args.id);
+    if (!cost) throw new Error("Landed cost not found.");
+    validateComponents(args.components);
+    await ctx.db.patch(args.id, {
+      calculatedFor: args.calculatedFor,
+      methodVersion: args.methodVersion?.trim() || "manual",
+    });
+    await deleteComponents(ctx, args.id);
+    await insertComponents(ctx, args.id, args.components);
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "landed_cost.updated",
+      entityType: "landedCost",
+      entityId: args.id,
+      details: `${args.components.length} component(s)`,
+    });
+    return null;
+  },
+});
+
+export const remove = mutation({
+  args: { token: v.string(), id: v.id("landedCosts") },
+  handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
+    const cost = await ctx.db.get(args.id);
+    if (!cost) throw new Error("Landed cost not found.");
+    await deleteComponents(ctx, args.id);
+    await ctx.db.delete(args.id);
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "landed_cost.deleted",
+      entityType: "landedCost",
+      entityId: args.id,
+    });
+    return null;
   },
 });

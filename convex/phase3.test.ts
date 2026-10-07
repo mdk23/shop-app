@@ -37,48 +37,60 @@ async function seed() {
   return { t, token, customerId };
 }
 
-describe("want list (unmet demand)", () => {
+describe("demands (requests)", () => {
   test("records a request for a customer and closes it once", async () => {
     const { t, token, customerId } = await seed();
-    const id = await t.mutation(api.wantList.create, {
+    const id = await t.mutation(api.demands.create, {
       token,
       customerId,
       description: "Black running shoes, size 42",
     });
 
-    const open = await t.query(api.wantList.listOpen, { customerId });
-    expect(open).toHaveLength(1);
-    expect(open[0].status).toBe("OPEN");
+    const mine = await t.query(api.demands.listByCustomer, { customerId });
+    expect(mine).toHaveLength(1);
+    expect(mine[0].stage).toBe("OPEN");
 
-    await t.mutation(api.wantList.resolve, { token, id, outcome: "FULFILLED" });
-    const after = await t.query(api.wantList.listOpen, { customerId });
-    expect(after[0].status).toBe("FULFILLED");
-    expect(after[0].resolvedAt).toBeDefined();
+    await t.mutation(api.demands.setStage, { token, id, stage: "FULFILLED" });
+    const after = await t.query(api.demands.listByCustomer, { customerId });
+    expect(after[0].stage).toBe("FULFILLED");
+    expect(after[0].closedAt).toBeDefined();
 
     await expect(
-      t.mutation(api.wantList.resolve, { token, id, outcome: "CANCELLED" })
+      t.mutation(api.demands.setStage, { token, id, stage: "LOST", reason: "PRICE" })
     ).rejects.toThrow(/already closed/);
   });
 
   test("the shop-wide open list only shows open requests", async () => {
     const { t, token, customerId } = await seed();
-    const a = await t.mutation(api.wantList.create, { token, customerId, description: "A" });
-    await t.mutation(api.wantList.create, { token, description: "Walk-in B" });
-    await t.mutation(api.wantList.resolve, { token, id: a, outcome: "CANCELLED" });
+    const a = await t.mutation(api.demands.create, { token, customerId, description: "A" });
+    await t.mutation(api.demands.create, { token, description: "Walk-in B" });
+    await t.mutation(api.demands.setStage, { token, id: a, stage: "LOST", reason: "OTHER" });
 
-    const open = await t.query(api.wantList.listOpen, {});
+    const open = await t.query(api.demands.list, { stage: "OPEN" });
     expect(open.map((r) => r.description)).toEqual(["Walk-in B"]);
+  });
+
+  test("losing a request uses the reason recorded with it", async () => {
+    const { t, token } = await seed();
+    const withReason = await t.mutation(api.demands.create, { token, description: "A", reason: "SIZE" });
+    await t.mutation(api.demands.setStage, { token, id: withReason, stage: "LOST" });
+    expect((await t.run((ctx) => ctx.db.get(withReason)))?.reason).toBe("SIZE");
+
+    const without = await t.mutation(api.demands.create, { token, description: "B" });
+    await expect(t.mutation(api.demands.setStage, { token, id: without, stage: "LOST" })).rejects.toThrow(
+      /Say why/
+    );
   });
 
   test("rejects an empty description", async () => {
     const { t, token, customerId } = await seed();
     await expect(
-      t.mutation(api.wantList.create, { token, customerId, description: "   " })
+      t.mutation(api.demands.create, { token, customerId, description: "   " })
     ).rejects.toThrow(/Describe/);
   });
 });
 
-describe("want list: size, colour, budget and reason", () => {
+describe("demands: size, colour, budget and reason", () => {
   test("stores the structured request and counts lost sales by reason", async () => {
     const { t, token, customerId } = await seed();
     const sizeId = await t.run((ctx) =>
@@ -87,31 +99,31 @@ describe("want list: size, colour, budget and reason", () => {
     const colorId = await t.run((ctx) =>
       ctx.db.insert("colors", { name: "Black", active: true, createdAt: 1, updatedAt: 1 })
     );
-    const id = await t.mutation(api.wantList.create, {
+    const id = await t.mutation(api.demands.create, {
       token,
       customerId,
       description: "Running shoes",
       sizeId,
       colorId,
       maxPrice: 1500,
-      reason: "PRICE_TOO_HIGH",
+      reason: "PRICE",
     });
     const row = await t.run((ctx) => ctx.db.get(id));
-    expect(row).toMatchObject({ sizeId, colorId, maxPrice: 1500, reason: "PRICE_TOO_HIGH" });
+    expect(row).toMatchObject({ sizeId, colorId, maxPrice: 1500, reason: "PRICE" });
 
-    await t.mutation(api.wantList.create, {
+    await t.mutation(api.demands.create, {
       token,
       description: "Any sock",
-      reason: "NOT_IN_STOCK",
+      reason: "STOCK",
     });
-    const counts = await t.query(api.wantList.countByReason, {});
-    expect(counts).toEqual({ PRICE_TOO_HIGH: 1, NOT_IN_STOCK: 1 });
+    const counts = await t.query(api.demands.countByReason, {});
+    expect(counts).toEqual({ PRICE: 1, STOCK: 1 });
   });
 
   test("rejects a negative budget", async () => {
     const { t, token, customerId } = await seed();
     await expect(
-      t.mutation(api.wantList.create, { token, customerId, description: "X", maxPrice: -1 })
+      t.mutation(api.demands.create, { token, customerId, description: "X", maxPrice: -1 })
     ).rejects.toThrow(/negative/);
   });
 });

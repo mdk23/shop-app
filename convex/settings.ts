@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS: {
     key: "tierVipMinSpend12m",
     isActive: true,
     value: "50000",
-    label: "Gasto mínimo (12 meses) para VIP (MZN)",
+    label: "Gasto mínimo (12 meses) para VIP (MT)",
   },
   {
     key: "sizeInferenceMonths",

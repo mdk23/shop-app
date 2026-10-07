@@ -6,30 +6,21 @@ import { PageLayout } from "@/components/PageLayout";
 import { Card, Spinner, Table, Th, Td, EmptyState } from "@/components/ui";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
+import { DEMAND_REASON_LABEL, DEMAND_STAGE_LABEL, type DemandReason, type DemandStage } from "@/lib/demands";
 
 const PALETTE = ["#8b2d3a", "#c9a227", "#2f6f4e", "#3b6ea5", "#7a5c99"];
 
-const REASON_LABEL: Record<string, string> = {
-  WRONG_SIZE: "Wrong size",
-  WRONG_COLOR: "Wrong color",
-  PRICE_TOO_HIGH: "Price too high",
-  NOT_IN_STOCK: "Not in stock",
-  OTHER: "Other",
-};
-
-const STAGE_LABEL: Record<string, string> = {
-  OPEN: "Open",
-  PROCEEDING: "Proceeding",
-  CONVERTED: "Converted",
-  NOT_PROCEEDING: "Did not proceed",
-};
+// Stages a proceeded demand can be in (the Oportunidades board).
+const OPPORTUNITY_STAGES: DemandStage[] = ["PROCEEDING", "CONVERTED", "FULFILLED", "LOST"];
 
 export default function InsightsPage() {
   const { t } = useTranslation();
-  const reasons = useQuery(api.wantList.countByReason, {});
-  const opportunities = useQuery(api.opportunities.list, {});
+  const token = useToken();
+  const reasons = useQuery(api.demands.countByReason, {});
+  const opportunities = useQuery(api.demands.listOpportunities, {});
   const scorecard = useQuery(api.supplierEvaluations.scorecard, {});
-  const quality = useQuery(api.nonConformities.list, {});
+  const quality = useQuery(api.qualityIssues.list, { token });
 
   if (reasons === undefined || opportunities === undefined || scorecard === undefined || quality === undefined) {
     return (
@@ -40,16 +31,16 @@ export default function InsightsPage() {
   }
 
   const reasonData = Object.entries(reasons).map(([key, count]) => ({
-    name: t(REASON_LABEL[key] ?? "Other"),
+    name: t(DEMAND_REASON_LABEL[key as DemandReason] ?? "Other"),
     count,
   }));
 
-  const stageData = Object.keys(STAGE_LABEL).map((stage) => ({
-    name: t(STAGE_LABEL[stage]),
+  const stageData = OPPORTUNITY_STAGES.map((stage) => ({
+    name: t(DEMAND_STAGE_LABEL[stage]),
     value: opportunities.filter((o) => o.stage === stage).length,
   }));
-  const converted = opportunities.filter((o) => o.stage === "CONVERTED").length;
-  const decided = opportunities.filter((o) => o.stage === "CONVERTED" || o.stage === "NOT_PROCEEDING").length;
+  const won = opportunities.filter((o) => o.stage === "CONVERTED" || o.stage === "FULFILLED").length;
+  const decided = won + opportunities.filter((o) => o.stage === "LOST").length;
 
   const supplierData = scorecard
     .filter((s) => s.evaluations > 0)
@@ -84,7 +75,7 @@ export default function InsightsPage() {
 
         <Card className="p-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-            {t("Opportunities")} · {t("Conversion")} {decided > 0 ? Math.round((converted / decided) * 100) : 0}%
+            {t("Opportunities")} · {t("Conversion")} {decided > 0 ? Math.round((won / decided) * 100) : 0}%
           </p>
           {opportunities.length === 0 ? (
             <EmptyState title={t("No opportunities yet")} />
@@ -127,7 +118,7 @@ export default function InsightsPage() {
 
         <Card className="p-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-            {t("Non-conformities")} · {t("Open")} {open} · {t("Treated")} {treated}
+            {t("Quality issues")} · {t("Open")} {open} · {t("Treated")} {treated}
           </p>
           <Table>
             <thead>
@@ -142,7 +133,7 @@ export default function InsightsPage() {
                 <tr key={s.supplierId}>
                   <Td>{s.name}</Td>
                   <Td className="text-right">{s.avgPunctuality !== null ? `${Math.round(s.avgPunctuality)}%` : "—"}</Td>
-                  <Td className="text-right">{s.openNonConformities}</Td>
+                  <Td className="text-right">{s.openQualityIssues}</Td>
                 </tr>
               ))}
             </tbody>

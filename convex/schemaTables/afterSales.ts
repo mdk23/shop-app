@@ -1,28 +1,48 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// After-sales and follow-up (SQL module M06). Requests are wantList (demand) and
-// complaints (after-sales); both already exist. Resolutions are the one decision
-// record that complaints and returns point to.
+// After-sales and follow-up (SQL module M06). Requests are `demands` and complaints
+// (after-sales); both already exist. Resolutions are the one decision record that
+// complaints and returns point to.
 export const afterSalesTables = {
-  qualityIncidents: defineTable({
+  // A defect in goods, wherever it was found: on receipt from a supplier (RECEIPT),
+  // in the shop (STOCK) or reported by a customer (CUSTOMER). One treatment closes
+  // it; an issue without a treatment is open.
+  qualityIssues: defineTable({
+    source: v.union(v.literal("RECEIPT"), v.literal("STOCK"), v.literal("CUSTOMER")),
     description: v.string(),
+    supplierId: v.optional(v.id("suppliers")),
+    receiptItemId: v.optional(v.id("purchaseReceiptItems")),
+    treatment: v.optional(
+      v.union(
+        v.literal("RETURN_TO_SUPPLIER"),
+        v.literal("DISCOUNT"),
+        v.literal("ACCEPT_AS_IS"),
+        v.literal("DESTROY")
+      )
+    ),
+    treatmentNotes: v.optional(v.string()),
+    treatedAt: v.optional(v.number()),
     recognizedAt: v.number(),
-  }),
+    createdByUsername: v.string(),
+  })
+    .index("by_supplier", ["supplierId"])
+    .index("by_source", ["source"]),
 
-  qualityIncidentItems: defineTable({
-    incidentId: v.id("qualityIncidents"),
-    productId: v.optional(v.id("products")),
-    variantId: v.optional(v.id("productVariants")),
-    affectedQuantity: v.optional(v.number()),
-  }).index("by_incident", ["incidentId"]),
+  qualityIssueItems: defineTable({
+    issueId: v.id("qualityIssues"),
+    productVariantId: v.id("productVariants"),
+    affectedQuantity: v.number(),
+  })
+    .index("by_issue", ["issueId"])
+    .index("by_variant", ["productVariantId"]),
 
-  complaintQualityIncidents: defineTable({
+  complaintQualityIssues: defineTable({
     complaintId: v.id("complaints"),
-    qualityIncidentId: v.id("qualityIncidents"),
+    qualityIssueId: v.id("qualityIssues"),
   })
     .index("by_complaint", ["complaintId"])
-    .index("by_incident", ["qualityIncidentId"]),
+    .index("by_issue", ["qualityIssueId"]),
 
   resolutions: defineTable({
     resolutionType: v.union(

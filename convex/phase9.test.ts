@@ -51,25 +51,25 @@ describe("diagram tables are registered", () => {
 });
 
 describe("planning", () => {
-  test("an opportunity records interest, stage and why it did not proceed", async () => {
+  test("a demand records interest, stage and why it was lost", async () => {
     const t = convexTest(schema, modules);
     const rows = await t.run(async (ctx) => {
-      await ctx.db.insert("opportunities", {
+      await ctx.db.insert("demands", {
         description: "Black running shoes",
-        stage: "NOT_PROCEEDING",
-        reasonNotProceeding: "PRICE",
+        stage: "LOST",
+        reason: "PRICE",
         conditions: "Only with a discount",
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
       return ctx.db
-        .query("opportunities")
-        .withIndex("by_stage", (q) => q.eq("stage", "NOT_PROCEEDING"))
+        .query("demands")
+        .withIndex("by_stage", (q) => q.eq("stage", "LOST"))
         .collect();
     });
     expect(rows).toHaveLength(1);
-    expect(rows[0].reasonNotProceeding).toBe("PRICE");
+    expect(rows[0].reason).toBe("PRICE");
   });
 
   test("payment terms, pricing policy and positioning are stored", async () => {
@@ -131,27 +131,21 @@ describe("supply chain", () => {
     expect(result).toEqual({ evaluations: 1, terms: 1 });
   });
 
-  test("a non-conformity is recorded against a variant and treated", async () => {
+  test("a quality issue is recorded against a variant and treated", async () => {
     const t = convexTest(schema, modules);
-    const treatments = await t.run(async (ctx) => {
+    const issue = await t.run(async (ctx) => {
       const { variantId } = await seedVariant(ctx);
-      const ncId = await ctx.db.insert("nonConformities", {
-        variantId,
+      const issueId = await ctx.db.insert("qualityIssues", {
+        source: "RECEIPT",
         description: "Costura solta",
-        affectedQuantity: 2,
         recognizedAt: Date.now(),
+        createdByUsername: "admin",
       });
-      await ctx.db.insert("nonConformityTreatments", {
-        nonConformityId: ncId,
-        treatmentType: "RETURN_TO_SUPPLIER",
-        decidedAt: Date.now(),
-      });
-      return ctx.db
-        .query("nonConformityTreatments")
-        .withIndex("by_non_conformity", (q) => q.eq("nonConformityId", ncId))
-        .collect();
+      await ctx.db.insert("qualityIssueItems", { issueId, productVariantId: variantId, affectedQuantity: 2 });
+      await ctx.db.patch(issueId, { treatment: "RETURN_TO_SUPPLIER", treatedAt: Date.now() });
+      return ctx.db.get(issueId);
     });
-    expect(treatments[0].treatmentType).toBe("RETURN_TO_SUPPLIER");
+    expect(issue?.treatment).toBe("RETURN_TO_SUPPLIER");
   });
 
   test("a shipment carries customs documents", async () => {
@@ -199,12 +193,12 @@ describe("locations and request fields", () => {
   test("a request keeps its quantity, needed-by date and intended use", async () => {
     const t = convexTest(schema, modules);
     const row = await t.run(async (ctx) => {
-      const id = await ctx.db.insert("wantList", {
+      const id = await ctx.db.insert("demands", {
         description: "Sapatilhas",
         quantity: 2,
         neededBy: 1_900_000_000_000,
         intendedUse: "Corrida na praia",
-        status: "OPEN",
+        stage: "OPEN",
         createdByUsername: "admin",
         createdAt: Date.now(),
         updatedAt: Date.now(),

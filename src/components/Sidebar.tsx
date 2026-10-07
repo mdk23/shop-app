@@ -40,7 +40,6 @@ import {
   TrendingUp,
   Wallet,
   Layers,
-  AlertTriangle,
   Calculator,
   Coins,
   Scale,
@@ -115,7 +114,6 @@ const menuGroups: MenuGroup[] = [
       { name: "Stock Ledger", href: "/inventory/ledger", icon: ScrollText, allowedRoles: MANAGER },
       { name: "Stock counts", href: "/stock-counts", icon: ClipboardCheck, allowedRoles: MANAGER },
       { name: "Locations", href: "/settings/locations", icon: MapPin, allowedRoles: MANAGER },
-      { name: "Incidents", href: "/incidents", icon: AlertTriangle, allowedRoles: MANAGER },
     ],
   },
   {
