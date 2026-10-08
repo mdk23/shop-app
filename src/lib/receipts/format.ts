@@ -7,7 +7,7 @@ export function formatReceiptText(sale: ReceiptSale, opts: ReceiptOptions): stri
   const lines: string[] = [];
 
   lines.push(`*${opts.businessName}*`);
-  if (opts.businessPhone) lines.push(opts.businessPhone);
+  if (opts.branchPhone) lines.push(opts.branchPhone);
   lines.push("");
   lines.push(`Recibo: ${sale.saleNumber}`);
   lines.push(formatDateTime(sale.createdAt));

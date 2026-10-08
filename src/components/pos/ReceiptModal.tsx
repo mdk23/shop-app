@@ -58,8 +58,8 @@ export function ReceiptModal({
         .tot td{font-weight:bold;font-size:13px}
       </style></head><body onload="window.print();window.close()">
       <h1>${s("businessName") || "Loja"}</h1>
-      <div class="muted">${s("businessAddress")}</div>
-      <div class="muted">${s("businessPhone")}</div>
+      <div class="muted">${sale.branch?.address ?? ""}</div>
+      <div class="muted">${sale.branch?.phone ?? ""}</div>
       <hr/>
       <div>Recibo: <b>${sale.saleNumber}</b></div>
       <div>${formatDateTime(sale.createdAt)}</div>
@@ -89,7 +89,8 @@ export function ReceiptModal({
     if (!sale?.customer) return;
     getReceiptChannel().send(sale, sale.customer.phone1, {
       businessName: s("businessName") || "Loja",
-      businessPhone: s("businessPhone") || undefined,
+      // Address and phone are the selling branch's; the business name is shop-wide.
+      branchPhone: sale.branch?.phone || undefined,
       footer: s("receiptFooter") || undefined,
       currencySymbol: s("currencySymbol") || "MT",
     });

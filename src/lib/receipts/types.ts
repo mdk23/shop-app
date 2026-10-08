@@ -25,7 +25,7 @@ export type ReceiptSale = {
 
 export type ReceiptOptions = {
   businessName: string;
-  businessPhone?: string;
+  branchPhone?: string;
   footer?: string;
   currencySymbol?: string;
 };

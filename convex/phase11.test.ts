@@ -123,6 +123,22 @@ describe("supplier terms and tax number", () => {
     await expect(
       t.mutation(api.suppliers.update, { token, id: supplierId, name: "Tecidos Lda", status: "ACTIVE", nuit: "123" })
     ).rejects.toThrow(/nine digits/);
+
+    // Payment terms are set only on the supplier; a change is logged old → new by name.
+    const sixty = await t.run((ctx) =>
+      ctx.db.insert("paymentTerms", { name: "60 dias", days: 60, active: true })
+    );
+    await t.mutation(api.suppliers.update, {
+      token,
+      id: supplierId,
+      name: "Tecidos Lda",
+      status: "ACTIVE",
+      paymentTermId: sixty,
+    });
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter((a) => a.action === "supplier.updated").pop()
+    );
+    expect(audit?.details).toContain('paymentTerm "30 dias" → "60 dias"');
   });
 });
 

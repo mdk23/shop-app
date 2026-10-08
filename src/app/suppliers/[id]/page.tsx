@@ -29,14 +29,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "SHIPMENTS", label: "Shipments" },
 ];
 
-const TERM_TYPES = ["PRODUCTS", "PRICES", "DEADLINES", "RESPONSIBILITIES", "CUSTOMIZATION", "PAYMENT"] as const;
+// Payment terms are not here: they are the supplier's `paymentTermId` (supplier form).
+const TERM_TYPES = ["PRODUCTS", "PRICES", "DEADLINES", "RESPONSIBILITIES", "CUSTOMIZATION"] as const;
 const TERM_LABEL: Record<(typeof TERM_TYPES)[number], string> = {
   PRODUCTS: "Products and models",
   PRICES: "Prices and conditions",
   DEADLINES: "Deadlines",
   RESPONSIBILITIES: "Responsibilities",
   CUSTOMIZATION: "Customization",
-  PAYMENT: "Payment",
 };
 
 export default function SupplierDetailPage() {

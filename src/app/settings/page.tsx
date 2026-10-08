@@ -40,10 +40,9 @@ const TOGGLE_KEYS = [
   "lowStockAlertsEnabled",
 ];
 
+// A shop's address and phone are kept on its branch (Branches below), not here.
 const VALUE_KEYS = [
   "businessName",
-  "businessPhone",
-  "businessAddress",
   "receiptFooter",
   "currencySymbol",
   "taxRatePercent",

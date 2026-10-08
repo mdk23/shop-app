@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
-import { writeAudit } from "./audit";
+import { describeChanges, writeAudit } from "./audit";
 import { currentNuitOf, recordNuit } from "./lib/fiscal";
 
 export const list = query({
@@ -73,16 +74,36 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const { token, id, nuit, ...data } = args;
     const actor = await authorize(ctx, token, "suppliers.manage");
+    const existing = await ctx.db.get(id);
+    if (!existing) throw new Error("Supplier not found.");
     if (data.paymentTermId && !(await ctx.db.get(data.paymentTermId))) throw new Error("Payment term not found.");
+    const nuitBefore = await currentNuitOf(ctx, { supplierId: id });
     await ctx.db.patch(id, data);
     if (nuit?.trim()) await recordNuit(ctx, { supplierId: id }, nuit);
+
+    // Log every changed field, old → new, with the payment term by name.
+    const termName = async (termId: unknown) =>
+      termId ? (await ctx.db.get(termId as Id<"paymentTerms">))?.name : undefined;
+    const { paymentTermId, ...otherFields } = data;
+    const changes = describeChanges(
+      {
+        ...existing,
+        paymentTerm: await termName(existing.paymentTermId),
+        nuit: nuitBefore,
+      },
+      {
+        ...otherFields,
+        paymentTerm: await termName(paymentTermId),
+        ...(nuit?.trim() ? { nuit: nuit.trim() } : {}),
+      }
+    );
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: "supplier.updated",
       entityType: "supplier",
       entityId: id,
-      details: `Updated supplier "${data.name}"`,
+      details: `"${existing.name}": ${changes || "no changes"}`,
     });
     return id;
   },

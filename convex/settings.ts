@@ -28,8 +28,6 @@ export const DEFAULT_SETTINGS: {
     label: "Max discount % without manager approval",
   },
   { key: "businessName", isActive: true, value: "My Clothing Store", label: "Business name" },
-  { key: "businessPhone", isActive: true, value: "", label: "Business phone" },
-  { key: "businessAddress", isActive: true, value: "", label: "Business address" },
   {
     key: "receiptFooter",
     isActive: true,

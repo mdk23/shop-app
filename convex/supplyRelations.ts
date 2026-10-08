@@ -9,8 +9,7 @@ const TERM_TYPE = v.union(
   v.literal("PRICES"),
   v.literal("DEADLINES"),
   v.literal("RESPONSIBILITIES"),
-  v.literal("CUSTOMIZATION"),
-  v.literal("PAYMENT")
+  v.literal("CUSTOMIZATION")
 );
 
 /**

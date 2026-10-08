@@ -30,8 +30,7 @@ export const supplyChainTables = {
       v.literal("PRICES"),
       v.literal("DEADLINES"),
       v.literal("RESPONSIBILITIES"),
-      v.literal("CUSTOMIZATION"),
-      v.literal("PAYMENT")
+      v.literal("CUSTOMIZATION")
     ),
     content: v.string(),
     validFrom: v.number(),
