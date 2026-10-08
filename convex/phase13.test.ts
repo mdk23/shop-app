@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
+import { findOrCreateSize } from "./lib/catalog";
 
 const modules = import.meta.glob("./**/*.ts");
 

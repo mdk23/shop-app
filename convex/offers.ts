@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { productOfPair } from "./lib/catalog";
 
 /** Offers with the assortments they include, and each assortment's current items. */
 export const list = query({
@@ -95,11 +96,12 @@ export const addAssortmentItem = mutation({
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "products.manage");
     if (!(await ctx.db.get(args.assortmentId))) throw new Error("Assortment not found.");
-    if (!(await ctx.db.get(args.productId))) throw new Error("Product not found.");
+    // A variant must belong to the product it is listed under.
+    const productId = (await productOfPair(ctx, args.productId, args.variantId))!;
     const now = Date.now();
     const id = await ctx.db.insert("assortmentItems", {
       assortmentId: args.assortmentId,
-      productId: args.productId,
+      productId,
       productVariantId: args.variantId,
       validFrom: now,
     });

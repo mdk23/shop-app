@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { receiptSupplierId } from "./lib/receiving";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 const SOURCE = v.union(v.literal("RECEIPT"), v.literal("STOCK"), v.literal("CUSTOMER"));
@@ -105,7 +106,13 @@ export const create = mutation({
       const receiptItem = await ctx.db.get(args.receiptItemId);
       if (!receiptItem) throw new Error("Receipt line not found.");
       const receipt = await ctx.db.get(receiptItem.receiptId);
-      supplierId = supplierId ?? receipt?.supplierId;
+      // The receipt decides the supplier; a different one is refused. Kept on the issue as
+      // the key of the supplier's quality list (by_supplier).
+      const fromReceipt = receipt ? await receiptSupplierId(ctx, receipt) : undefined;
+      if (supplierId && fromReceipt && supplierId !== fromReceipt) {
+        throw new Error("That receipt is from a different supplier.");
+      }
+      supplierId = fromReceipt ?? supplierId;
     }
     if (supplierId && !(await ctx.db.get(supplierId))) throw new Error("Supplier not found.");
     if (args.complaintId && !(await ctx.db.get(args.complaintId))) throw new Error("Complaint not found.");

@@ -80,3 +80,25 @@ export async function findOrCreateColor(ctx: MutationCtx, name: string): Promise
   const now = Date.now();
   return await ctx.db.insert("colors", { name: wanted, active: true, createdAt: now, updatedAt: now });
 }
+
+/**
+ * The product of a product / variant pair. A variant decides its product: the variant's
+ * product is returned, and a different `productId` is refused. Without a variant, the
+ * product given (if any) stands: interest in a product without a specific size/colour.
+ */
+export async function productOfPair(
+  ctx: MutationCtx,
+  productId: Id<"products"> | undefined,
+  productVariantId: Id<"productVariants"> | undefined
+): Promise<Id<"products"> | undefined> {
+  if (!productVariantId) {
+    if (productId && !(await ctx.db.get(productId))) throw new Error("Product not found.");
+    return productId;
+  }
+  const variant = await ctx.db.get(productVariantId);
+  if (!variant) throw new Error("Product variant not found.");
+  if (productId && productId !== variant.productId) {
+    throw new Error("That variant belongs to a different product.");
+  }
+  return variant.productId;
+}

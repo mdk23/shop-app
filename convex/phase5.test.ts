@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
+import { findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -123,6 +123,68 @@ async function sentPurchaseOrder(
   await t.mutation(api.purchaseOrders.updateStatus, { token, id: poId, status: "SENT" });
   return poId;
 }
+
+describe("one source for a receipt's supplier and a variant's product", () => {
+  test("a receipt for an order has the order's supplier; a quality issue takes the receipt's", async () => {
+    const { t, token, ids } = await seed();
+    const poId = await sentPurchaseOrder(t, token, ids, 5);
+    const otherSupplier = await t.run((ctx) =>
+      ctx.db.insert("suppliers", { name: "Other", status: "ACTIVE", createdAt: Date.now() })
+    );
+    const lines = [{ productVariantId: ids.variantA, quantityReceived: 2 }];
+    await expect(
+      t.mutation(api.purchaseReceipts.create, { token, purchaseOrderId: poId, supplierId: otherSupplier, lines })
+    ).rejects.toThrow(/different supplier/);
+
+    const receiptId = await t.mutation(api.purchaseReceipts.create, { token, purchaseOrderId: poId, lines });
+    const stored = await t.run((ctx) => ctx.db.get(receiptId));
+    expect(stored?.supplierId).toBeUndefined(); // read through the order
+    const receipt = await t.query(api.purchaseReceipts.get, { id: receiptId });
+    expect(receipt?.supplierId).toBe(ids.supplierId);
+
+    const receiptItemId = receipt!.items[0]._id;
+    const issue = (source: { supplierId?: typeof otherSupplier }) =>
+      t.mutation(api.qualityIssues.create, {
+        token,
+        source: "RECEIPT",
+        receiptItemId,
+        description: "Torn seam",
+        items: [{ productVariantId: ids.variantA, affectedQuantity: 1 }],
+        ...source,
+      });
+    await expect(issue({ supplierId: otherSupplier })).rejects.toThrow(/different supplier/);
+    const issueId = await issue({});
+    expect((await t.run((ctx) => ctx.db.get(issueId)))?.supplierId).toBe(ids.supplierId);
+  });
+
+  test("a demand's variant decides its product", async () => {
+    const { t, token, ids } = await seed();
+    const variantA = await t.run((ctx) => ctx.db.get(ids.variantA));
+    // A second product, so a variant can be paired with the wrong one.
+    const otherProductId = await t.run(async (ctx) =>
+      ctx.db.insert("products", {
+        ...(await ctx.db.get(variantA!.productId))!,
+        _id: undefined,
+        _creationTime: undefined,
+        name: "Other product",
+      } as never)
+    );
+    const demandId = await t.mutation(api.demands.create, {
+      token,
+      description: "Same tee in L",
+      productVariantId: ids.variantA,
+    });
+    expect((await t.run((ctx) => ctx.db.get(demandId)))?.productId).toBe(variantA!.productId);
+    await expect(
+      t.mutation(api.demands.create, {
+        token,
+        description: "Mismatch",
+        productId: otherProductId,
+        productVariantId: ids.variantA,
+      })
+    ).rejects.toThrow(/different product/);
+  });
+});
 
 describe("purchase orders and supply relations", () => {
   test("orders are placed under the supplier's open relation, opened on first order", async () => {

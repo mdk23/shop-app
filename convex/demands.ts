@@ -3,6 +3,7 @@ import { mutation, query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { productOfPair } from "./lib/catalog";
 
 const STAGE = v.union(
   v.literal("OPEN"),
@@ -127,12 +128,13 @@ export const create = mutation({
     if (args.quantity !== undefined && args.quantity <= 0) throw new Error("The quantity must be positive.");
     if (args.sizeId && !(await ctx.db.get(args.sizeId))) throw new Error("Size not found.");
     if (args.colorId && !(await ctx.db.get(args.colorId))) throw new Error("Color not found.");
-    if (args.productId && !(await ctx.db.get(args.productId))) throw new Error("Product not found.");
+    // A variant decides the product; a product alone means "any size/colour of it".
+    const productId = await productOfPair(ctx, args.productId, args.productVariantId);
     const now = Date.now();
     const id = await ctx.db.insert("demands", {
       description,
       customerId: args.customerId,
-      productId: args.productId,
+      productId,
       productVariantId: args.productVariantId,
       categoryId: args.categoryId,
       sizeId: args.sizeId,

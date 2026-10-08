@@ -662,6 +662,8 @@ export default defineSchema({
   demands: defineTable({
     customerId: v.optional(v.id("customers")),
     description: v.string(),
+    // With a variant, the product is the variant's (lib/catalog.productOfPair); a product
+    // alone means any size/colour of it.
     productId: v.optional(v.id("products")),
     productVariantId: v.optional(v.id("productVariants")),
     categoryId: v.optional(v.id("categories")),
@@ -791,6 +793,8 @@ export default defineSchema({
   purchaseReceipts: defineTable({
     receiptNumber: v.string(),
     purchaseOrderId: v.optional(v.id("purchaseOrders")),
+    // Only for goods without an order; a receipt for an order has the order's supplier
+    // (read with lib/receiving.receiptSupplierId).
     supplierId: v.optional(v.id("suppliers")),
     branchId: v.id("branches"),
     deliveryNoteRef: v.optional(v.string()),

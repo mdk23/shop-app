@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
-import { receiveIntoStock } from "./lib/receiving";
+import { receiveIntoStock, receiptSupplierId } from "./lib/receiving";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 /**
@@ -40,6 +40,10 @@ export const create = mutation({
       throw new Error("Goods without an order need a supplier and a branch.");
     }
 
+    // A receipt for an order takes the order's supplier; naming another one is refused.
+    if (purchaseOrder && args.supplierId && args.supplierId !== purchaseOrder.supplierId) {
+      throw new Error("This order is from a different supplier.");
+    }
     const branchId = args.branchId ?? purchaseOrder?.branchId;
     if (!branchId) throw new Error("No branch to receive stock into.");
     if (args.supplierId && !(await ctx.db.get(args.supplierId))) {
@@ -66,11 +70,8 @@ export const list = query({
     return await Promise.all(
       rows.map(async (row) => {
         const po = row.purchaseOrderId ? await ctx.db.get(row.purchaseOrderId) : null;
-        const supplier = row.supplierId
-          ? await ctx.db.get(row.supplierId)
-          : po
-            ? await ctx.db.get(po.supplierId)
-            : null;
+        const supplierId = await receiptSupplierId(ctx, row);
+        const supplier = supplierId ? await ctx.db.get(supplierId) : null;
         return {
           ...row,
           orderCode: po?.orderCode ?? null,
@@ -157,13 +158,14 @@ export const get = query({
         };
       })
     );
-    const supplier = receipt.supplierId ? await ctx.db.get(receipt.supplierId) : null;
+    const supplierId = await receiptSupplierId(ctx, receipt);
+    const supplier = supplierId ? await ctx.db.get(supplierId) : null;
     const po = receipt.purchaseOrderId ? await ctx.db.get(receipt.purchaseOrderId) : null;
     return {
       ...receipt,
       items,
       supplierName: supplier?.name ?? "—",
-      supplierId: receipt.supplierId ?? po?.supplierId ?? null,
+      supplierId: supplierId ?? null,
       orderCode: po?.orderCode ?? null,
     };
   },

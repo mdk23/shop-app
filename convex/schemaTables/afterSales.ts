@@ -11,6 +11,8 @@ export const afterSalesTables = {
   qualityIssues: defineTable({
     source: v.union(v.literal("RECEIPT"), v.literal("STOCK"), v.literal("CUSTOMER")),
     description: v.string(),
+    // With a receipt line, the supplier is the receipt's (checked on write); kept as the
+    // key of the supplier's quality list (by_supplier).
     supplierId: v.optional(v.id("suppliers")),
     receiptItemId: v.optional(v.id("purchaseReceiptItems")),
     treatment: v.optional(

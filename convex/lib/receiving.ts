@@ -1,4 +1,4 @@
-import { MutationCtx } from "../_generated/server";
+import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { writeAudit } from "../audit";
@@ -80,7 +80,8 @@ export async function receiveIntoStock(
   const receiptId = await ctx.db.insert("purchaseReceipts", {
     receiptNumber,
     purchaseOrderId: po?._id,
-    supplierId: input.supplierId ?? po?.supplierId,
+    // Stored only for goods without an order; with an order, the supplier is the order's.
+    supplierId: po ? undefined : input.supplierId,
     branchId: input.branchId,
     deliveryNoteRef: input.deliveryNoteRef?.trim() || undefined,
     notes: input.notes?.trim() || undefined,
@@ -142,4 +143,15 @@ export async function receiveIntoStock(
     details: `${receiptNumber}${po ? ` for ${po.orderCode}` : ""}: ${plan.length} line(s), ${flagged} flagged`,
   });
   return receiptId;
+}
+
+/** A receipt's supplier: its order's, or the one recorded on a receipt without an order. */
+export async function receiptSupplierId(
+  ctx: QueryCtx | MutationCtx,
+  receipt: Doc<"purchaseReceipts">
+): Promise<Id<"suppliers"> | undefined> {
+  if (receipt.purchaseOrderId) {
+    return (await ctx.db.get(receipt.purchaseOrderId))?.supplierId;
+  }
+  return receipt.supplierId;
 }

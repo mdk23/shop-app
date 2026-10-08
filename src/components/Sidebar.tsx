@@ -143,24 +143,34 @@ const menuGroups: MenuGroup[] = [
   },
 ];
 
+// Only the group holding the current page starts open, so the menu always
+// focuses on where the user is. Only one group is open at a time.
+function activeGroupOnly(pathname: string): Record<string, boolean> {
+  const activeGroup = menuGroups.find((group) =>
+    group.items.some(
+      (item) => pathname === item.href || pathname.startsWith(item.href + "/")
+    )
+  );
+  return activeGroup ? { [activeGroup.id]: true } : {};
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { isCollapsed, toggleCollapse, isOpen, close } = useSidebar();
   const { currentUser, logout } = useAuth();
   const { t } = useTranslation();
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() =>
+    activeGroupOnly(pathname)
+  );
 
-  // Expand the group that holds the current page whenever the route changes.
-  // Done during render (not in an effect), as React recommends for state that follows a prop.
+  // Every page mounts its own PageLayout, so the Sidebar usually remounts on
+  // navigation and the initializer above handles it. This covers the case
+  // where it stays mounted. Done during render, as React recommends for state
+  // that follows a prop.
   const [shownPath, setShownPath] = useState(pathname);
   if (pathname !== shownPath) {
     setShownPath(pathname);
-    const activeGroup = menuGroups.find((group) =>
-      group.items.some(
-        (item) => pathname === item.href || pathname.startsWith(item.href + "/")
-      )
-    );
-    if (activeGroup) setExpandedGroups((p) => ({ ...p, [activeGroup.id]: true }));
+    setExpandedGroups(activeGroupOnly(pathname));
   }
 
   const canSee = (item: MenuItem) =>
@@ -256,7 +266,8 @@ export function Sidebar() {
                 {!isCollapsed && (
                   <button
                     onClick={() =>
-                      setExpandedGroups((p) => ({ ...p, [group.id]: !p[group.id] }))
+                      // Accordion: opening a group closes the others.
+                      setExpandedGroups((p) => (p[group.id] ? {} : { [group.id]: true }))
                     }
                     className="flex items-center justify-between w-full px-3 py-2 mt-3 select-none rounded-lg hover:bg-surface-container-high/40 transition-colors group/header"
                   >

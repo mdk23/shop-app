@@ -76,6 +76,7 @@ export const relationTables = {
 
   assortmentItems: defineTable({
     assortmentId: v.id("assortments"),
+    // With a variant, the product is the variant's (checked on write); kept for by_product.
     productId: v.id("products"),
     productVariantId: v.optional(v.id("productVariants")),
     validFrom: v.number(),
