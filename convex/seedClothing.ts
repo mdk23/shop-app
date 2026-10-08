@@ -196,8 +196,6 @@ export const seed = mutation({
       const productId = await ctx.db.insert("products", {
         name: spec.name,
         categoryId: categoryId.get(spec.category)!,
-        defaultCostPrice: spec.cost,
-        defaultSellingPrice: spec.price,
         active: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),

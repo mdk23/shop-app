@@ -1,12 +1,30 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { describeChanges, writeAudit } from "./audit";
 import { generateSku } from "./productVariants";
 import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
+
+/**
+ * A product's price range, read from its variants (prices live on variants only). Uses the
+ * active variants, or all of them when none is active. Nulls when there are no variants.
+ */
+export function priceRange(variants: Doc<"productVariants">[]) {
+  const live = variants.filter((v) => v.active);
+  const from = live.length > 0 ? live : variants;
+  if (from.length === 0) return { minPrice: null, maxPrice: null, minCost: null, maxCost: null };
+  const prices = from.map((v) => v.sellingPrice);
+  const costs = from.map((v) => v.costPrice);
+  return {
+    minPrice: Math.min(...prices),
+    maxPrice: Math.max(...prices),
+    minCost: Math.min(...costs),
+    maxCost: Math.max(...costs),
+  };
+}
 
 // ─────────────────────────────────────────────
 // QUERIES
@@ -50,6 +68,7 @@ export const list = query({
           categoryName: category?.name ?? "—",
           variantCount: variants.length,
           activeVariantCount: variants.filter((v) => v.active).length,
+          ...priceRange(variants),
         };
       })
     );
@@ -104,6 +123,7 @@ export const listPaged = query({
           categoryName: category?.name ?? "—",
           variantCount: variants.length,
           activeVariantCount: variants.filter((v) => v.active).length,
+          ...priceRange(variants),
         };
       })
     );
@@ -138,6 +158,7 @@ export const get = query({
     return {
       ...product,
       category,
+      ...priceRange(variants),
       variants: variants
         .sort((a, b) => a.sku.localeCompare(b.sku))
         .map((variant) => ({ ...variant, ...namesOf(variant) })),
@@ -192,7 +213,7 @@ export const listForPos = query({
         categoryId: p.categoryId,
         categoryName: catName.get(p.categoryId) ?? "—",
         gender: p.gender ?? "unisex",
-        defaultSellingPrice: p.defaultSellingPrice,
+        ...priceRange(variants),
         variants: activeVariants,
       });
     }
@@ -212,8 +233,10 @@ export const create = mutation({
     categoryId: v.id("categories"),
     taxRateId: v.optional(v.id("taxRates")),
     gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
-    defaultCostPrice: v.number(),
-    defaultSellingPrice: v.number(),
+    // Cost and price for the variants created with the product (each variant may override).
+    // Prices are kept on the variants only.
+    costPrice: v.optional(v.number()),
+    sellingPrice: v.optional(v.number()),
     variants: v.optional(
       v.array(
         v.object({
@@ -240,8 +263,6 @@ export const create = mutation({
       categoryId: args.categoryId,
       taxRateId: args.taxRateId,
       gender: args.gender ?? "unisex",
-      defaultCostPrice: args.defaultCostPrice,
-      defaultSellingPrice: args.defaultSellingPrice,
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -251,14 +272,18 @@ export const create = mutation({
       const sku =
         spec.sku?.trim() ||
         (await generateSku(ctx, name, spec.color, spec.size));
-      const sellingPrice = spec.sellingPrice ?? args.defaultSellingPrice;
+      const sellingPrice = spec.sellingPrice ?? args.sellingPrice;
+      const costPrice = spec.costPrice ?? args.costPrice;
+      if (sellingPrice === undefined || costPrice === undefined) {
+        throw new Error("Enter the cost and selling price for the variants.");
+      }
       const variantId = await ctx.db.insert("productVariants", {
         productId,
         sku,
         barcode: spec.barcode?.trim() || undefined,
         sizeId: await resolveSizeId(ctx, spec.size),
         colorId: await resolveColorId(ctx, spec.color),
-        costPrice: spec.costPrice ?? args.defaultCostPrice,
+        costPrice,
         sellingPrice,
         reorderLevel: spec.reorderLevel ?? 0,
         active: true,
@@ -289,8 +314,6 @@ export const update = mutation({
     categoryId: v.optional(v.id("categories")),
     taxRateId: v.optional(v.union(v.id("taxRates"), v.null())),
     gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
-    defaultCostPrice: v.optional(v.number()),
-    defaultSellingPrice: v.optional(v.number()),
     primaryImageId: v.optional(v.union(v.id("_storage"), v.null())),
     active: v.optional(v.boolean()),
   },
@@ -299,23 +322,12 @@ export const update = mutation({
     const existing = await ctx.db.get(args.id);
     if (!existing) throw new Error("Product not found.");
 
-    if (
-      args.defaultCostPrice !== undefined &&
-      args.defaultCostPrice !== existing.defaultCostPrice
-    ) {
-      await authorize(ctx, args.token, "products.change_cost");
-    }
-
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     if (args.name !== undefined) patch.name = args.name.trim();
     if (args.description !== undefined) patch.description = args.description;
     if (args.categoryId !== undefined) patch.categoryId = args.categoryId;
     if (args.taxRateId !== undefined) patch.taxRateId = args.taxRateId ?? undefined;
     if (args.gender !== undefined) patch.gender = args.gender;
-    if (args.defaultCostPrice !== undefined)
-      patch.defaultCostPrice = args.defaultCostPrice;
-    if (args.defaultSellingPrice !== undefined)
-      patch.defaultSellingPrice = args.defaultSellingPrice;
     if (args.primaryImageId !== undefined)
       patch.primaryImageId = args.primaryImageId ?? undefined;
     if (args.active !== undefined) patch.active = args.active;

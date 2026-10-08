@@ -112,6 +112,28 @@ export const priceHistory = query({
 // MUTATIONS
 // ─────────────────────────────────────────────
 
+/**
+ * Cost and price for a new variant: as given, otherwise copied from an existing variant of
+ * the same product (an active one when possible). Prices are kept on variants only.
+ */
+async function startingPrices(
+  ctx: MutationCtx,
+  productId: Id<"products">,
+  given: { costPrice?: number; sellingPrice?: number }
+) {
+  const siblings = await ctx.db
+    .query("productVariants")
+    .withIndex("by_product", (q) => q.eq("productId", productId))
+    .collect();
+  const sibling = siblings.find((v) => v.active) ?? siblings[0];
+  const costPrice = given.costPrice ?? sibling?.costPrice;
+  const sellingPrice = given.sellingPrice ?? sibling?.sellingPrice;
+  if (costPrice === undefined || sellingPrice === undefined) {
+    throw new Error("Enter the cost and selling price: this product has no other variant to copy them from.");
+  }
+  return { costPrice, sellingPrice };
+}
+
 export const create = mutation({
   args: {
     token: v.string(),
@@ -139,14 +161,14 @@ export const create = mutation({
     if (existing) throw new Error(`SKU "${sku}" is already in use.`);
 
     const now = Date.now();
-    const sellingPrice = args.sellingPrice ?? product.defaultSellingPrice;
+    const { costPrice, sellingPrice } = await startingPrices(ctx, args.productId, args);
     const id = await ctx.db.insert("productVariants", {
       productId: args.productId,
       sku,
       barcode: args.barcode?.trim() || undefined,
       sizeId: await resolveSizeId(ctx, args.size),
       colorId: await resolveColorId(ctx, args.color),
-      costPrice: args.costPrice ?? product.defaultCostPrice,
+      costPrice,
       sellingPrice,
       reorderLevel: args.reorderLevel ?? 0,
       active: true,
@@ -193,6 +215,7 @@ export const generateMatrix = mutation({
     let created = 0;
     let skipped = 0;
     const now = Date.now();
+    const prices = await startingPrices(ctx, args.productId, args);
 
     for (const color of colors) {
       for (const size of sizes) {
@@ -210,13 +233,13 @@ export const generateMatrix = mutation({
           color || undefined,
           size || undefined
         );
-        const sellingPrice = args.sellingPrice ?? product.defaultSellingPrice;
+        const { costPrice, sellingPrice } = prices;
         const variantId = await ctx.db.insert("productVariants", {
           productId: args.productId,
           sku,
           sizeId,
           colorId,
-          costPrice: args.costPrice ?? product.defaultCostPrice,
+          costPrice,
           sellingPrice,
           reorderLevel: args.reorderLevel ?? 0,
           active: true,

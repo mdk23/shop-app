@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { Plus, Search, Pencil, Boxes, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { formatPriceRange } from "@/lib/prices";
 
 type Gender = "women" | "men" | "unisex";
 
@@ -46,8 +47,11 @@ type ProductRow = {
   categoryId: Id<"categories">;
   categoryName: string;
   gender?: Gender;
-  defaultCostPrice: number;
-  defaultSellingPrice: number;
+  // Range over the variants: prices are kept on variants only.
+  minPrice: number | null;
+  maxPrice: number | null;
+  minCost: number | null;
+  maxCost: number | null;
   active: boolean;
   variantCount: number;
   activeVariantCount: number;
@@ -82,6 +86,7 @@ export default function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id<"products"> | null>(null);
   const [variantsFor, setVariantsFor] = useState<Id<"products"> | null>(null);
+  const [newProductPrices, setNewProductPrices] = useState<{ cost: string; price: string } | undefined>();
   const [deleting, setDeleting] = useState<ProductRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [archiveInstead, setArchiveInstead] = useState<ProductRow | null>(null);
@@ -185,8 +190,8 @@ export default function ProductsPage() {
                   <Td>
                     <Badge tone="info">{t(GENDER_LABEL[p.gender ?? "unisex"])}</Badge>
                   </Td>
-                  <Td className="text-right">{fmt(p.defaultCostPrice)}</Td>
-                  <Td className="text-right font-bold">{fmt(p.defaultSellingPrice)}</Td>
+                  <Td className="text-right">{formatPriceRange(fmt, p.minCost, p.maxCost)}</Td>
+                  <Td className="text-right font-bold">{formatPriceRange(fmt, p.minPrice, p.maxPrice)}</Td>
                   <Td>
                     {p.activeVariantCount}/{p.variantCount}
                   </Td>
@@ -245,9 +250,12 @@ export default function ProductsPage() {
           productId={editingId}
           categories={categories ?? []}
           onClose={() => setModalOpen(false)}
-          onSaved={(id) => {
+          onSaved={(id, prices) => {
             setModalOpen(false);
-            if (!editingId) setVariantsFor(id);
+            if (!editingId) {
+              setNewProductPrices(prices);
+              setVariantsFor(id);
+            }
           }}
         />
       )}
@@ -256,7 +264,11 @@ export default function ProductsPage() {
         <VariantManager
           token={token}
           productId={variantsFor}
-          onClose={() => setVariantsFor(null)}
+          initialPrices={newProductPrices}
+          onClose={() => {
+            setVariantsFor(null);
+            setNewProductPrices(undefined);
+          }}
         />
       )}
 
@@ -313,7 +325,8 @@ function ProductModal({
   productId: Id<"products"> | null;
   categories: { _id: Id<"categories">; name: string }[];
   onClose: () => void;
-  onSaved: (id: Id<"products">) => void;
+  /** `prices` is set on create: the cost and price to give the new product's variants. */
+  onSaved: (id: Id<"products">, prices?: { cost: string; price: string }) => void;
 }) {
   const { t } = useTranslation();
   const existing = useQuery(
@@ -337,8 +350,6 @@ function ProductModal({
     setDescription(existing.description ?? "");
     setCategoryId(existing.categoryId);
     setGender((existing.gender as Gender | undefined) ?? "unisex");
-    setCost(String(existing.defaultCostPrice));
-    setPrice(String(existing.defaultSellingPrice));
     setHydrated(true);
   }
 
@@ -354,8 +365,6 @@ function ProductModal({
           description: description || undefined,
           categoryId: categoryId as Id<"categories">,
           gender,
-          defaultCostPrice: Number(cost) || 0,
-          defaultSellingPrice: Number(price) || 0,
         });
         toast.success(t("Product updated"));
         onSaved(productId);
@@ -366,11 +375,9 @@ function ProductModal({
           description: description || undefined,
           categoryId: categoryId as Id<"categories">,
           gender,
-          defaultCostPrice: Number(cost) || 0,
-          defaultSellingPrice: Number(price) || 0,
         });
         toast.success(t("Product created — now add its variants"));
-        onSaved(id);
+        onSaved(id, { cost, price });
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("Failed to save"));
@@ -421,14 +428,18 @@ function ProductModal({
           </Select>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label={t("Default cost price")}>
-          <TextInput type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
-        </Field>
-        <Field label={t("Default selling price")}>
-          <TextInput type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </Field>
-      </div>
+      {/* Prices live on the variants: on create they fill the variants made next; an
+          existing product's prices are edited per variant. */}
+      {!productId && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t("Cost price for its variants")}>
+            <TextInput type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
+          </Field>
+          <Field label={t("Selling price for its variants")}>
+            <TextInput type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+          </Field>
+        </div>
+      )}
       <Field label={t("Description")}>
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
@@ -455,10 +466,13 @@ type VariantRowData = {
 function VariantManager({
   token,
   productId,
+  initialPrices,
   onClose,
 }: {
   token: string;
   productId: Id<"products">;
+  /** Cost and price typed when the product was just created, for its first variants. */
+  initialPrices?: { cost: string; price: string };
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -472,6 +486,15 @@ function VariantManager({
   const [sizes, setSizes] = useState<string[]>([]);
   const [colors, setColors] = useState<string[]>([]);
   const [reorder, setReorder] = useState("0");
+  // New variants' cost and price: from the just-created product, else from existing variants.
+  const [cost, setCost] = useState(initialPrices?.cost ?? "");
+  const [price, setPrice] = useState(initialPrices?.price ?? "");
+  const [pricesSeeded, setPricesSeeded] = useState(!!initialPrices);
+  if (!pricesSeeded && product) {
+    setPricesSeeded(true);
+    if (product.minCost !== null) setCost(String(product.minCost));
+    if (product.minPrice !== null) setPrice(String(product.minPrice));
+  }
   const [busy, setBusy] = useState(false);
   const [deletingVariant, setDeletingVariant] = useState<VariantRowData | null>(null);
   const [deleteVariantBusy, setDeleteVariantBusy] = useState(false);
@@ -512,6 +535,8 @@ function VariantManager({
         productId,
         sizes,
         colors,
+        costPrice: cost.trim() ? Number(cost) : undefined,
+        sellingPrice: price.trim() ? Number(price) : undefined,
         reorderLevel: Number(reorder) || 0,
       });
       toast.success(
@@ -599,7 +624,13 @@ function VariantManager({
             </div>
           </div>
         </div>
-        <div className="flex items-end gap-3 mt-3">
+        <div className="flex flex-wrap items-end gap-3 mt-3">
+          <Field label={t("Cost price")}>
+            <TextInput type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
+          </Field>
+          <Field label={t("Selling price")}>
+            <TextInput type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+          </Field>
           <Field label={t("Reorder level")}>
             <TextInput type="number" value={reorder} onChange={(e) => setReorder(e.target.value)} />
           </Field>

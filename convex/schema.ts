@@ -80,6 +80,8 @@ export default defineSchema({
     .index("by_parent", ["parentId"])
     .searchIndex("search_name", { searchField: "name" }),
 
+  // Prices are kept on the variants only (`productVariants.costPrice` / `sellingPrice`);
+  // a product shows the range of its variants' prices.
   products: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
@@ -87,8 +89,6 @@ export default defineSchema({
     collectionId: v.optional(v.id("collections")),
     taxRateId: v.optional(v.id("taxRates")),
     gender: v.optional(v.union(v.literal("women"), v.literal("men"), v.literal("unisex"))),
-    defaultCostPrice: v.number(),
-    defaultSellingPrice: v.number(),
     primaryImageId: v.optional(v.id("_storage")),
     active: v.boolean(),
     createdAt: v.number(),

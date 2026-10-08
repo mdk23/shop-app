@@ -1177,4 +1177,8 @@ export const pt: Record<string, string> = {
   "Disabled (cannot buy)": "Desativado (não pode comprar)",
   "Archived (hidden)": "Arquivado (oculto)",
   "This customer cannot buy": "Este cliente não pode comprar",
+  "Cost price": "Preço de custo",
+  "Selling price": "Preço de venda",
+  "Cost price for its variants": "Preço de custo das variantes",
+  "Selling price for its variants": "Preço de venda das variantes",
 };

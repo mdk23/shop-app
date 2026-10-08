@@ -29,8 +29,6 @@ async function seed() {
     const productAId = await ctx.db.insert("products", {
       name: "Tee",
       categoryId,
-      defaultCostPrice: 100,
-      defaultSellingPrice: 250,
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -38,8 +36,6 @@ async function seed() {
     const productBId = await ctx.db.insert("products", {
       name: "Socks",
       categoryId,
-      defaultCostPrice: 50,
-      defaultSellingPrice: 100,
       active: true,
       createdAt: now,
       updatedAt: now,

@@ -21,6 +21,7 @@ import { Search, Plus, Minus, Trash2, X } from "lucide-react";
 import { RegisterClosedNotice, useRegisterClosed } from "@/components/RegisterClosedNotice";
 import { cn } from "@/lib/utils";
 import type { PaymentMethod } from "../../../convex/lib/paymentMethods";
+import { formatPriceRange } from "@/lib/prices";
 
 type Gender = "women" | "men" | "unisex";
 
@@ -501,7 +502,7 @@ export default function PosPage() {
                           {p.categoryName}
                         </p>
                         <p className="text-sm font-display text-primary mt-1">
-                          {fmt(p.defaultSellingPrice)}
+                          {formatPriceRange(fmt, p.minPrice, p.maxPrice)}
                         </p>
                         {knownVariant ? (
                           <p className="text-[9px] uppercase tracking-wider mt-0.5 font-bold">

@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { formatPriceRange } from "@/lib/prices";
 
 const POSITIONS = [
   { value: "ESSENTIAL", label: "Essential" },
@@ -72,8 +73,8 @@ export default function ProductDetailPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <Card className="p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{t("Default price")}</p>
-          <p className="text-xl font-black">{fmt(product.defaultSellingPrice)}</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{t("Price")}</p>
+          <p className="text-xl font-black">{formatPriceRange(fmt, product.minPrice, product.maxPrice)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{t("Variants")}</p>

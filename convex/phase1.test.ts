@@ -26,8 +26,6 @@ async function seed() {
     const productId = await ctx.db.insert("products", {
       name: "Basic Tee",
       categoryId,
-      defaultCostPrice: 100,
-      defaultSellingPrice: 250,
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -71,6 +69,7 @@ describe("variant price history", () => {
       productId: ids.productId,
       size: "M",
       color: "Black",
+      costPrice: 100,
       sellingPrice: 250,
     });
 
@@ -112,10 +111,42 @@ describe("variant price history", () => {
       productId: ids.productId,
       size: "m",
       color: "black",
+      costPrice: 100,
+      sellingPrice: 250,
     });
     const variant = await t.run((ctx) => ctx.db.get(variantId));
     expect(variant?.sizeId).toBe(ids.sizeId);
     expect(variant?.colorId).toBe(ids.colorId);
+  });
+});
+
+describe("prices live on variants only", () => {
+  test("a product shows its variants' range; new variants copy a sibling's price", async () => {
+    const { t, ids, token } = await seed();
+    await expect(
+      t.mutation(api.productVariants.create, { token, productId: ids.productId, size: "M" })
+    ).rejects.toThrow(/no other variant to copy/);
+
+    await t.mutation(api.productVariants.create, {
+      token,
+      productId: ids.productId,
+      size: "M",
+      costPrice: 100,
+      sellingPrice: 250,
+    });
+    // No prices given: copied from the existing variant.
+    const second = await t.mutation(api.productVariants.create, {
+      token,
+      productId: ids.productId,
+      color: "Black",
+    });
+    const copied = await t.run((ctx) => ctx.db.get(second));
+    expect(copied).toMatchObject({ costPrice: 100, sellingPrice: 250 });
+
+    await t.mutation(api.productVariants.update, { token, id: second, sellingPrice: 300 });
+    const product = await t.query(api.products.get, { id: ids.productId });
+    expect(product).toMatchObject({ minPrice: 250, maxPrice: 300, minCost: 100, maxCost: 100 });
+    expect(product).not.toHaveProperty("defaultSellingPrice");
   });
 });
 
@@ -132,6 +163,7 @@ describe("audit trail records what changed", () => {
       productId: ids.productId,
       size: "M",
       color: "Black",
+      costPrice: 100,
       sellingPrice: 250,
     });
     await t.mutation(api.productVariants.update, { token, id: variantId, sellingPrice: 300, color: "" });
