@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
-import { openSessionForBranch } from "./cashRegister";
+import { requireOpenSession } from "./cashRegister";
 import { paymentMethodValidator } from "./lib/paymentMethods";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
@@ -77,14 +77,14 @@ export const add = mutation({
       throw new Error("Cannot add a payment to a cancelled sale.");
 
     const now = Date.now();
-    // Cash goes through the branch's open register; the payment row is the drawer's record.
-    const session = isCash(args.method) ? await openSessionForBranch(ctx, sale.branchId) : null;
+    // Every payment goes through the branch's open register.
+    const session = await requireOpenSession(ctx, sale.branchId);
     await ctx.db.insert("payments", {
       saleId: args.saleId,
       method: args.method,
       amount: args.amount,
       kind: "payment",
-      cashRegisterSessionId: session?._id,
+      cashRegisterSessionId: session._id,
       userId: actor._id,
       username: actor.username,
       createdAt: now,

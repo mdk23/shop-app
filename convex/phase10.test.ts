@@ -38,6 +38,15 @@ async function seed() {
       expiresAt: now + 3_600_000,
       createdAt: now,
     });
+    // Every payment needs an open register.
+    await ctx.db.insert("cashRegisterSessions", {
+      userId,
+      username: "admin",
+      openingAmount: 0,
+      openedAt: now,
+      status: "OPEN",
+      branchId,
+    });
     return { branchId, customerId, userId };
   });
   return { t, token, ids };

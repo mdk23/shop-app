@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { mutation, query, MutationCtx } from "./_generated/server";
+import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
@@ -16,8 +16,29 @@ import { adjustCustomerCredit } from "./customerCredits";
 import { performSale } from "./sales";
 import { refreshCustomerProfile } from "./customerProfile";
 import { nextDocumentNumber } from "./lib/numbering";
-import { openSessionForBranch } from "./cashRegister";
+import { requireOpenSession } from "./cashRegister";
 import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
+
+/**
+ * A return's value and refund, read from where they live: the goods' value is the sum of
+ * its lines, the money given back is its refund rows in `payments`.
+ */
+export async function returnSummary(ctx: QueryCtx, ret: Doc<"salesReturns">) {
+  const items = await ctx.db
+    .query("salesReturnItems")
+    .withIndex("by_return", (q) => q.eq("returnId", ret._id))
+    .collect();
+  const refunds = await ctx.db
+    .query("payments")
+    .withIndex("by_return", (q) => q.eq("returnId", ret._id))
+    .collect();
+  return {
+    items,
+    returnValue: Math.round(items.reduce((s, i) => s + i.refundAmount, 0) * 100) / 100,
+    refunded: Math.round(refunds.reduce((s, p) => s - p.amount, 0) * 100) / 100,
+    refundMethods: [...new Set(refunds.map((p) => p.method))],
+  };
+}
 
 const RETURN_ITEM_REASON = v.union(
   v.literal("WRONG_SIZE"),
@@ -152,13 +173,9 @@ export const create = mutation({
     const dateString = getLocalDateString(now);
     const returnNumber = await nextDocumentNumber(ctx, "RETURN", now);
 
-    // Cash refund needs an open register.
-    let session: Doc<"cashRegisterSessions"> | null = null;
-    if (args.refundMethod === "CASH") {
-      session = await openSessionForBranch(ctx, sale.branchId);
-      if (!session)
-        throw new Error("Open a cash register before issuing a cash refund.");
-    }
+    // Money given back goes through the open register; store credit moves no money.
+    const session =
+      args.refundMethod === "STORE_CREDIT" ? null : await requireOpenSession(ctx, sale.branchId);
 
     const returnId = await ctx.db.insert("salesReturns", {
       returnNumber,
@@ -168,11 +185,8 @@ export const create = mutation({
       userId: actor._id,
       username: actor.username,
       status: "COMPLETED",
-      refundMethod: args.refundMethod,
-      refundAmount,
       reason: args.notes ?? "Customer return",
       notes: args.notes,
-      cashRegisterSessionId: session?._id,
       resolutionId: args.resolutionType
         ? await ctx.db.insert("resolutions", {
             resolutionType: args.resolutionType,
@@ -216,7 +230,8 @@ export const create = mutation({
       }
     }
 
-    // Issue the refund.
+    // Issue the refund. The payment row is the refund's record (and the drawer's when in
+    // cash); store credit also adds to the customer's credit balance.
     if (args.refundMethod === "STORE_CREDIT") {
       await adjustCustomerCredit(ctx, {
         customerId: sale.customerId,
@@ -228,20 +243,18 @@ export const create = mutation({
         username: actor.username,
         notes: `Store credit for ${returnNumber}`,
       });
-    } else {
-      // The payment row is the refund's record, and the drawer's when paid in cash.
-      await ctx.db.insert("payments", {
-        saleId: args.saleId,
-        method: args.refundMethod,
-        amount: -refundAmount,
-        kind: "refund",
-        returnId,
-        cashRegisterSessionId: args.refundMethod === "CASH" ? session?._id : undefined,
-        userId: actor._id,
-        username: actor.username,
-        createdAt: now,
-      });
     }
+    await ctx.db.insert("payments", {
+      saleId: args.saleId,
+      method: args.refundMethod,
+      amount: -refundAmount,
+      kind: "refund",
+      returnId,
+      cashRegisterSessionId: session?._id,
+      userId: actor._id,
+      username: actor.username,
+      createdAt: now,
+    });
 
     // Update sale status.
     const allItems = await ctx.db
@@ -375,8 +388,6 @@ export const exchange = mutation({
       userId: actor._id,
       username: actor.username,
       status: "COMPLETED",
-      refundMethod: leftoverCredit > 0 ? args.refundMethod : "OTHER",
-      refundAmount: returnValue,
       reason: args.notes ?? "Exchange",
       notes: args.notes,
       createdAt: now,
@@ -412,8 +423,13 @@ export const exchange = mutation({
       }
     }
 
-    if (leftoverCredit > 0 && args.refundMethod === "STORE_CREDIT") {
-      await adjustCustomerCredit(ctx, {
+    // Any value left after the replacement goes back by the chosen method: a refund row in
+    // `payments` through the open register, plus the credit balance for store credit.
+    if (leftoverCredit > 0) {
+      const leftoverSession =
+        args.refundMethod === "STORE_CREDIT" ? null : await requireOpenSession(ctx, sale.branchId);
+      if (args.refundMethod === "STORE_CREDIT") {
+        await adjustCustomerCredit(ctx, {
         customerId: sale.customerId,
         delta: leftoverCredit,
         reason: "RETURN_REFUND",
@@ -422,6 +438,18 @@ export const exchange = mutation({
         userId: actor._id,
         username: actor.username,
         notes: `Exchange credit for ${returnNumber}`,
+        });
+      }
+      await ctx.db.insert("payments", {
+        saleId: args.saleId,
+        method: args.refundMethod,
+        amount: -leftoverCredit,
+        kind: "refund",
+        returnId,
+        cashRegisterSessionId: leftoverSession?._id,
+        userId: actor._id,
+        username: actor.username,
+        createdAt: now,
       });
     }
 
@@ -490,9 +518,15 @@ export const listPaged = query({
       .withIndex("by_created_at")
       .order("desc")
       .paginate(args.paginationOpts);
-    const page = args.branchId
+    const rows = args.branchId
       ? result.page.filter((r) => r.branchId === args.branchId)
       : result.page;
+    const page = await Promise.all(
+      rows.map(async (r) => {
+        const { returnValue, refunded, refundMethods } = await returnSummary(ctx, r);
+        return { ...r, returnValue, refunded, refundMethods };
+      })
+    );
     return { ...result, page };
   },
 });
@@ -504,15 +538,7 @@ export const getForSale = query({
       .query("salesReturns")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
       .collect();
-    return await Promise.all(
-      returns.map(async (r) => ({
-        ...r,
-        items: await ctx.db
-          .query("salesReturnItems")
-          .withIndex("by_return", (q) => q.eq("returnId", r._id))
-          .collect(),
-      }))
-    );
+    return await Promise.all(returns.map(async (r) => ({ ...r, ...(await returnSummary(ctx, r)) })));
   },
 });
 
@@ -521,11 +547,7 @@ export const get = query({
   handler: async (ctx, args) => {
     const ret = await ctx.db.get(args.id);
     if (!ret) return null;
-    const items = await ctx.db
-      .query("salesReturnItems")
-      .withIndex("by_return", (q) => q.eq("returnId", args.id))
-      .collect();
     const sale = await ctx.db.get(ret.saleId);
-    return { ...ret, items, sale };
+    return { ...ret, ...(await returnSummary(ctx, ret)), sale };
   },
 });

@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Wallet, XCircle } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { RegisterClosedNotice, useRegisterClosed } from "@/components/RegisterClosedNotice";
 
 import {
   PAYMENT_METHODS,
@@ -41,6 +42,7 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id as Id<"customerOrders">;
   const order = useQuery(api.customerOrders.get, { id: orderId });
+  const registerClosed = useRegisterClosed(order?.branchId);
 
   const addDeposit = useMutation(api.customerOrders.addDeposit);
   const markReady = useMutation(api.customerOrders.markReady);
@@ -137,6 +139,7 @@ export default function OrderDetailPage() {
         </Table>
       </Card>
 
+      {open && registerClosed && <RegisterClosedNotice className="mb-4" />}
       {open && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <Card className="p-4 space-y-3">
@@ -162,6 +165,7 @@ export default function OrderDetailPage() {
             </Field>
             <Button
               loading={busy}
+              disabled={registerClosed}
               onClick={() =>
                 run(
                   () =>
@@ -216,7 +220,8 @@ export default function OrderDetailPage() {
             </div>
             <Button
               loading={busy}
-              disabled={balance > 0 && Number(payAmount || balance) < balance}
+              // Paying the balance needs the register; an order fully paid by deposits does not.
+              disabled={(balance > 0 && Number(payAmount || balance) < balance) || (balance > 0 && registerClosed)}
               onClick={() =>
                 run(
                   () =>

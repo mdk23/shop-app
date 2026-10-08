@@ -18,6 +18,7 @@ import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Search, Plus, Minus, Trash2, X } from "lucide-react";
+import { RegisterClosedNotice, useRegisterClosed } from "@/components/RegisterClosedNotice";
 import { cn } from "@/lib/utils";
 import type { PaymentMethod } from "../../../convex/lib/paymentMethods";
 
@@ -57,6 +58,9 @@ export default function PosPage() {
     api.products.listForPos,
     branchId ? { branchId } : "skip"
   );
+  // Every payment needs an open register: check up front so the cashier knows before
+  // ringing up a sale, not when the payment is refused.
+  const registerClosed = useRegisterClosed(branchId);
   const taxSetting = useQuery(api.settings.getByKey, { key: "taxRatePercent" });
   const sizesList = useQuery(api.sizes.list, {});
   const createSale = useMutation(api.sales.create);
@@ -338,7 +342,13 @@ export default function PosPage() {
 
   return (
     <PageLayout title="POS" subtitle={t("Point of sale · {branch}", { branch: branchName })} isFullWidth>
-      <div className="grid grid-cols-1 md:grid-cols-[300px_1fr_360px] xl:grid-cols-[320px_1fr_380px] gap-4 h-[calc(100vh-9rem)]">
+      {registerClosed && <RegisterClosedNotice className="mb-3" />}
+      <div
+        className={cn(
+          "grid grid-cols-1 md:grid-cols-[300px_1fr_360px] xl:grid-cols-[320px_1fr_380px] gap-4",
+          registerClosed ? "h-[calc(100vh-13rem)]" : "h-[calc(100vh-9rem)]"
+        )}
+      >
         {/* Customer rail */}
         <div className="min-h-0">
           <CustomerRail
@@ -674,10 +684,12 @@ export default function PosPage() {
             <Button
               className="w-full"
               size="lg"
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || registerClosed}
               onClick={() => setPayOpen(true)}
             >
-              {t("Charge {total}", { total: fmt(total) })}
+              {registerClosed
+                ? t("Open the register to charge")
+                : t("Charge {total}", { total: fmt(total) })}
             </Button>
           </div>
         </Card>

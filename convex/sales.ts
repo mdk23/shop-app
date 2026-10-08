@@ -12,6 +12,7 @@ import { authorize, requirePermission } from "./permissions";
 import { writeAudit } from "./audit";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 import { paymentMethodValidator, type PaymentMethod } from "./lib/paymentMethods";
+import { requireOpenSession } from "./cashRegister";
 import {
   applyDailyMetrics,
   applyTodayCounters,
@@ -299,17 +300,12 @@ export async function performSale(
     const dateString = getLocalDateString(now);
     const saleNumber = await nextDocumentNumber(ctx, "SALE", now);
 
-    // 6. Session.
-    const session = newPayments.some((p) => isCash(p.method))
-      ? await resolveOpenSession(ctx, args.branchId, args.cashRegisterSessionId)
-      : args.cashRegisterSessionId
-        ? await ctx.db.get(args.cashRegisterSessionId)
+    // 6. Session: every payment goes through the branch's open register.
+    const session =
+      newPayments.length > 0
+        ? (await resolveOpenSession(ctx, args.branchId, args.cashRegisterSessionId)) ??
+          (await requireOpenSession(ctx, args.branchId))
         : null;
-    if (newPayments.some((p) => isCash(p.method)) && !session) {
-      throw new Error(
-        "No open cash register session for this branch. Open the register before taking cash."
-      );
-    }
 
     // 7. Insert sale.
     const saleId = await ctx.db.insert("sales", {
@@ -382,7 +378,7 @@ export async function performSale(
         method: p.method,
         amount: p.amount,
         kind: "payment",
-        cashRegisterSessionId: isCash(p.method) ? session?._id : undefined,
+        cashRegisterSessionId: session?._id,
         userId: actor._id,
         username: actor.username,
         createdAt: now,
@@ -541,7 +537,7 @@ export const cancel = mutation({
       .filter((p) => p.kind !== "refund" && isCash(p.method))
       .reduce((s, p) => s + p.amount, 0);
     if (cashPaid > 0) {
-      const session = await resolveOpenSession(ctx, sale.branchId);
+      const session = await requireOpenSession(ctx, sale.branchId);
       await ctx.db.insert("payments", {
         saleId: args.saleId,
         method: "CASH",

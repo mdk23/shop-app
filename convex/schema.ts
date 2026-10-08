@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
+import { refundMethodValidator } from "./lib/paymentMethods";
 import { governanceTables } from "./schemaTables/governance";
 import { catalogTables } from "./schemaTables/catalog";
 import { relationTables } from "./schemaTables/relations";
@@ -360,11 +360,10 @@ export default defineSchema({
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
     status: v.union(v.literal("COMPLETED"), v.literal("CANCELLED")),
-    refundMethod: refundMethodValidator,
-    refundAmount: v.number(),
+    // The goods' value is the sum of the return's lines; the money given back is its
+    // refund rows in `payments` (by_return).
     reason: v.string(),
     notes: v.optional(v.string()),
-    cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
     // For exchanges: the follow-up sale that issued replacement items.
     exchangeSaleId: v.optional(v.id("sales")),
     resolutionId: v.optional(v.id("resolutions")),
@@ -407,7 +406,8 @@ export default defineSchema({
   payments: defineTable({
     saleId: v.optional(v.id("sales")),
     customerOrderId: v.optional(v.id("customerOrders")),
-    method: paymentMethodValidator,
+    method: refundMethodValidator, // STORE_CREDIT only on refunds
+
     amount: v.number(),
     // Negative amount = refund. `kind` disambiguates for reporting.
     kind: v.optional(v.union(v.literal("payment"), v.literal("refund"))),
@@ -420,6 +420,7 @@ export default defineSchema({
   })
     .index("by_sale", ["saleId"])
     .index("by_customer_order", ["customerOrderId"])
+    .index("by_return", ["returnId"])
     .index("by_session", ["cashRegisterSessionId"]),
 
   // ─────────────────────────────────────────────

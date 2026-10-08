@@ -92,6 +92,15 @@ async function seed() {
       return { userId, token };
     };
     const admin = await mkUser("admin", "admin");
+    // Every payment needs an open register.
+    await ctx.db.insert("cashRegisterSessions", {
+      userId: admin.userId,
+      username: "admin",
+      openingAmount: 0,
+      openedAt: Date.now(),
+      status: "OPEN",
+      branchId,
+    });
     const seller = await mkUser("seller", "pos_seller");
 
     return {
@@ -400,7 +409,13 @@ describe("returns", () => {
         .first();
       return it!._id;
     });
-    await t.mutation(api.salesReturns.create, {
+    // Store credit moves no money through the till, so it works with the register closed.
+    await t.run(async (ctx) => {
+      for (const s of await ctx.db.query("cashRegisterSessions").collect()) {
+        await ctx.db.patch(s._id, { status: "CLOSED" });
+      }
+    });
+    const returnId = await t.mutation(api.salesReturns.create, {
       token: ids.admin.token,
       saleId,
       items: [{ saleItemId, quantity: 1, reason: "DEFECTIVE", restock: false }],
@@ -415,6 +430,49 @@ describe("returns", () => {
     );
     expect(credits.length).toBe(1);
     expect(credits[0].delta).toBe(250);
+
+    // The payment row is the refund's record; the return keeps only its lines.
+    const ret = await t.query(api.salesReturns.get, { id: returnId });
+    expect(ret).toMatchObject({ returnValue: 250, refunded: 250, refundMethods: ["STORE_CREDIT"] });
+    expect(ret).not.toHaveProperty("refundMethod");
+  });
+
+  test("a card refund needs an open register and is listed with its method", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+      payments: [{ method: "CARD", amount: 250 }],
+    })) as Id<"sales">;
+    const saleItemId = await t.run(async (ctx) => {
+      const it = await ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+        .first();
+      return it!._id;
+    });
+    const refund = () =>
+      t.mutation(api.salesReturns.create, {
+        token: ids.admin.token,
+        saleId,
+        items: [{ saleItemId, quantity: 1, reason: "WRONG_SIZE", restock: true }],
+        refundMethod: "CARD",
+        notes: "test",
+      });
+
+    const [session] = await t.run((ctx) => ctx.db.query("cashRegisterSessions").collect());
+    await t.run((ctx) => ctx.db.patch(session._id, { status: "CLOSED" }));
+    await expect(refund()).rejects.toThrow(/open cash register/i);
+
+    await t.run((ctx) => ctx.db.patch(session._id, { status: "OPEN" }));
+    await refund();
+    const { page } = await t.query(api.salesReturns.listPaged, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(page[0]).toMatchObject({ returnValue: 250, refunded: 250, refundMethods: ["CARD"] });
   });
 });
 

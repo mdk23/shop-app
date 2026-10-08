@@ -85,9 +85,14 @@ export async function refreshCustomerProfile(
     }
   }
   const twelveMonthsAgo = subMonths(now, 12);
-  const refundsTrailing12m = returns
-    .filter((r) => r.createdAt >= twelveMonthsAgo)
-    .reduce((s, r) => s + r.refundAmount, 0);
+  // A return's value is the sum of its lines.
+  const refundsTrailing12m = returns.reduce(
+    (s, r, i) =>
+      r.createdAt >= twelveMonthsAgo
+        ? s + returnItemArrays[i].reduce((t, it) => t + it.refundAmount, 0)
+        : s,
+    0
+  );
 
   // Resolve variant → product → category, and the variant's size and colour ids to
   // names, with memoized lookups so repeat products across many sales cost nothing.

@@ -30,6 +30,7 @@ import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Search, Download } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { RegisterClosedNotice, useRegisterClosed } from "@/components/RegisterClosedNotice";
 import {
   SALE_STATUS_LABEL,
   SALE_STATUS_TONE,
@@ -266,6 +267,9 @@ function SaleDetail({
 }) {
   const { t } = useTranslation();
   const sale = useQuery(api.sales.get, { id });
+  const registerClosed = useRegisterClosed(sale?.branchId);
+  // Cancelling gives back the cash taken, which goes through the register.
+  const cashTaken = (sale?.payments ?? []).some((p) => p.method === "CASH" && p.amount > 0);
   const addPayment = useMutation(api.payments.add);
   const cancelSale = useMutation(api.sales.cancel);
   const [method, setMethod] = useState<PaymentMethod>("CASH");
@@ -305,7 +309,12 @@ function SaleDetail({
               {sale.status !== "CANCELLED" &&
                 sale.status !== "RETURNED" &&
                 sale.status !== "PARTIALLY_RETURNED" && (
-                  <Button variant="danger" onClick={() => setConfirmCancel(true)}>
+                  <Button
+                    variant="danger"
+                    onClick={() => setConfirmCancel(true)}
+                    disabled={registerClosed && cashTaken}
+                    title={registerClosed && cashTaken ? t("Open the register before taking payments.") : undefined}
+                  >
                     {t("Cancel sale")}
                   </Button>
                 )}
@@ -364,6 +373,7 @@ function SaleDetail({
                 <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
                   {t("Collect payment")}
                 </p>
+                {registerClosed && <RegisterClosedNotice className="mb-2" />}
                 <div className="flex items-end gap-2">
                   <Field label={t("Method")}>
                     <Select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
@@ -382,7 +392,7 @@ function SaleDetail({
                       className="w-28"
                     />
                   </Field>
-                  <Button onClick={pay} loading={busy}>
+                  <Button onClick={pay} loading={busy} disabled={registerClosed}>
                     {t("Record")}
                   </Button>
                 </div>

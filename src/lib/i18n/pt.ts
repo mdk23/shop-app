@@ -1168,4 +1168,8 @@ export const pt: Record<string, string> = {
   "M-Pesa": "M-Pesa",
   "e-Mola": "e-Mola",
   "Bank transfer": "Transferência bancária",
+  "The register is closed.": "A Folha de Caixa está fechada.",
+  "Open the register before taking payments.": "Abra a caixa antes de receber pagamentos.",
+  "Open register": "Abrir Folha de Caixa",
+  "Open the register to charge": "Abra a caixa para cobrar",
 };

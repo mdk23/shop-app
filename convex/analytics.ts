@@ -143,7 +143,15 @@ export const getDashboardMetrics = query({
           : 0;
 
     const returnsCount = returns.length;
-    const refundAmount = returns.reduce((s, r) => s + r.refundAmount, 0);
+    // A return's value is the sum of its lines.
+    let refundAmount = 0;
+    for (const r of returns) {
+      const lines = await ctx.db
+        .query("salesReturnItems")
+        .withIndex("by_return", (q) => q.eq("returnId", r._id))
+        .collect();
+      refundAmount += lines.reduce((s, l) => s + l.refundAmount, 0);
+    }
     const salesCount = current.length;
 
     const top = (rec: Record<string, number>, n: number) =>

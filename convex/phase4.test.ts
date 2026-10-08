@@ -80,6 +80,15 @@ async function seed() {
       expiresAt: now + 3_600_000,
       createdAt: now,
     });
+    // Every payment needs an open register.
+    await ctx.db.insert("cashRegisterSessions", {
+      userId,
+      username: "admin",
+      openingAmount: 0,
+      openedAt: now,
+      status: "OPEN",
+      branchId,
+    });
     return { branchId, variantId, customerId, walkInId };
   });
   return { t, token, ids };
@@ -225,7 +234,7 @@ describe("customer orders: deposits and collection", () => {
     expect(sale?.paymentStatus).toBe("PAID");
   });
 
-  test("a cash deposit needs an open register, and then counts in that drawer", async () => {
+  test("any deposit needs an open register; only cash counts in the drawer", async () => {
     const { t, token, ids } = await seed();
     const orderId = await t.mutation(api.customerOrders.create, {
       token,
@@ -233,8 +242,14 @@ describe("customer orders: deposits and collection", () => {
       branchId: ids.branchId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
     });
+    // Close the register the seed opened: then no payment of any method is accepted.
+    await t.run(async (ctx) => {
+      for (const s of await ctx.db.query("cashRegisterSessions").collect()) {
+        await ctx.db.patch(s._id, { status: "CLOSED" });
+      }
+    });
     await expect(
-      t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 100, method: "CASH" })
+      t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 100, method: "CARD" })
     ).rejects.toThrow(/open cash register/i);
 
     const sessionId = await t.mutation(api.cashRegister.openSession, {
@@ -243,9 +258,12 @@ describe("customer orders: deposits and collection", () => {
       branchId: ids.branchId,
     });
     await t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 100, method: "CASH" });
+    await t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 30, method: "CARD" });
 
     const session = await t.query(api.cashRegister.getSessionWithMovements, { sessionId });
     expect(session?.expectedCash).toBe(150);
+    const payments = await t.run((ctx) => ctx.db.query("payments").collect());
+    expect(payments.every((p) => p.cashRegisterSessionId === sessionId)).toBe(true);
     expect(session?.movements.map((m) => m.type).sort()).toEqual(["opening", "sale"]);
     expect(session?.movements.find((m) => m.type === "sale")?.description).toMatch(/^Cash deposit/);
   });

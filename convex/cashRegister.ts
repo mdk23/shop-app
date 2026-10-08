@@ -47,6 +47,21 @@ export async function openSessionForBranch(
   return open[0] ?? null;
 }
 
+/**
+ * The branch's open register. Every payment (any method) goes through one, so the
+ * session records all money taken and given back. Throws when none is open.
+ */
+export async function requireOpenSession(
+  ctx: QueryCtx | MutationCtx,
+  branchId: Id<"branches"> | string
+): Promise<Doc<"cashRegisterSessions">> {
+  const session = await openSessionForBranch(ctx, branchId);
+  if (!session) {
+    throw new Error("No open cash register for this branch. Open the register before taking or returning a payment.");
+  }
+  return session;
+}
+
 /** One line in a drawer's history: a drawer movement, or a cash payment / refund on a sale. */
 export type DrawerEntry = {
   _id: string;
@@ -70,10 +85,13 @@ async function drawerEntries(
     .query("cashRegisterMovements")
     .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
     .collect();
-  const cash = await ctx.db
-    .query("payments")
-    .withIndex("by_session", (q) => q.eq("cashRegisterSessionId", sessionId))
-    .collect();
+  // Every payment carries its session; only cash ones are in the drawer.
+  const cash = (
+    await ctx.db
+      .query("payments")
+      .withIndex("by_session", (q) => q.eq("cashRegisterSessionId", sessionId))
+      .collect()
+  ).filter((p) => p.method === "CASH");
   const entries: DrawerEntry[] = movements.map((m) => ({
     _id: m._id,
     type: m.type,

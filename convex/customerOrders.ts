@@ -8,7 +8,7 @@ import { adjustCustomerCredit } from "./customerCredits";
 import { performSale } from "./sales";
 import { variantLabel } from "./inventory";
 import { paymentMethodValidator } from "./lib/paymentMethods";
-import { openSessionForBranch } from "./cashRegister";
+import { requireOpenSession } from "./cashRegister";
 
 const EPSILON = 0.005;
 
@@ -234,18 +234,15 @@ export const addDeposit = mutation({
       throw new Error(`Deposits cannot exceed the order total of ${order.totalAmount}.`);
     }
 
-    // A deposit is a payment row on the order; cash goes through the open register.
-    const session = args.method === "CASH" ? await openSessionForBranch(ctx, order.branchId) : null;
-    if (args.method === "CASH" && !session) {
-      throw new Error("No open cash register session for this branch. Open the register before taking cash.");
-    }
+    // A deposit is a payment row on the order; every payment goes through the open register.
+    const session = await requireOpenSession(ctx, order.branchId);
     await ctx.db.insert("payments", {
       customerOrderId: args.orderId,
       method: args.method,
       amount: args.amount,
       kind: "payment",
       reference: args.referenceExternal?.trim() || undefined,
-      cashRegisterSessionId: session?._id,
+      cashRegisterSessionId: session._id,
       userId: actor._id,
       username: actor.username,
       createdAt: Date.now(),

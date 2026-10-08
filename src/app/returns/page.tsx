@@ -25,6 +25,7 @@ import { VariantPicker, PickedVariant } from "@/components/VariantPicker";
 import { useToken, useCurrency } from "@/lib/useShop";
 import { usePagedQuery } from "@/lib/pagination";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { RegisterClosedNotice, useRegisterClosed } from "@/components/RegisterClosedNotice";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 
@@ -160,9 +161,17 @@ export default function ReturnsPage() {
                     <tr key={r._id}>
                       <Td className="font-mono text-[11px]">{r.returnNumber}</Td>
                       <Td>
-                        <Badge tone="info">{t(PAYMENT_METHOD_LABEL[r.refundMethod])}</Badge>
+                        {r.refundMethods.length === 0 ? (
+                          <Badge tone="neutral">{t("Exchange")}</Badge>
+                        ) : (
+                          r.refundMethods.map((m) => (
+                            <Badge key={m} tone="info">
+                              {t(PAYMENT_METHOD_LABEL[m])}
+                            </Badge>
+                          ))
+                        )}
                       </Td>
-                      <Td className="text-right font-bold">{fmt(r.refundAmount)}</Td>
+                      <Td className="text-right font-bold">{fmt(r.returnValue)}</Td>
                       <Td className="text-on-surface-variant text-xs">
                         {new Date(r.createdAt).toLocaleDateString()}
                       </Td>
@@ -204,6 +213,7 @@ function ReturnModal({
 }: {
   sale: {
     _id: Id<"sales">;
+    branchId: Id<"branches">;
     saleNumber: string;
     customerName?: string;
     items: {
@@ -253,6 +263,13 @@ function ReturnModal({
     0
   );
   const difference = replacementTotal - estRefund;
+  // Money taken or given back goes through the open register; store credit moves no money.
+  const registerClosed = useRegisterClosed(sale.branchId);
+  const movesMoney =
+    mode === "return"
+      ? refundMethod !== "STORE_CREDIT"
+      : difference > 0 || (difference < 0 && refundMethod !== "STORE_CREDIT");
+  const blockedByRegister = registerClosed && movesMoney;
 
   const submit = async () => {
     const items = Object.entries(rows).map(([saleItemId, r]) => ({
@@ -327,7 +344,7 @@ function ReturnModal({
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <Button onClick={submit} loading={busy}>
+          <Button onClick={submit} loading={busy} disabled={blockedByRegister}>
             {mode === "exchange"
               ? difference > 0
                 ? t("Collect {amount}", { amount: fmt(difference) })
@@ -339,6 +356,7 @@ function ReturnModal({
         </>
       }
     >
+      {blockedByRegister && <RegisterClosedNotice className="mb-3" />}
       <div className="flex gap-1.5 mb-2">
         {(["return", "exchange"] as const).map((m) => (
           <button
