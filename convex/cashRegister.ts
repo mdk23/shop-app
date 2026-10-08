@@ -73,14 +73,15 @@ export type DrawerEntry = {
 };
 
 /**
- * The drawer's full history: its own movements (opening, cash in/out, closing) plus the
- * cash payments and refunds taken on sales through this session, read from `payments`.
- * Cash on a sale is recorded once, on the payment row; nothing is copied here.
+ * The drawer's full history, each fact read from where it is kept: the opening float from
+ * the session (`openingAmount`), cash in/out and closing from `cashRegisterMovements`, and
+ * the cash taken or given back on sales and orders from `payments`. Nothing is copied.
  */
 async function drawerEntries(
   ctx: QueryCtx | MutationCtx,
   sessionId: Id<"cashRegisterSessions">
 ): Promise<DrawerEntry[]> {
+  const session = await ctx.db.get(sessionId);
   const movements = await ctx.db
     .query("cashRegisterMovements")
     .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
@@ -100,6 +101,16 @@ async function drawerEntries(
     username: m.username,
     createdAt: m.createdAt,
   }));
+  if (session) {
+    entries.push({
+      _id: `${session._id}:opening`,
+      type: "opening",
+      amount: session.openingAmount,
+      description: session.notes ?? "Cash register opened",
+      username: session.username,
+      createdAt: session.openedAt,
+    });
+  }
   for (const p of cash) {
     const sale = p.saleId ? await ctx.db.get(p.saleId) : null;
     const order = !sale && p.customerOrderId ? await ctx.db.get(p.customerOrderId) : null;
@@ -292,15 +303,6 @@ export const openSession = mutation({
       status: "OPEN",
       notes: args.notes,
       branchId: targetBranchId,
-    });
-    await ctx.db.insert("cashRegisterMovements", {
-      sessionId,
-      userId: user._id,
-      username: user.username,
-      type: "opening",
-      amount: args.openingAmount,
-      description: args.notes ?? "Cash register opened",
-      createdAt: now,
     });
     await writeAudit(ctx, {
       userId: user._id,

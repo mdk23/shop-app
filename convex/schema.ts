@@ -868,14 +868,13 @@ export default defineSchema({
     .index("by_user_and_status", ["userId", "status"])
     .index("by_branch", ["branchId"]),
 
-  // Drawer movements that are not sale payments: opening float, cash in/out, closing.
-  // Cash taken or refunded on sales is read from `payments` (by session).
+  // Drawer movements of their own: cash in/out and closing. The opening float is the
+  // session's `openingAmount`; cash taken or refunded on sales is read from `payments`.
   cashRegisterMovements: defineTable({
     sessionId: v.id("cashRegisterSessions"),
     userId: v.id("users"),
     username: v.string(),
     type: v.union(
-      v.literal("opening"),
       v.literal("cash_in"),
       v.literal("cash_out"),
       v.literal("closing")

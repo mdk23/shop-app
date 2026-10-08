@@ -262,6 +262,10 @@ describe("customer orders: deposits and collection", () => {
 
     const session = await t.query(api.cashRegister.getSessionWithMovements, { sessionId });
     expect(session?.expectedCash).toBe(150);
+    // The opening float is kept once, on the session; no "opening" row is stored.
+    expect(session?.openingAmount).toBe(50);
+    const stored = await t.run((ctx) => ctx.db.query("cashRegisterMovements").collect());
+    expect(stored.filter((m) => m.sessionId === sessionId)).toHaveLength(0);
     const payments = await t.run((ctx) => ctx.db.query("payments").collect());
     expect(payments.every((p) => p.cashRegisterSessionId === sessionId)).toBe(true);
     expect(session?.movements.map((m) => m.type).sort()).toEqual(["opening", "sale"]);
