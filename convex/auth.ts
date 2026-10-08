@@ -2,6 +2,7 @@ import { authorize } from "./permissions";
 import { internalMutation, internalQuery, mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
+import { writeAudit } from "./audit";
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
 
@@ -42,12 +43,11 @@ export const createSession = internalMutation({
 
     for (const s of existing) {
       // Log forced logout audit trail
-      await ctx.db.insert("auditLogs", {
+      await writeAudit(ctx, {
         userId: args.userId,
         username,
         action: "user_forced_logout",
         details: `Forced logout of previous session. Browser: ${s.browser || "Unknown"} (${s.device || "Unknown"}).`,
-        createdAt: Date.now(),
       });
       await ctx.db.delete(s._id);
     }
@@ -88,12 +88,11 @@ export const logAudit = internalMutation({
     details: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("auditLogs", {
+    await writeAudit(ctx, {
       userId: args.userId,
       username: args.username,
       action: args.action,
       details: args.details,
-      createdAt: Date.now(),
     });
   },
 });
@@ -187,12 +186,11 @@ export const logout = mutation({
     if (session) {
       const user = await ctx.db.get(session.userId);
       if (user) {
-        await ctx.db.insert("auditLogs", {
+        await writeAudit(ctx, {
           userId: user._id,
           username: user.username,
           action: "user_logout",
           details: "User logged out",
-          createdAt: Date.now(),
         });
       }
       await ctx.db.delete(session._id);
@@ -299,12 +297,11 @@ export const terminateSession = mutation({
       const targetUsername = targetUser ? targetUser.username : "Unknown";
 
       // Log audit trail
-      await ctx.db.insert("auditLogs", {
+      await writeAudit(ctx, {
         userId: caller._id,
         username: caller.username,
         action: "user_session_terminated",
         details: `Force terminated session remotely for user @${targetUsername}`,
-        createdAt: Date.now(),
       });
 
       await ctx.db.delete(args.sessionId);

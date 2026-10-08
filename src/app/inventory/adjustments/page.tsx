@@ -119,7 +119,9 @@ export default function AdjustmentsPage() {
                   <Td className="text-on-surface-variant text-xs">
                     {new Date(r.createdAt).toLocaleString()}
                   </Td>
-                  <Td className="font-mono text-[11px]">{r.productVariantId.slice(-8)}</Td>
+                  <Td>
+                    {r.productName ?? "—"} <span className="text-on-surface-variant">{r.variantLabel}</span>
+                  </Td>
                   <Td>
                     <Badge tone="info">{t(r.reason.replace("_", " "))}</Badge>
                   </Td>

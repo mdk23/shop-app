@@ -2,9 +2,10 @@ import { v } from "convex/values";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
-import { writeAudit } from "./audit";
+import { describeChanges, writeAudit } from "./audit";
 import { variantLabel } from "./inventory";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
+import { variantNames } from "./lib/variantNames";
 
 // ─────────────────────────────────────────────
 // SKU HELPERS
@@ -280,19 +281,32 @@ export const update = mutation({
     if (args.sellingPrice !== undefined) {
       await recordVariantPrice(ctx, args.id, args.sellingPrice, now);
     }
+    // Log every changed field, old → new, with size and colour by name.
+    const otherChanges = Object.fromEntries(
+      Object.entries(patch).filter(([key]) => key !== "sizeId" && key !== "colorId")
+    );
+    const namesBefore = await variantNames(ctx, existing);
+    const namesAfter = await variantNames(ctx, {
+      sizeId: "sizeId" in patch ? (patch.sizeId as Id<"sizes"> | undefined) : existing.sizeId,
+      colorId: "colorId" in patch ? (patch.colorId as Id<"colors"> | undefined) : existing.colorId,
+    });
+    const changes = describeChanges(
+      { ...existing, size: namesBefore.size, color: namesBefore.color },
+      {
+        ...otherChanges,
+        ...("sizeId" in patch ? { size: namesAfter.size } : {}),
+        ...("colorId" in patch ? { color: namesAfter.color } : {}),
+      }
+    );
+    const costChanged = args.costPrice !== undefined && args.costPrice !== existing.costPrice;
+    const priceChanged = args.sellingPrice !== undefined && args.sellingPrice !== existing.sellingPrice;
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
-      action:
-        args.costPrice !== undefined && args.costPrice !== existing.costPrice
-          ? "variant.cost_changed"
-          : "variant.updated",
+      action: costChanged ? "variant.cost_changed" : priceChanged ? "variant.price_changed" : "variant.updated",
       entityType: "productVariant",
       entityId: args.id,
-      details:
-        args.costPrice !== undefined && args.costPrice !== existing.costPrice
-          ? `Cost ${existing.costPrice} → ${args.costPrice} for ${existing.sku}`
-          : `Updated variant ${existing.sku}`,
+      details: `${existing.sku}: ${changes || "no changes"}`,
     });
   },
 });

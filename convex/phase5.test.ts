@@ -291,9 +291,9 @@ describe("stock counts", () => {
     expect(result).toEqual({ applied: 1, uncounted: 0 });
     expect(await stockOf(t, ids.main, ids.variantB)).toBe(90);
 
-    const adjustments = await t.run((ctx) =>
-      ctx.db.query("stockAdjustments").collect()
-    );
+    const { page: adjustments } = await t.query(api.stockAdjustments.listPaged, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
     expect(adjustments).toHaveLength(1);
     expect(adjustments[0]).toMatchObject({
       reason: "PHYSICAL_COUNT",

@@ -48,6 +48,20 @@ export const movementTypeValidator = v.union(
   ...INVENTORY_MOVEMENT_TYPES.map((type) => v.literal(type))
 );
 
+/** Why stock was corrected by hand or by a stock count. Kept on the movement itself. */
+export const ADJUSTMENT_REASONS = [
+  "PHYSICAL_COUNT",
+  "DAMAGED",
+  "MISSING",
+  "FOUND",
+  "INITIAL_STOCK",
+  "CORRECTION",
+] as const;
+
+export const adjustmentReasonValidator = v.union(
+  ...ADJUSTMENT_REASONS.map((reason) => v.literal(reason))
+);
+
 export default defineSchema({
   // ─────────────────────────────────────────────
   // CATALOG
@@ -426,8 +440,11 @@ export default defineSchema({
     newBalance: v.number(),
     costPerUnit: v.optional(v.number()),
     totalCostImpact: v.optional(v.number()),
-    referenceType: v.optional(v.string()), // sale, sale_return, purchase_order, transfer, adjustment
+    referenceType: v.optional(v.string()), // sale, sale_return, purchase_order, transfer, stock_adjustment
     referenceId: v.optional(v.string()),
+    // Set on stock adjustments (referenceType "stock_adjustment"): manual corrections
+    // and stock-count corrections. The movement is the adjustment's only record.
+    adjustmentReason: v.optional(adjustmentReasonValidator),
     notes: v.optional(v.string()),
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
@@ -438,31 +455,8 @@ export default defineSchema({
     .index("by_date", ["movementDate"])
     .index("by_type", ["movementType"])
     .index("by_ref", ["referenceType", "referenceId"])
+    .index("by_reference_type_and_date", ["referenceType", "movementDate"])
     .index("by_branch", ["branchId"]),
-
-  stockAdjustments: defineTable({
-    branchId: v.id("branches"),
-    productVariantId: v.id("productVariants"),
-    userId: v.id("users"),
-    username: v.string(),
-    reason: v.union(
-      v.literal("PHYSICAL_COUNT"),
-      v.literal("DAMAGED"),
-      v.literal("MISSING"),
-      v.literal("FOUND"),
-      v.literal("INITIAL_STOCK"),
-      v.literal("CORRECTION")
-    ),
-    previousQuantity: v.number(),
-    adjustmentQuantity: v.number(), // signed delta
-    newQuantity: v.number(),
-    notes: v.string(),
-    movementId: v.optional(v.id("inventoryMovements")),
-    createdAt: v.number(),
-  })
-    .index("by_branch", ["branchId"])
-    .index("by_variant", ["productVariantId"])
-    .index("by_created_at", ["createdAt"]),
 
   stockTransfers: defineTable({
     transferNumber: v.string(),

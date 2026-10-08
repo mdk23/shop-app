@@ -27,3 +27,27 @@ export async function writeAudit(
     createdAt: Date.now(),
   });
 }
+
+function auditValue(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "—";
+  if (typeof value === "string") return `"${value}"`;
+  if (Array.isArray(value)) return `[${value.join(", ")}]`;
+  return String(value);
+}
+
+/**
+ * What an update changed, for an audit entry: `sellingPrice 250 → 300; name "A" → "B"`.
+ * `changes` is the patch being applied (a key set to undefined clears the field); keys
+ * whose value is unchanged are left out. Returns "" when nothing changed.
+ */
+export function describeChanges(
+  before: Record<string, unknown>,
+  changes: Record<string, unknown>,
+  ignore: string[] = ["updatedAt"]
+): string {
+  return Object.keys(changes)
+    .filter((key) => !ignore.includes(key))
+    .filter((key) => JSON.stringify(changes[key]) !== JSON.stringify(before[key]))
+    .map((key) => `${key} ${auditValue(before[key])} → ${auditValue(changes[key])}`)
+    .join("; ");
+}

@@ -2,6 +2,7 @@ import { authorize } from "./permissions";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { validateToken } from "./auth";
+import { describeChanges, writeAudit } from "./audit";
 
 
 const ROLE_VALIDATOR = v.union(
@@ -130,14 +131,16 @@ export const update = mutation({
       }
     }
 
-    await ctx.db.patch(args.id, { name: args.name, role: args.role });
+    const changes = { name: args.name, role: args.role };
+    await ctx.db.patch(args.id, changes);
 
-    await ctx.db.insert("auditLogs", {
+    await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: "user_updated",
-      details: `Updated user "${target.username}": name="${args.name}", role="${args.role}"`,
-      createdAt: Date.now(),
+      entityType: "user",
+      entityId: args.id,
+      details: `@${target.username}: ${describeChanges(target, changes) || "no changes"}`,
     });
   },
 });
@@ -174,12 +177,13 @@ export const setStatus = mutation({
       }
     }
 
-    await ctx.db.insert("auditLogs", {
+    await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: args.status === "ACTIVE" ? "user_enabled" : "user_disabled",
-      details: `User "${target.username}" ${args.status === "ACTIVE" ? "enabled" : "DISABLED"}`,
-      createdAt: Date.now(),
+      entityType: "user",
+      entityId: args.id,
+      details: `User "${target.username}" ${args.status === "ACTIVE" ? "enabled" : "disabled"}`,
     });
   },
 });

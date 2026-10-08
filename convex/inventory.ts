@@ -13,7 +13,7 @@ import { validateToken } from "./auth";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { syncGlobalStockCounters } from "./metrics";
-import { movementTypeValidator } from "./schema";
+import { adjustmentReasonValidator, movementTypeValidator } from "./schema";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 // ─────────────────────────────────────────────
@@ -118,6 +118,7 @@ export const mutateStock = internalMutation({
     referenceType: v.optional(v.string()),
     referenceId: v.optional(v.string()),
     costPerUnit: v.optional(v.number()),
+    adjustmentReason: v.optional(adjustmentReasonValidator),
     notes: v.optional(v.string()),
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
@@ -175,6 +176,7 @@ export const mutateStock = internalMutation({
           : undefined,
       referenceType: args.referenceType,
       referenceId: args.referenceId,
+      adjustmentReason: args.adjustmentReason,
       notes: args.notes,
       userId: actor.userId,
       username: actor.username,

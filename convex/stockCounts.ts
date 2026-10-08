@@ -90,11 +90,12 @@ export const recordCounts = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    await authorize(ctx, args.token, "inventory.adjust");
+    const actor = await authorize(ctx, args.token, "inventory.adjust");
     const count = await ctx.db.get(args.countId);
     if (!count) throw new Error("Count not found.");
     if (count.status !== "OPEN") throw new Error("This count is closed.");
 
+    const changed: string[] = [];
     for (const c of args.counts) {
       if (c.countedQuantity < 0) throw new Error("Counted quantities cannot be negative.");
       const existing = await ctx.db
@@ -103,6 +104,7 @@ export const recordCounts = mutation({
           q.eq("countId", args.countId).eq("productVariantId", c.productVariantId)
         )
         .unique();
+      if (existing?.countedQuantity === c.countedQuantity) continue;
       if (existing) {
         await ctx.db.patch(existing._id, { countedQuantity: c.countedQuantity });
       } else {
@@ -113,6 +115,18 @@ export const recordCounts = mutation({
           countedQuantity: c.countedQuantity,
         });
       }
+      const variant = await ctx.db.get(c.productVariantId);
+      changed.push(`${variant?.sku ?? "?"} ${existing?.countedQuantity ?? "—"} → ${c.countedQuantity}`);
+    }
+    if (changed.length > 0) {
+      await writeAudit(ctx, {
+        userId: actor._id,
+        username: actor.username,
+        action: "stock_count.counted",
+        entityType: "stockCount",
+        entityId: args.countId,
+        details: changed.join("; "),
+      });
     }
   },
 });
@@ -152,30 +166,19 @@ export const close = mutation({
       const delta = line.countedQuantity - previousQuantity;
 
       if (delta !== 0) {
-        const movementId = await ctx.runMutation(internal.inventory.mutateStock, {
+        await ctx.runMutation(internal.inventory.mutateStock, {
           productVariantId: line.productVariantId,
           branchId: count.branchId,
           quantity: delta,
           movementType: "STOCK_ADJUSTMENT",
-          referenceType: "stock_count",
+          // A count correction is a stock adjustment; the movement keeps the count's id.
+          referenceType: "stock_adjustment",
           referenceId: args.countId,
-          notes: `Physical count ${args.countId}`,
+          adjustmentReason: "PHYSICAL_COUNT",
+          notes: "Physical count",
           userId: actor._id,
           username: actor.username,
           allowNegative: true,
-        });
-        await ctx.db.insert("stockAdjustments", {
-          branchId: count.branchId,
-          productVariantId: line.productVariantId,
-          userId: actor._id,
-          username: actor.username,
-          reason: "PHYSICAL_COUNT",
-          previousQuantity,
-          adjustmentQuantity: delta,
-          newQuantity: line.countedQuantity,
-          notes: "Physical count",
-          movementId,
-          createdAt: Date.now(),
         });
         applied += 1;
       }

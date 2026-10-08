@@ -593,12 +593,19 @@ describe("stock adjustments", () => {
       notes: "counted 7",
     });
     expect(await stockAt()).toBe(7);
-    const adj = await t.run(async (ctx) =>
-      ctx.db.query("stockAdjustments").first()
-    );
-    expect(adj?.adjustmentQuantity).toBe(-3);
-    expect(adj?.previousQuantity).toBe(10);
-    expect(adj?.newQuantity).toBe(7);
+    const { page } = await t.query(api.stockAdjustments.listPaged, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(page).toHaveLength(1);
+    expect(page[0]).toMatchObject({
+      reason: "PHYSICAL_COUNT",
+      previousQuantity: 10,
+      adjustmentQuantity: -3,
+      newQuantity: 7,
+      notes: "counted 7",
+    });
+    // The movement is the only record of the adjustment.
+    expect(Object.keys(schema.tables)).not.toContain("stockAdjustments");
   });
 });
 

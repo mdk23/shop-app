@@ -132,7 +132,7 @@ describe("module smoke tests", () => {
     expect(items[0].quantityRecognized).toBe(12);
   });
 
-  test("stock: physical-unit tables are gone, adjustments point at a ledger movement", async () => {
+  test("stock: physical-unit tables are gone, an adjustment is a ledger movement with its reason", async () => {
     expect(Object.keys(schema.tables)).not.toContain("physicalStock");
     expect(Object.keys(schema.tables)).not.toContain("stockLineage");
 
@@ -170,7 +170,7 @@ describe("module smoke tests", () => {
         createdAt: now,
         updatedAt: now,
       });
-      const movementId = await ctx.db.insert("inventoryMovements", {
+      await ctx.db.insert("inventoryMovements", {
         movementDate: now,
         productVariantId: variantId,
         branchId,
@@ -178,36 +178,18 @@ describe("module smoke tests", () => {
         quantity: -2,
         previousBalance: 10,
         newBalance: 8,
-        createdAt: now,
-      });
-      const userId = await ctx.db.insert("users", {
-        name: "admin",
-        username: "admin",
-        passwordHash: "",
-        role: "admin",
-        status: "ACTIVE",
-        createdAt: now,
-      });
-      await ctx.db.insert("stockAdjustments", {
-        branchId,
-        productVariantId: variantId,
-        userId,
-        username: "admin",
-        reason: "PHYSICAL_COUNT",
-        previousQuantity: 10,
-        adjustmentQuantity: -2,
-        newQuantity: 8,
-        notes: "Count",
-        movementId,
+        referenceType: "stock_adjustment",
+        adjustmentReason: "PHYSICAL_COUNT",
         createdAt: now,
       });
       return ctx.db
-        .query("stockAdjustments")
-        .withIndex("by_variant", (q) => q.eq("productVariantId", variantId))
+        .query("inventoryMovements")
+        .withIndex("by_reference_type_and_date", (q) => q.eq("referenceType", "stock_adjustment"))
         .collect();
     });
     expect(linked).toHaveLength(1);
-    expect(linked[0].movementId).toBeDefined();
+    expect(linked[0].adjustmentReason).toBe("PHYSICAL_COUNT");
+    expect(Object.keys(schema.tables)).not.toContain("stockAdjustments");
     expect(Object.keys(schema.tables)).not.toContain("discrepancies");
     expect(Object.keys(schema.tables)).not.toContain("materialAdjustments");
   });

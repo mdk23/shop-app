@@ -6,16 +6,7 @@ import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { variantLabel } from "./inventory";
-import type { InventoryMovementType } from "./schema";
-
-const REASON = v.union(
-  v.literal("PHYSICAL_COUNT"),
-  v.literal("DAMAGED"),
-  v.literal("MISSING"),
-  v.literal("FOUND"),
-  v.literal("INITIAL_STOCK"),
-  v.literal("CORRECTION")
-);
+import { adjustmentReasonValidator, type InventoryMovementType } from "./schema";
 
 const MOVEMENT_TYPE_FOR_REASON: Record<string, InventoryMovementType> = {
   PHYSICAL_COUNT: "STOCK_ADJUSTMENT",
@@ -28,20 +19,21 @@ const MOVEMENT_TYPE_FOR_REASON: Record<string, InventoryMovementType> = {
 
 /**
  * Correct on-hand stock for a variant at a branch. Provide EITHER `newQuantity`
- * (absolute — physical counts) OR `adjustmentQuantity` (signed delta). Records
- * the adjustment, drives the ledger via `mutateStock`, and writes an audit row.
+ * (absolute — physical counts) OR `adjustmentQuantity` (signed delta). The stock
+ * movement (referenceType "stock_adjustment", with its reason) is the adjustment's
+ * record; before / change / after are its previousBalance / quantity / newBalance.
  */
 export const create = mutation({
   args: {
     token: v.string(),
     branchId: v.id("branches"),
     productVariantId: v.id("productVariants"),
-    reason: REASON,
+    reason: adjustmentReasonValidator,
     newQuantity: v.optional(v.number()),
     adjustmentQuantity: v.optional(v.number()),
     notes: v.string(),
   },
-  handler: async (ctx, args): Promise<Id<"stockAdjustments">> => {
+  handler: async (ctx, args): Promise<Id<"inventoryMovements">> => {
     const actor = await authorize(ctx, args.token, "inventory.adjust");
     if (!args.notes.trim()) throw new Error("A reason note is required.");
     if (
@@ -79,24 +71,11 @@ export const create = mutation({
       quantity: delta,
       movementType: MOVEMENT_TYPE_FOR_REASON[args.reason] ?? "STOCK_ADJUSTMENT",
       referenceType: "stock_adjustment",
-      notes: `${args.reason}: ${args.notes}`,
+      adjustmentReason: args.reason,
+      notes: args.notes.trim(),
       userId: actor._id,
       username: actor.username,
       allowNegative: true, // corrections may legitimately set any value
-    });
-
-    const adjustmentId = await ctx.db.insert("stockAdjustments", {
-      branchId: args.branchId,
-      productVariantId: args.productVariantId,
-      userId: actor._id,
-      username: actor.username,
-      reason: args.reason,
-      previousQuantity,
-      adjustmentQuantity: delta,
-      newQuantity,
-      notes: args.notes,
-      movementId,
-      createdAt: Date.now(),
     });
 
     await writeAudit(ctx, {
@@ -108,38 +87,35 @@ export const create = mutation({
       details: `${resolvedName} (${resolvedLabel}) @ ${args.branchId}: ${previousQuantity} → ${newQuantity} [${args.reason}] ${args.notes}`,
     });
 
-    return adjustmentId;
+    return movementId;
   },
 });
 
-/** Cursor-paginated, indexed by whichever filter is given (or by date). */
+/** Stock adjustments, newest first: the ledger's movements of the adjustment kind. */
 export const listPaged = query({
-  args: {
-    branchId: v.optional(v.id("branches")),
-    productVariantId: v.optional(v.id("productVariants")),
-    paginationOpts: paginationOptsValidator,
-  },
+  args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
-    if (args.productVariantId) {
-      return await ctx.db
-        .query("stockAdjustments")
-        .withIndex("by_variant", (q) =>
-          q.eq("productVariantId", args.productVariantId!)
-        )
-        .order("desc")
-        .paginate(args.paginationOpts);
-    }
-    if (args.branchId) {
-      return await ctx.db
-        .query("stockAdjustments")
-        .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
-        .order("desc")
-        .paginate(args.paginationOpts);
-    }
-    return await ctx.db
-      .query("stockAdjustments")
-      .withIndex("by_created_at")
+    const result = await ctx.db
+      .query("inventoryMovements")
+      .withIndex("by_reference_type_and_date", (q) => q.eq("referenceType", "stock_adjustment"))
       .order("desc")
       .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map((m) => ({
+        _id: m._id,
+        createdAt: m.createdAt,
+        branchId: m.branchId,
+        productVariantId: m.productVariantId,
+        productName: m.productName,
+        variantLabel: m.variantLabel,
+        reason: m.adjustmentReason ?? "CORRECTION",
+        previousQuantity: m.previousBalance,
+        adjustmentQuantity: m.quantity,
+        newQuantity: m.newBalance,
+        username: m.username,
+        notes: m.notes,
+      })),
+    };
   },
 });

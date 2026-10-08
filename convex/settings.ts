@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { authorize } from "./permissions";
-import { writeAudit } from "./audit";
+import { describeChanges, writeAudit } from "./audit";
 
 /**
  * Retail business configuration. `isActive` is the on/off flag; `value` carries a
@@ -128,13 +128,13 @@ export const upsert = mutation({
       .query("settings")
       .withIndex("by_key", (q) => q.eq("key", args.key))
       .unique();
+    const next = {
+      isActive: args.isActive,
+      value: args.value ?? existing?.value,
+      label: args.label ?? existing?.label,
+    };
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        isActive: args.isActive,
-        value: args.value ?? existing.value,
-        label: args.label ?? existing.label,
-        updatedAt: Date.now(),
-      });
+      await ctx.db.patch(existing._id, { ...next, updatedAt: Date.now() });
     } else {
       await ctx.db.insert("settings", {
         key: args.key,
@@ -147,10 +147,11 @@ export const upsert = mutation({
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
-      action: "settings.updated",
+      action: existing ? "settings.updated" : "settings.created",
       entityType: "settings",
       entityId: args.key,
-      details: `${args.key} → active=${args.isActive}${args.value !== undefined ? `, value=${args.value}` : ""}`,
+      // Old → new for each field that changed; a new setting logs its starting values.
+      details: `${args.key}: ${describeChanges(existing ?? {}, next) || "no changes"}`,
     });
   },
 });

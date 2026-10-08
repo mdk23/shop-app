@@ -119,6 +119,36 @@ describe("variant price history", () => {
   });
 });
 
+describe("audit trail records what changed", () => {
+  const lastAudit = (t: Awaited<ReturnType<typeof seed>>["t"], action: string) =>
+    t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter((a) => a.action === action).pop()
+    );
+
+  test("a price change logs the old and new price", async () => {
+    const { t, ids, token } = await seed();
+    const variantId = await t.mutation(api.productVariants.create, {
+      token,
+      productId: ids.productId,
+      size: "M",
+      color: "Black",
+      sellingPrice: 250,
+    });
+    await t.mutation(api.productVariants.update, { token, id: variantId, sellingPrice: 300, color: "" });
+    const entry = await lastAudit(t, "variant.price_changed");
+    expect(entry?.details).toContain("sellingPrice 250 → 300");
+    expect(entry?.details).toContain('color "Black" → —');
+  });
+
+  test("a setting change logs the old and new value", async () => {
+    const { t, token } = await seed();
+    await t.mutation(api.settings.upsert, { token, key: "taxRatePercent", isActive: true, value: "16" });
+    await t.mutation(api.settings.upsert, { token, key: "taxRatePercent", isActive: true, value: "17" });
+    expect((await lastAudit(t, "settings.created"))?.details).toContain('value — → "16"');
+    expect((await lastAudit(t, "settings.updated"))?.details).toBe('taxRatePercent: value "16" → "17"');
+  });
+});
+
 describe("phase 1 backfill", () => {
   test("is idempotent and fills price history and the size scale", async () => {
     const { t, ids } = await seed();

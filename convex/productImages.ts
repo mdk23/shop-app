@@ -103,7 +103,7 @@ export const reorder = mutation({
     orderedIds: v.array(v.id("productImages")),
   },
   handler: async (ctx, args) => {
-    await authorize(ctx, args.token, "products.manage");
+    const actor = await authorize(ctx, args.token, "products.manage");
     let i = 0;
     for (const id of args.orderedIds) {
       const img = await ctx.db.get(id);
@@ -112,5 +112,14 @@ export const reorder = mutation({
         i += 1;
       }
     }
+    const product = await ctx.db.get(args.productId);
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "product.images_reordered",
+      entityType: "product",
+      entityId: args.productId,
+      details: `"${product?.name ?? "?"}": ${i} image(s) reordered`,
+    });
   },
 });

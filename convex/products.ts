@@ -3,7 +3,7 @@ import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
-import { writeAudit } from "./audit";
+import { describeChanges, writeAudit } from "./audit";
 import { generateSku } from "./productVariants";
 import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
@@ -321,13 +321,21 @@ export const update = mutation({
     if (args.active !== undefined) patch.active = args.active;
 
     await ctx.db.patch(args.id, patch);
+    // Log every changed field, old → new, with the category by name.
+    const otherChanges = Object.fromEntries(Object.entries(patch).filter(([key]) => key !== "categoryId"));
+    const categoryName = async (id: unknown) =>
+      id ? (await ctx.db.get(id as Id<"categories">))?.name : undefined;
+    const changes = describeChanges(
+      { ...existing, category: await categoryName(existing.categoryId) },
+      { ...otherChanges, ...("categoryId" in patch ? { category: await categoryName(patch.categoryId) } : {}) }
+    );
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: "product.updated",
       entityType: "product",
       entityId: args.id,
-      details: `Updated product "${existing.name}"`,
+      details: `"${existing.name}": ${changes || "no changes"}`,
     });
   },
 });
