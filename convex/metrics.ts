@@ -117,6 +117,23 @@ export async function syncGlobalStockCounters(
   }
 }
 
+/**
+ * Keeps the low-stock count right when a variant's reorder level changes: the same
+ * quantity can move in or out of "low" without any stock moving.
+ */
+export async function syncLowStockForLevelChange(
+  ctx: MutationCtx,
+  quantity: number,
+  previousLevel: number,
+  newLevel: number
+) {
+  const wasLow = quantity > 0 && quantity <= previousLevel;
+  const isLow = quantity > 0 && quantity <= newLevel;
+  if (wasLow === isLow) return;
+  if (isLow) await incrementCounter(ctx, "low_stock_items", 1);
+  else await decrementCounter(ctx, "low_stock_items", 1);
+}
+
 // ─────────────────────────────────────────────
 // DAILY METRICS ENGINE (retail)
 // ─────────────────────────────────────────────
@@ -245,28 +262,4 @@ export async function applyDailyMetrics(
   };
 
   await ctx.db.patch(m._id, patch);
-}
-
-// ─────────────────────────────────────────────
-// LIVE "today_*" COUNTERS
-// ─────────────────────────────────────────────
-
-export async function applyTodayCounters(
-  ctx: MutationCtx,
-  dateString: string,
-  d: SaleMetricDeltas
-) {
-  if (dateString !== getLocalDateString(Date.now())) return;
-  await incrementCounter(ctx, "today_revenue", d.totalRevenue, dateString);
-  await incrementCounter(ctx, "today_sales_count", d.totalSales, dateString);
-  await incrementCounter(ctx, "today_items_sold", d.totalItemsSold, dateString);
-  await incrementCounter(ctx, "today_discount", d.totalDiscount, dateString);
-  await incrementCounter(ctx, "today_returns_count", d.totalReturns, dateString);
-  await incrementCounter(ctx, "today_refund_amount", d.refundAmount, dateString);
-  await incrementCounter(ctx, "today_cash_collected", d.cashCollected, dateString);
-  await incrementCounter(ctx, "today_outstanding_debt", d.outstandingDebt, dateString);
-  await incrementCounter(ctx, "today_gross_profit", d.totalProfit, dateString);
-  for (const [method, info] of Object.entries(d.paymentMethods ?? {})) {
-    await incrementCounter(ctx, `today_payment_${sanitizeKey(method)}`, info.amount, dateString);
-  }
 }

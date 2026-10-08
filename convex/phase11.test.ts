@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
+import { findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -276,6 +276,28 @@ describe("quality issues, inspections and shipments", () => {
     const rows = await t.query(api.shipments.list, { supplierId: ids.supplierId });
     expect(rows[0]).toMatchObject({ status: "ARRIVED", supplierName: "Supplier Co", orderCode: "PO-00001" });
     expect(rows[0].customs).toHaveLength(1);
+  });
+
+  test("a shipment's receipt must be for the shipment's own order", async () => {
+    const { t, token, ids } = await seed();
+    const otherOrderReceipt = await t.run(async (ctx) => {
+      const order = await ctx.db.get(ids.poId);
+      const otherPo = await ctx.db.insert("purchaseOrders", { ...order!, _id: undefined, _creationTime: undefined, orderCode: "PO-2" } as never);
+      return ctx.db.insert("purchaseReceipts", {
+        receiptNumber: "RC-9",
+        purchaseOrderId: otherPo,
+        branchId: ids.branchId,
+        unitsTotal: 1,
+        receivedBy: ids.userId,
+        receivedByUsername: "admin",
+        receivedAt: Date.now(),
+        createdAt: Date.now(),
+      });
+    });
+    const shipmentId = await t.mutation(api.shipments.create, { token, purchaseOrderId: ids.poId, carrier: "DHL" });
+    await expect(
+      t.mutation(api.shipments.markArrived, { token, id: shipmentId, receiptId: otherOrderReceipt })
+    ).rejects.toThrow(/different purchase order/);
   });
 });
 

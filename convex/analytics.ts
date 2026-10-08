@@ -231,13 +231,14 @@ export const todaySnapshot = query({
     };
     return {
       dateString: today,
-      revenue: row?.totalRevenue ?? (await readCounter("today_revenue")),
-      salesCount: row?.totalSales ?? (await readCounter("today_sales_count")),
-      itemsSold: row?.totalItemsSold ?? (await readCounter("today_items_sold")),
-      discount: row?.totalDiscount ?? (await readCounter("today_discount")),
-      returnsCount: row?.totalReturns ?? (await readCounter("today_returns_count")),
-      refundAmount: row?.refundAmount ?? (await readCounter("today_refund_amount")),
-      grossProfit: row?.totalProfit ?? (await readCounter("today_gross_profit")),
+      // Today's totals are the day's dailyMetrics row (none yet = nothing sold today).
+      revenue: row?.totalRevenue ?? 0,
+      salesCount: row?.totalSales ?? 0,
+      itemsSold: row?.totalItemsSold ?? 0,
+      discount: row?.totalDiscount ?? 0,
+      returnsCount: row?.totalReturns ?? 0,
+      refundAmount: row?.refundAmount ?? 0,
+      grossProfit: row?.totalProfit ?? 0,
       lowStockItems: await readCounter("low_stock_items"),
       outOfStockItems: await readCounter("out_of_stock_items"),
     };
@@ -400,7 +401,7 @@ export const inventoryValuation = query({
       retailValue += row.quantity * variant.sellingPrice;
       const status = stockStatus(
         row.quantity,
-        row.reorderLevel ?? variant.reorderLevel
+        variant.reorderLevel
       );
       if (status === "LOW_STOCK") low += 1;
       else if (status === "OUT_OF_STOCK") out += 1;

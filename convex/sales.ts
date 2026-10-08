@@ -16,7 +16,6 @@ import { requireOpenSession } from "./cashRegister";
 import { assertCustomerCanBuy } from "./customers";
 import {
   applyDailyMetrics,
-  applyTodayCounters,
   getLocalDateString,
   sanitizeKey,
   zeroDeltas,
@@ -323,18 +322,12 @@ export async function performSale(
       paidAmount: appliedToSale,
       balance,
       paymentStatus,
-      cashRegisterSessionId: session?._id,
       isDelivery: args.isDelivery,
       deliveryFeeId: args.deliveryFeeId,
       deliveryFeeAmount: deliveryFeeAmount || undefined,
       tierDiscountAmount: tierDiscountAmount || undefined,
       customerNuit: await currentNuit(ctx, customer._id),
       customerName: customer.name,
-      itemSummary: lines.map((l) => ({
-        productVariantId: l.productVariantId,
-        label: `${l.productName} — ${l.label}`,
-        quantity: l.quantity,
-      })),
       createdAt: now,
       updatedAt: now,
     });
@@ -455,7 +448,6 @@ export async function performSale(
           (deltas.colorSales![sanitizeKey(l.color)] ?? 0) + l.quantity;
     }
     await applyDailyMetrics(ctx, dateString, deltas);
-    await applyTodayCounters(ctx, dateString, deltas);
 
     await writeAudit(ctx, {
       userId: actor._id,

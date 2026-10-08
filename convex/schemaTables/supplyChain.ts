@@ -47,6 +47,8 @@ export const supplyChainTables = {
   }).index("by_receipt", ["receiptId"]),
 
   shipments: defineTable({
+    // A shipment is recorded before its goods are received, so it carries its order; once
+    // a receipt is linked, the receipt must be for that same order (shipments.ts).
     purchaseOrderId: v.optional(v.id("purchaseOrders")),
     receiptId: v.optional(v.id("purchaseReceipts")),
     carrier: v.string(),

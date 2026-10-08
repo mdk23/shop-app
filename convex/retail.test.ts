@@ -267,6 +267,51 @@ describe("sales", () => {
   });
 });
 
+describe("reorder level", () => {
+  test("is the variant's: editing it updates stock status and the low-stock count", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(5); // seed variant has reorder level 3 → in stock, not low
+    const lowCount = () =>
+      t.run(async (ctx) =>
+        (await ctx.db.query("counters").withIndex("by_key", (q) => q.eq("key", "low_stock_items")).unique())
+          ?.value ?? 0
+      );
+    expect(await lowCount()).toBe(0);
+
+    await t.mutation(api.productVariants.update, { token: ids.admin.token, id: ids.variantId, reorderLevel: 6 });
+    expect(await lowCount()).toBe(1);
+    const stockRow = await t.run((ctx) => ctx.db.query("variantStock").first());
+    expect(stockRow).not.toHaveProperty("reorderLevel");
+
+    await t.mutation(api.productVariants.update, { token: ids.admin.token, id: ids.variantId, reorderLevel: 2 });
+    expect(await lowCount()).toBe(0);
+  });
+});
+
+describe("today's dashboard figures", () => {
+  test("come from the day's metrics and follow a cancellation", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      payments: [{ method: "CARD", amount: 500 }],
+    })) as Id<"sales">;
+    let today = await t.query(api.analytics.todaySnapshot, { token: ids.admin.token });
+    expect(today).toMatchObject({ revenue: 500, salesCount: 1, itemsSold: 2 });
+
+    await t.mutation(api.sales.cancel, { token: ids.admin.token, saleId, reason: "test" });
+    today = await t.query(api.analytics.todaySnapshot, { token: ids.admin.token });
+    expect(today).toMatchObject({ revenue: 0, salesCount: 0, itemsSold: 0 });
+
+    // No separate "today" counters are kept any more.
+    const counters = await t.run((ctx) => ctx.db.query("counters").collect());
+    expect(counters.filter((c) => c.key.startsWith("today_"))).toHaveLength(0);
+  });
+});
+
 describe("customer status", () => {
   test("a disabled customer cannot buy; archived ones are hidden unless asked for", async () => {
     const { t, ids, setStock } = await seed();
@@ -784,7 +829,7 @@ describe("customer profile & tier", () => {
         .collect()
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].sizeName).toBe("L");
+    expect((await t.run((ctx) => ctx.db.get(rows[0].sizeId)))?.name).toBe("L");
   });
 
   test("a CONFIRMADO row survives a contradicting sale untouched", async () => {
@@ -795,7 +840,6 @@ describe("customer profile & tier", () => {
         customerId: ids.namedCustomerId,
         categoryId: ids.categoryId,
         sizeId: ids.sizeId,
-        sizeName: "M",
         confidence: "CONFIRMADO",
         updatedAt: Date.now(),
       });
@@ -817,7 +861,7 @@ describe("customer profile & tier", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].confidence).toBe("CONFIRMADO");
-    expect(rows[0].sizeName).toBe("M");
+    expect((await t.run((ctx) => ctx.db.get(rows[0].sizeId)))?.name).toBe("M");
   });
 
   test("a full return removes that size's backing", async () => {
@@ -928,7 +972,7 @@ describe("customer profile & tier", () => {
         .collect()
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].sizeName).toBe("L");
+    expect((await t.run((ctx) => ctx.db.get(rows[0].sizeId)))?.name).toBe("L");
   });
 
   test("tier transitions NOVO -> REGULAR -> VIP as thresholds are met", async () => {

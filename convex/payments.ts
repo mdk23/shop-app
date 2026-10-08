@@ -7,7 +7,6 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import {
   applyDailyMetrics,
-  applyTodayCounters,
   getLocalDateString,
   sanitizeKey,
   zeroDeltas,
@@ -97,12 +96,6 @@ export const add = mutation({
       cashCollected: isCash(args.method) ? args.amount : 0,
       outstandingDebt: -args.amount,
       totalPending: -args.amount,
-      paymentMethods: { [sanitizeKey(args.method)]: { amount: args.amount, count: 1 } },
-    });
-    await applyTodayCounters(ctx, dateString, {
-      ...zeroDeltas(),
-      cashCollected: isCash(args.method) ? args.amount : 0,
-      outstandingDebt: -args.amount,
       paymentMethods: { [sanitizeKey(args.method)]: { amount: args.amount, count: 1 } },
     });
 

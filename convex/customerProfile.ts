@@ -172,14 +172,12 @@ export async function refreshCustomerProfile(
         customerId,
         categoryId: profile.categoryId as Id<"categories">,
         sizeId: profile.sizeId as Id<"sizes">,
-        sizeName: profile.sizeName,
         confidence: "INFERIDO",
         updatedAt: now,
       });
     } else if (current.confidence === "INFERIDO" && current.sizeId !== profile.sizeId) {
       await ctx.db.patch(current._id, {
         sizeId: profile.sizeId as Id<"sizes">,
-        sizeName: profile.sizeName,
         updatedAt: now,
       });
     }

@@ -46,8 +46,7 @@ export async function getVariantContext(
 async function getOrCreateVariantStock(
   ctx: MutationCtx,
   branchId: Id<"branches">,
-  productVariantId: Id<"productVariants">,
-  fallbackReorderLevel: number
+  productVariantId: Id<"productVariants">
 ) {
   const existing = await ctx.db
     .query("variantStock")
@@ -60,7 +59,6 @@ async function getOrCreateVariantStock(
     branchId,
     productVariantId,
     quantity: 0,
-    reorderLevel: fallbackReorderLevel,
     updatedAt: Date.now(),
   });
   return (await ctx.db.get(id))!;
@@ -130,12 +128,7 @@ export const mutateStock = internalMutation({
       args.productVariantId
     );
 
-    const stock = await getOrCreateVariantStock(
-      ctx,
-      args.branchId,
-      args.productVariantId,
-      variant.reorderLevel
-    );
+    const stock = await getOrCreateVariantStock(ctx, args.branchId, args.productVariantId);
 
     const previousBalance = stock.quantity;
     const newBalance = previousBalance + args.quantity;
@@ -147,8 +140,8 @@ export const mutateStock = internalMutation({
       );
     }
 
-    const reorderLevel = stock.reorderLevel ?? variant.reorderLevel;
-    await syncGlobalStockCounters(ctx, previousBalance, newBalance, reorderLevel);
+    // The reorder level is the variant's, for every branch.
+    await syncGlobalStockCounters(ctx, previousBalance, newBalance, variant.reorderLevel);
 
     await ctx.db.patch(stock._id, {
       quantity: newBalance,

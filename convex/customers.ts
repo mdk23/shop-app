@@ -375,15 +375,16 @@ export const getPosContext = query({
         )
       )
     );
-    const sizes = sizeRows.map((r) => ({
+    const sizes = await Promise.all(sizeRows.map(async (r) => ({
       _id: r._id,
       categoryId: r.categoryId,
       categoryName: categoryMap.get(r.categoryId)?.name ?? "—",
       sizeId: r.sizeId,
-      sizeName: r.sizeName,
+      // Read from the sizes list, so a renamed size shows its current name.
+      sizeName: (await ctx.db.get(r.sizeId))?.name ?? "—",
       confidence: r.confidence,
       updatedAt: r.updatedAt,
-    }));
+    })));
 
     const preferredColorIds = customer.preferredColorIds ?? [];
     let preferredColorNames: string[] = [];
@@ -673,7 +674,6 @@ export const setSizeProfile = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         sizeId: args.sizeId,
-        sizeName: size.name,
         confidence: "CONFIRMADO",
         updatedAt: now,
       });
@@ -682,7 +682,6 @@ export const setSizeProfile = mutation({
         customerId: args.customerId,
         categoryId: args.categoryId,
         sizeId: args.sizeId,
-        sizeName: size.name,
         confidence: "CONFIRMADO",
         updatedAt: now,
       });
@@ -713,7 +712,7 @@ export const confirmSizeProfile = mutation({
       action: "customer.size_confirmed",
       entityType: "customer",
       entityId: row.customerId,
-      details: `Confirmed size ${row.sizeName}`,
+      details: `Confirmed size ${(await ctx.db.get(row.sizeId))?.name ?? "—"}`,
     });
   },
 });
@@ -731,7 +730,7 @@ export const removeSizeProfile = mutation({
       action: "customer.size_removed",
       entityType: "customer",
       entityId: row.customerId,
-      details: `Removed size profile (${row.sizeName})`,
+      details: `Removed size profile (${(await ctx.db.get(row.sizeId))?.name ?? "—"})`,
     });
   },
 });

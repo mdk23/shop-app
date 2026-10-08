@@ -176,7 +176,11 @@ export const receive = mutation({
       receivedAt: now,
     });
     for (const line of lines) {
-      await ctx.db.insert("stockTransferReceiptLines", { receiptId, ...line });
+      await ctx.db.insert("stockTransferReceiptLines", {
+        receiptId,
+        productVariantId: line.productVariantId,
+        quantityObserved: line.quantityObserved,
+      });
     }
     await ctx.db.patch(args.transferId, {
       status: "RECEIVED",
@@ -204,10 +208,20 @@ export const getReceipt = query({
       .withIndex("by_transfer", (q) => q.eq("transferId", args.transferId))
       .first();
     if (!receipt) return null;
-    const lines = await ctx.db
+    const counted = await ctx.db
       .query("stockTransferReceiptLines")
       .withIndex("by_receipt", (q) => q.eq("receiptId", receipt._id))
       .collect();
+    // What was sent is read from the transfer's own lines.
+    const items = await ctx.db
+      .query("stockTransferItems")
+      .withIndex("by_transfer", (q) => q.eq("transferId", args.transferId))
+      .collect();
+    const sentByVariant = new Map(items.map((i) => [i.productVariantId, i.quantity]));
+    const lines = counted.map((l) => ({
+      ...l,
+      quantitySent: sentByVariant.get(l.productVariantId) ?? 0,
+    }));
     return { ...receipt, lines };
   },
 });

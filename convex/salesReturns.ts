@@ -7,7 +7,6 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import {
   applyDailyMetrics,
-  applyTodayCounters,
   getLocalDateString,
   sanitizeKey,
   zeroDeltas,
@@ -142,7 +141,6 @@ export const create = mutation({
     ),
     refundMethod: REFUND_METHOD,
     notes: v.optional(v.string()),
-    cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
     resolutionType: v.optional(RESOLUTION),
     complaintId: v.optional(v.id("complaints")),
   },
@@ -206,7 +204,6 @@ export const create = mutation({
       await ctx.db.insert("salesReturnItems", {
         returnId,
         saleItemId: l.saleItem._id,
-        productVariantId: l.saleItem.productVariantId,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
         refundAmount: l.refundAmount,
@@ -302,7 +299,6 @@ export const create = mutation({
           : { [sanitizeKey(args.refundMethod)]: { amount: -refundAmount, count: -1 } },
     };
     await applyDailyMetrics(ctx, dateString, deltas);
-    await applyTodayCounters(ctx, dateString, deltas);
 
     await writeAudit(ctx, {
       userId: actor._id,
@@ -401,7 +397,6 @@ export const exchange = mutation({
       await ctx.db.insert("salesReturnItems", {
         returnId,
         saleItemId: l.saleItem._id,
-        productVariantId: l.saleItem.productVariantId,
         quantity: l.quantity,
         unitPrice: l.unitPrice,
         refundAmount: l.refundAmount,

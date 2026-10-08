@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
@@ -38,6 +39,25 @@ export const list = query({
   },
 });
 
+/**
+ * The order a shipment belongs to, checked against its receipt: the receipt records its
+ * own order, so a receipt from a different order is refused, and a shipment without an
+ * order takes the receipt's.
+ */
+async function orderForShipment(
+  ctx: MutationCtx,
+  purchaseOrderId: Id<"purchaseOrders"> | undefined,
+  receiptId: Id<"purchaseReceipts"> | undefined
+): Promise<Id<"purchaseOrders"> | undefined> {
+  if (!receiptId) return purchaseOrderId;
+  const receipt = await ctx.db.get(receiptId);
+  if (!receipt) throw new Error("Receipt not found.");
+  if (purchaseOrderId && receipt.purchaseOrderId && receipt.purchaseOrderId !== purchaseOrderId) {
+    throw new Error("That receipt belongs to a different purchase order.");
+  }
+  return purchaseOrderId ?? receipt.purchaseOrderId;
+}
+
 export const create = mutation({
   args: {
     token: v.string(),
@@ -54,9 +74,9 @@ export const create = mutation({
     if (args.purchaseOrderId && !(await ctx.db.get(args.purchaseOrderId))) {
       throw new Error("Purchase order not found.");
     }
-    if (args.receiptId && !(await ctx.db.get(args.receiptId))) throw new Error("Receipt not found.");
+    const purchaseOrderId = await orderForShipment(ctx, args.purchaseOrderId, args.receiptId);
     const id = await ctx.db.insert("shipments", {
-      purchaseOrderId: args.purchaseOrderId,
+      purchaseOrderId,
       receiptId: args.receiptId,
       carrier,
       trackingReference: args.trackingReference?.trim() || undefined,
@@ -82,10 +102,12 @@ export const markArrived = mutation({
     const row = await ctx.db.get(args.id);
     if (!row) throw new Error("Shipment not found.");
     if (row.status === "ARRIVED") throw new Error("This shipment has already arrived.");
+    const receiptId = args.receiptId ?? row.receiptId;
     await ctx.db.patch(args.id, {
       status: "ARRIVED",
       arrivedAt: Date.now(),
-      receiptId: args.receiptId ?? row.receiptId,
+      receiptId,
+      purchaseOrderId: await orderForShipment(ctx, row.purchaseOrderId, receiptId),
     });
     await writeAudit(ctx, {
       userId: actor._id,

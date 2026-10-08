@@ -215,12 +215,12 @@ export default defineSchema({
   }).index("by_product", ["productId"]),
 
   // Per-branch stock cache. Ledger (`inventoryMovements`) is the source of truth;
-  // this row is patched in the same mutation for O(1) reads.
+  // this row is patched in the same mutation for O(1) reads. The reorder level is the
+  // variant's (`productVariants.reorderLevel`), the same for every branch.
   variantStock: defineTable({
     branchId: v.id("branches"),
     productVariantId: v.id("productVariants"),
     quantity: v.number(),
-    reorderLevel: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_branch_and_variant", ["branchId", "productVariantId"])
@@ -294,7 +294,7 @@ export default defineSchema({
       v.literal("REFUNDED"),
       v.literal("PARTIALLY_REFUNDED")
     ),
-    cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
+    // The register each payment went through is on its `payments` row.
     isDelivery: v.optional(v.boolean()),
     deliveryFeeId: v.optional(v.id("deliveryFees")),
     deliveryFeeAmount: v.optional(v.number()),
@@ -303,15 +303,6 @@ export default defineSchema({
     tierDiscountAmount: v.optional(v.number()),
     customerNuit: v.optional(v.string()),
     customerName: v.optional(v.string()),
-    itemSummary: v.optional(
-      v.array(
-        v.object({
-          productVariantId: v.optional(v.id("productVariants")),
-          label: v.string(),
-          quantity: v.number(),
-        })
-      )
-    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -345,6 +336,8 @@ export default defineSchema({
   salesReturns: defineTable({
     returnNumber: v.string(),
     saleId: v.id("sales"),
+    // Copied from the sale when the return is made (a sale's branch and customer never
+    // change), kept so returns can be listed by branch and by customer through indexes.
     branchId: v.id("branches"),
     customerId: v.id("customers"),
     userId: v.optional(v.id("users")),
@@ -369,7 +362,7 @@ export default defineSchema({
   salesReturnItems: defineTable({
     returnId: v.id("salesReturns"),
     saleItemId: v.id("saleItems"),
-    productVariantId: v.id("productVariants"),
+    // The variant is the sale line's (saleItemId).
     quantity: v.number(),
     unitPrice: v.number(),
     refundAmount: v.number(),
@@ -485,12 +478,11 @@ export default defineSchema({
     receivedAt: v.number(),
   }).index("by_transfer", ["transferId"]),
 
-  // One line per variant: what was sent and what the destination counted, so a short
-  // delivery is visible on the line.
+  // One line per variant: what the destination counted. What was sent is the transfer's
+  // own line (stockTransferItems.quantity).
   stockTransferReceiptLines: defineTable({
     receiptId: v.id("stockTransferReceipts"),
     productVariantId: v.id("productVariants"),
-    quantitySent: v.number(),
     quantityObserved: v.number(),
   }).index("by_receipt", ["receiptId"]),
 
@@ -589,8 +581,7 @@ export default defineSchema({
 
   // Per-customer, per-category size memory. Populated by inference from sale
   // history (INFERIDO) or set by hand in the Ficha (CONFIRMADO, never
-  // overwritten by inference). sizeName is denormalized so the POS rail can
-  // render chips with zero joins.
+  // overwritten by inference). The size name is read from `sizes`.
   // Customer orders (encomendas): goods the customer pays for in parts (deposits)
   // and collects later. Prices are snapshotted on the lines at order time.
   customerOrders: defineTable({
@@ -735,7 +726,6 @@ export default defineSchema({
     customerId: v.id("customers"),
     categoryId: v.id("categories"),
     sizeId: v.id("sizes"),
-    sizeName: v.string(),
     confidence: v.union(v.literal("CONFIRMADO"), v.literal("INFERIDO")),
     updatedAt: v.number(),
   })
@@ -961,8 +951,8 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
-  // Aggregate caches (today_* live counters, low_stock_items, out_of_stock_items) and
-  // the customer code sequence. Document numbers come from `documentSeries`.
+  // The low-stock / out-of-stock item counts and the customer code sequence. Daily sales
+  // totals are `dailyMetrics`; document numbers come from `documentSeries`.
   counters: defineTable({
     key: v.string(),
     value: v.number(),

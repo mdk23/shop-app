@@ -39,7 +39,7 @@ export const getForVariant = query({
       args.productVariantId
     );
     const quantity = row?.quantity ?? 0;
-    const reorderLevel = row?.reorderLevel ?? variant.reorderLevel;
+    const reorderLevel = variant.reorderLevel;
     return {
       productVariantId: args.productVariantId,
       branchId: args.branchId,
@@ -103,7 +103,7 @@ export const listInventory = query({
 
       const stock = await stockRowsForBranch(ctx, args.branchId, variant._id);
       const quantity = stock?.quantity ?? 0;
-      const reorderLevel = stock?.reorderLevel ?? variant.reorderLevel;
+      const reorderLevel = variant.reorderLevel;
       const status = stockStatus(quantity, reorderLevel);
       if (args.status && status !== args.status) continue;
 
@@ -163,7 +163,7 @@ export const lowStockSummary = query({
     for (const row of stockRows) {
       const variant = await ctx.db.get(row.productVariantId);
       if (!variant || !variant.active) continue;
-      const reorderLevel = row.reorderLevel ?? variant.reorderLevel;
+      const reorderLevel = variant.reorderLevel;
       const status = stockStatus(row.quantity, reorderLevel);
       if (status === "IN_STOCK") continue;
       if (status === "LOW_STOCK") low += 1;
