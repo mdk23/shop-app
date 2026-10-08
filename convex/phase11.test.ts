@@ -282,7 +282,6 @@ describe("receiving lists and holds", () => {
           name: "Jane",
           phone1: "1",
           isGeneric: false,
-          active: true,
           status: "ACTIVE",
         }),
         branchId: ids.branchId,

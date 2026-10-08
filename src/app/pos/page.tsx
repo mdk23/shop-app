@@ -94,6 +94,8 @@ export default function PosPage() {
     api.customers.getPosContext,
     customerId ? { customerId, branchId } : "skip"
   );
+  // A disabled or archived customer cannot be used for a new sale.
+  const customerBlocked = !!posContext?.customer && posContext.customer.status !== "ACTIVE";
 
   const customerSizeByCategory = useMemo(() => {
     const m = new Map<string, { sizeName: string; categoryId: Id<"categories"> }>();
@@ -684,12 +686,14 @@ export default function PosPage() {
             <Button
               className="w-full"
               size="lg"
-              disabled={cart.length === 0 || registerClosed}
+              disabled={cart.length === 0 || registerClosed || customerBlocked}
               onClick={() => setPayOpen(true)}
             >
               {registerClosed
                 ? t("Open the register to charge")
-                : t("Charge {total}", { total: fmt(total) })}
+                : customerBlocked
+                  ? t("This customer cannot buy")
+                  : t("Charge {total}", { total: fmt(total) })}
             </Button>
           </div>
         </Card>

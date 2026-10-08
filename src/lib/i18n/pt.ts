@@ -1172,4 +1172,9 @@ export const pt: Record<string, string> = {
   "Open the register before taking payments.": "Abra a caixa antes de receber pagamentos.",
   "Open register": "Abrir Folha de Caixa",
   "Open the register to charge": "Abra a caixa para cobrar",
+  "Show archived": "Mostrar arquivados",
+  "Disabled": "Desativado",
+  "Disabled (cannot buy)": "Desativado (não pode comprar)",
+  "Archived (hidden)": "Arquivado (oculto)",
+  "This customer cannot buy": "Este cliente não pode comprar",
 };

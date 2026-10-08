@@ -15,7 +15,6 @@ async function seed() {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
     });
     const userId = await ctx.db.insert("users", {

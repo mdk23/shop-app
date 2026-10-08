@@ -21,7 +21,6 @@ async function seed() {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
     });
     const userId = await ctx.db.insert("users", {
@@ -118,7 +117,7 @@ describe("opportunities (demands that proceeded)", () => {
       proceeding: true,
     });
     const otherCustomer = await t.run((ctx) =>
-      ctx.db.insert("customers", { name: "Other", phone1: "1", isGeneric: false, active: true, status: "ACTIVE" })
+      ctx.db.insert("customers", { name: "Other", phone1: "1", isGeneric: false, status: "ACTIVE" })
     );
     const orderId = await t.run((ctx) =>
       ctx.db.insert("customerOrders", {

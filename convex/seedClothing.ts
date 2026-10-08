@@ -118,7 +118,6 @@ export const seed = mutation({
         name: "Walk-in Customer",
         phone1: "000000000",
         isGeneric: true,
-        active: true,
         status: "ACTIVE",
       });
     }

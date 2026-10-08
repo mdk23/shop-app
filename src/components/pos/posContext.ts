@@ -18,6 +18,7 @@ export type PosContextCustomer = {
   initials: string;
   tier: Tier;
   isGeneric: boolean;
+  status: "ACTIVE" | "DISABLED" | "ARCHIVED";
   customerCode?: string;
   email?: string;
   notes?: string;

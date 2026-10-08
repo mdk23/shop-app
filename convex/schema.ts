@@ -543,10 +543,10 @@ export default defineSchema({
     notes: v.optional(v.string()),
     customerCode: v.optional(v.string()),
     isGeneric: v.optional(v.boolean()),
-    active: v.optional(v.boolean()),
-    status: v.optional(
-      v.union(v.literal("ACTIVE"), v.literal("ARCHIVED"))
-    ),
+    // ACTIVE: normal. DISABLED: still listed, but cannot be used for new sales or orders.
+    // ARCHIVED: no longer a customer, hidden from lists and search, and cannot buy.
+    // History is kept in every case.
+    status: v.union(v.literal("ACTIVE"), v.literal("DISABLED"), v.literal("ARCHIVED")),
     // Customer-centric POS fields — all optional, no migration needed.
     photoUrl: v.optional(v.string()),
     tier: v.optional(

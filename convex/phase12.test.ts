@@ -16,7 +16,6 @@ async function seed() {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
     });
     const categoryId = await ctx.db.insert("categories", {
@@ -52,7 +51,7 @@ describe("customer tabs", () => {
   test("a business relation lists everyone on it", async () => {
     const { t, token, ids } = await seed();
     const other = await t.run((ctx) =>
-      ctx.db.insert("customers", { name: "Coach", phone1: "1", isGeneric: false, active: true, status: "ACTIVE" })
+      ctx.db.insert("customers", { name: "Coach", phone1: "1", isGeneric: false, status: "ACTIVE" })
     );
     await t.mutation(api.businessRelations.open, { token, customerId: ids.customerId, role: "Buyer for the school team" });
     const relationId = (await t.query(api.businessRelations.listByCustomer, { customerId: ids.customerId }))[0].relationId;

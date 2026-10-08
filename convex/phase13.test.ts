@@ -17,7 +17,6 @@ async function seed() {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
     });
     const categoryId = await ctx.db.insert("categories", { name: "T-Shirts", active: true, createdAt: now, updatedAt: now });

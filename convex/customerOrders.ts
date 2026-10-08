@@ -9,6 +9,7 @@ import { performSale } from "./sales";
 import { variantLabel } from "./inventory";
 import { paymentMethodValidator } from "./lib/paymentMethods";
 import { requireOpenSession } from "./cashRegister";
+import { assertCustomerCanBuy } from "./customers";
 
 const EPSILON = 0.005;
 
@@ -134,6 +135,7 @@ export const create = mutation({
     const actor = await authorize(ctx, args.token, "pos.use");
     const customer = await ctx.db.get(args.customerId);
     if (!customer) throw new Error("Customer not found.");
+    assertCustomerCanBuy(customer);
     if (customer.isGeneric) throw new Error("Orders need a named customer.");
     if (args.items.length === 0) throw new Error("An order needs at least one item.");
     if (!(await ctx.db.get(args.branchId))) throw new Error("Branch not found.");

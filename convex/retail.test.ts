@@ -62,14 +62,12 @@ async function seed() {
       name: "Walk-in",
       phone1: "0",
       isGeneric: true,
-      active: true,
       status: "ACTIVE",
     });
     const namedCustomerId = await ctx.db.insert("customers", {
       name: "Jane Doe",
       phone1: "841234567",
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
     });
 
@@ -271,6 +269,49 @@ describe("sales", () => {
   });
 });
 
+describe("customer status", () => {
+  test("a disabled customer cannot buy; archived ones are hidden unless asked for", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const sell = () =>
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: ids.namedCustomerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "CARD", amount: 250 }],
+      });
+
+    await t.mutation(api.customers.setStatus, { token: ids.admin.token, id: ids.namedCustomerId, status: "DISABLED" });
+    await expect(sell()).rejects.toThrow(/disabled/);
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).find((a) => a.action === "customer.status_changed")
+    );
+    expect(audit?.details).toContain('status "ACTIVE" → "DISABLED"');
+
+    await t.mutation(api.customers.setStatus, { token: ids.admin.token, id: ids.namedCustomerId, status: "ARCHIVED" });
+    const listed = async (showArchived: boolean) =>
+      (
+        await t.query(api.customers.listPaginated, {
+          paginationOpts: { numItems: 50, cursor: null },
+          showArchived,
+        })
+      ).page.map((c) => c._id);
+    expect(await listed(false)).not.toContain(ids.namedCustomerId);
+    expect(await listed(true)).toContain(ids.namedCustomerId);
+
+    await t.mutation(api.customers.setStatus, { token: ids.admin.token, id: ids.namedCustomerId, status: "ACTIVE" });
+    await sell();
+  });
+
+  test("the walk-in customer cannot be disabled", async () => {
+    const { t, ids } = await seed();
+    await expect(
+      t.mutation(api.customers.setStatus, { token: ids.admin.token, id: ids.customerId, status: "DISABLED" })
+    ).rejects.toThrow(/walk-in/);
+  });
+});
+
 describe("sale status vs payment status", () => {
   test("a part-paid sale is COMPLETED and owes money through paymentStatus", async () => {
     const { t, ids, setStock } = await seed();
@@ -391,7 +432,6 @@ describe("returns", () => {
         name: "Jane",
         phone1: "123",
         isGeneric: false,
-        active: true,
         status: "ACTIVE",
       })
     );

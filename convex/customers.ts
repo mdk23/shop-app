@@ -266,6 +266,7 @@ export const getPosContext = query({
         initials: computeInitials(customer!.name),
         tier: (customer!.tier ?? "NOVO") as "NOVO" | "REGULAR" | "VIP",
         isGeneric: !!customer!.isGeneric,
+        status: customer!.status,
         customerCode: customer!.customerCode,
         email: customer!.email,
         notes: customer!.notes,
@@ -478,7 +479,6 @@ export const create = mutation({
       ...data,
       customerCode: `C-${String(seq).padStart(5, "0")}`,
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
     });
     await writeAudit(ctx, {
@@ -505,7 +505,6 @@ export const getOrCreateGeneric = mutation({
       name: "Walk-in Customer",
       phone1: "000000000",
       isGeneric: true,
-      active: true,
       status: "ACTIVE",
     });
   },
@@ -528,35 +527,39 @@ export const update = mutation({
   },
 });
 
-export const archive = mutation({
-  args: { token: v.string(), id: v.id("customers") },
+/** Refuses a sale or order for a customer who is disabled or archived. */
+export function assertCustomerCanBuy(customer: Doc<"customers">) {
+  if (customer.status === "DISABLED") {
+    throw new Error(`${customer.name} is disabled and cannot be used for new sales or orders.`);
+  }
+  if (customer.status === "ARCHIVED") {
+    throw new Error(`${customer.name} is archived and cannot be used for new sales or orders.`);
+  }
+}
+
+/** Sets a customer's status: ACTIVE, DISABLED (listed, cannot buy) or ARCHIVED (hidden). */
+export const setStatus = mutation({
+  args: {
+    token: v.string(),
+    id: v.id("customers"),
+    status: v.union(v.literal("ACTIVE"), v.literal("DISABLED"), v.literal("ARCHIVED")),
+  },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "customers.manage");
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found.");
-    if (customer.isGeneric) throw new Error("Cannot archive the walk-in customer.");
-    await ctx.db.patch(args.id, { status: "ARCHIVED", active: false });
+    if (customer.isGeneric && args.status !== "ACTIVE") {
+      throw new Error("The walk-in customer cannot be disabled or archived.");
+    }
+    if (customer.status === args.status) return;
+    await ctx.db.patch(args.id, { status: args.status });
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
-      action: "customer.archived",
+      action: "customer.status_changed",
       entityType: "customer",
       entityId: args.id,
-    });
-  },
-});
-
-export const unarchive = mutation({
-  args: { token: v.string(), id: v.id("customers") },
-  handler: async (ctx, args) => {
-    const actor = await authorize(ctx, args.token, "customers.manage");
-    await ctx.db.patch(args.id, { status: "ACTIVE", active: true });
-    await writeAudit(ctx, {
-      userId: actor._id,
-      username: actor.username,
-      action: "customer.unarchived",
-      entityType: "customer",
-      entityId: args.id,
+      details: `"${customer.name}": status "${customer.status}" → "${args.status}"`,
     });
   },
 });
@@ -583,7 +586,6 @@ export const createMinimal = mutation({
       phone1: normalized,
       customerCode: `C-${String(seq).padStart(5, "0")}`,
       isGeneric: false,
-      active: true,
       status: "ACTIVE",
       whatsappOptIn: args.whatsappOptIn ?? false,
     });

@@ -46,7 +46,6 @@ describe("module smoke tests", () => {
         name: "Jane",
         phone1: "841234567",
         isGeneric: false,
-        active: true,
         status: "ACTIVE",
       });
       const relationId = await ctx.db.insert("businessRelations", {
@@ -77,7 +76,6 @@ describe("module smoke tests", () => {
         name: "Jane",
         phone1: "841234567",
         isGeneric: false,
-        active: true,
         status: "ACTIVE",
       });
       const branchId = await ctx.db.insert("branches", {

@@ -13,6 +13,7 @@ import { writeAudit } from "./audit";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 import { paymentMethodValidator, type PaymentMethod } from "./lib/paymentMethods";
 import { requireOpenSession } from "./cashRegister";
+import { assertCustomerCanBuy } from "./customers";
 import {
   applyDailyMetrics,
   applyTodayCounters,
@@ -474,6 +475,10 @@ export const create = mutation({
   handler: async (ctx, args): Promise<Id<"sales">> => {
     const { token, ...rest } = args;
     const actor = await authorize(ctx, token, "pos.use");
+    // A new sale needs a customer who can buy. Exchanges and order collections reuse
+    // performSale for business that already exists, so they are not checked.
+    const customer = await ctx.db.get(rest.customerId);
+    if (customer) assertCustomerCanBuy(customer);
     return await performSale(ctx, actor, rest);
   },
 });

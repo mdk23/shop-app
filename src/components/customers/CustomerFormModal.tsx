@@ -11,8 +11,18 @@ import { X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/contexts/LanguageContext";
 
+export type CustomerStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
+
+const STATUS_LABEL: Record<CustomerStatus, string> = {
+  ACTIVE: "Active",
+  DISABLED: "Disabled (cannot buy)",
+  ARCHIVED: "Archived (hidden)",
+};
+
 export type CustomerFormExisting = {
   _id: Id<"customers">;
+  status?: CustomerStatus;
+  isGeneric?: boolean;
   name: string;
   phone1: string;
   phone2?: string;
@@ -47,6 +57,7 @@ export function CustomerFormModal({
   const create = useMutation(api.customers.create);
   const update = useMutation(api.customers.update);
   const updateProfile = useMutation(api.customers.updateProfile);
+  const setStatus = useMutation(api.customers.setStatus);
 
   const categories = useQuery(api.categories.list, {});
   const colors = useQuery(api.colors.list, {});
@@ -71,6 +82,7 @@ export function CustomerFormModal({
     address: existing?.address ?? "",
     notes: existing?.notes ?? "",
   });
+  const [status, setStatusValue] = useState<CustomerStatus>(existing?.status ?? "ACTIVE");
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
 
@@ -137,6 +149,9 @@ export function CustomerFormModal({
       if (nuitValue && nuitValue !== (currentNuitValue ?? "")) {
         await setNuitMutation({ token, customerId: id, number: nuitValue });
       }
+      if (existing && status !== (existing.status ?? "ACTIVE")) {
+        await setStatus({ token, id, status });
+      }
 
       onSaved?.(id);
       onClose();
@@ -168,6 +183,17 @@ export function CustomerFormModal({
         <Field label={t("Full name")} required>
           <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} />
         </Field>
+        {existing && !existing.isGeneric && (
+          <Field label={t("Status")}>
+            <Select value={status} onChange={(e) => setStatusValue(e.target.value as CustomerStatus)}>
+              {(Object.keys(STATUS_LABEL) as CustomerStatus[]).map((s) => (
+                <option key={s} value={s}>
+                  {t(STATUS_LABEL[s])}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label={t("Phone")} required>
             <TextInput value={f.phone1} onChange={(e) => set("phone1", e.target.value)} />

@@ -19,7 +19,7 @@ import {
   inputClass,
 } from "@/components/ui";
 import { usePagedQuery } from "@/lib/pagination";
-import { CustomerFormModal } from "@/components/customers/CustomerFormModal";
+import { CustomerFormModal, type CustomerStatus } from "@/components/customers/CustomerFormModal";
 import { Plus, Search, Pencil } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
@@ -34,16 +34,17 @@ type Customer = {
   notes?: string;
   customerCode?: string;
   isGeneric?: boolean;
-  status?: string;
+  status?: CustomerStatus;
 };
 
 export default function CustomersPage() {
   const { t } = useTranslation();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const searchResults = useQuery(
     api.customers.search,
-    search.trim() ? { query: search } : "skip"
+    search.trim() ? { query: search, showArchived } : "skip"
   );
   const {
     rows: pagedResults,
@@ -54,7 +55,7 @@ export default function CustomersPage() {
     hasNext,
     goPrev,
     goNext,
-  } = usePagedQuery(api.customers.listPaginated, search.trim() ? "skip" : {});
+  } = usePagedQuery(api.customers.listPaginated, search.trim() ? "skip" : { showArchived });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -75,6 +76,10 @@ export default function CustomersPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <label className="flex items-center gap-2 text-xs font-bold">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          {t("Show archived")}
+        </label>
         <div className="ml-auto" />
         <Button
           onClick={() => {
@@ -114,6 +119,16 @@ export default function CustomersPage() {
                       <Badge tone="neutral">
                         <span className="ml-1">{t("walk-in")}</span>
                       </Badge>
+                    )}
+                    {c.status === "DISABLED" && (
+                      <span className="ml-1">
+                        <Badge tone="warning">{t("Disabled")}</Badge>
+                      </span>
+                    )}
+                    {c.status === "ARCHIVED" && (
+                      <span className="ml-1">
+                        <Badge tone="neutral">{t("Archived")}</Badge>
+                      </span>
                     )}
                   </Td>
                   <Td>{c.phone1}</Td>
