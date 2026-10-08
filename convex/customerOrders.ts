@@ -1,14 +1,24 @@
 import { v } from "convex/values";
-import { mutation, query, MutationCtx } from "./_generated/server";
+import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
-import { nextSequence } from "./metrics";
+import { nextDocumentNumber } from "./lib/numbering";
 import { adjustCustomerCredit } from "./customerCredits";
 import { performSale } from "./sales";
 import { variantLabel } from "./inventory";
+import { paymentMethodValidator } from "./lib/paymentMethods";
+import { openSessionForBranch } from "./cashRegister";
 
 const EPSILON = 0.005;
+
+/** Deposits on an order: the payment rows recorded against it. */
+async function orderDeposits(ctx: QueryCtx, orderId: Id<"customerOrders">) {
+  return await ctx.db
+    .query("payments")
+    .withIndex("by_customer_order", (q) => q.eq("customerOrderId", orderId))
+    .collect();
+}
 
 async function activeHoldQty(
   ctx: MutationCtx,
@@ -52,10 +62,7 @@ export const get = query({
       .query("customerOrderItems")
       .withIndex("by_order", (q) => q.eq("orderId", args.id))
       .collect();
-    const deposits = await ctx.db
-      .query("customerDeposits")
-      .withIndex("by_order", (q) => q.eq("orderId", args.id))
-      .collect();
+    const deposits = await orderDeposits(ctx, args.id);
     const depositsTotal = deposits.reduce((s, d) => s + d.amount, 0);
     const customer = await ctx.db.get(order.customerId);
     return {
@@ -141,7 +148,7 @@ export const create = mutation({
       priced.push({
         productVariantId: item.productVariantId,
         productName: product?.name ?? "Unknown product",
-        variantLabel: variantLabel(variant),
+        variantLabel: await variantLabel(ctx, variant),
         quantity: item.quantity,
         unitPrice,
         lineTotal: Math.round(unitPrice * item.quantity * 100) / 100,
@@ -166,8 +173,7 @@ export const create = mutation({
     }
 
     const now = Date.now();
-    const seq = await nextSequence(ctx, "customer_order_sequence");
-    const orderNumber = `CE-${String(seq).padStart(5, "0")}`;
+    const orderNumber = await nextDocumentNumber(ctx, "CUSTOMER_ORDER", now);
     const totalAmount = Math.round(priced.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
     const orderId = await ctx.db.insert("customerOrders", {
       orderNumber,
@@ -213,7 +219,7 @@ export const addDeposit = mutation({
     token: v.string(),
     orderId: v.id("customerOrders"),
     amount: v.number(),
-    method: v.string(),
+    method: paymentMethodValidator,
     referenceExternal: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -222,23 +228,26 @@ export const addDeposit = mutation({
     if (order.status !== "OPEN" && order.status !== "READY") throw new Error("This order is closed.");
     if (args.amount <= 0) throw new Error("A deposit must be a positive amount.");
 
-    const deposits = await ctx.db
-      .query("customerDeposits")
-      .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
-      .collect();
+    const deposits = await orderDeposits(ctx, args.orderId);
     const paid = deposits.reduce((s, d) => s + d.amount, 0);
     if (paid + args.amount > order.totalAmount + EPSILON) {
       throw new Error(`Deposits cannot exceed the order total of ${order.totalAmount}.`);
     }
 
-    await ctx.db.insert("customerDeposits", {
-      orderId: args.orderId,
-      customerId: order.customerId,
-      amount: args.amount,
+    // A deposit is a payment row on the order; cash goes through the open register.
+    const session = args.method === "CASH" ? await openSessionForBranch(ctx, order.branchId) : null;
+    if (args.method === "CASH" && !session) {
+      throw new Error("No open cash register session for this branch. Open the register before taking cash.");
+    }
+    await ctx.db.insert("payments", {
+      customerOrderId: args.orderId,
       method: args.method,
-      referenceExternal: args.referenceExternal?.trim() || undefined,
-      receivedBy: actor._id,
-      receivedByUsername: actor.username,
+      amount: args.amount,
+      kind: "payment",
+      reference: args.referenceExternal?.trim() || undefined,
+      cashRegisterSessionId: session?._id,
+      userId: actor._id,
+      username: actor.username,
       createdAt: Date.now(),
     });
     await writeAudit(ctx, {
@@ -280,10 +289,7 @@ export const cancel = mutation({
     if (!args.reason.trim()) throw new Error("A reason is required to cancel an order.");
 
     await releaseHolds(ctx, args.orderId);
-    const deposits = await ctx.db
-      .query("customerDeposits")
-      .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
-      .collect();
+    const deposits = await orderDeposits(ctx, args.orderId);
     const refundable = Math.round(deposits.reduce((s, d) => s + d.amount, 0) * 100) / 100;
     if (refundable > 0) {
       await adjustCustomerCredit(ctx, {
@@ -319,7 +325,7 @@ export const collect = mutation({
   args: {
     token: v.string(),
     orderId: v.id("customerOrders"),
-    payments: v.array(v.object({ method: v.string(), amount: v.number() })),
+    payments: v.array(v.object({ method: paymentMethodValidator, amount: v.number() })),
     cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
   },
   handler: async (ctx, args): Promise<Id<"sales">> => {
@@ -331,16 +337,11 @@ export const collect = mutation({
       .query("customerOrderItems")
       .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
       .collect();
-    const deposits = await ctx.db
-      .query("customerDeposits")
-      .withIndex("by_order", (q) => q.eq("orderId", args.orderId))
-      .collect();
+    const deposits = await orderDeposits(ctx, args.orderId);
 
-    const byMethod = new Map<string, number>();
-    for (const d of deposits) byMethod.set(d.method, (byMethod.get(d.method) ?? 0) + d.amount);
     const balancePayments = args.payments.filter((p) => p.amount > 0);
-    for (const p of balancePayments) byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + p.amount);
-    const paid = [...byMethod.values()].reduce((s, a) => s + a, 0);
+    const paid =
+      deposits.reduce((s, d) => s + d.amount, 0) + balancePayments.reduce((s, p) => s + p.amount, 0);
     if (paid + EPSILON < order.totalAmount) {
       throw new Error(
         `Pay the balance before collecting: ${(order.totalAmount - paid).toFixed(2)} still due.`
@@ -356,7 +357,8 @@ export const collect = mutation({
         quantity: i.quantity,
         unitPrice: i.unitPrice,
       })),
-      payments: [...byMethod.entries()].map(([method, amount]) => ({ method, amount })),
+      payments: balancePayments,
+      priorPayments: deposits,
       cashRegisterSessionId: args.cashRegisterSessionId,
     });
 

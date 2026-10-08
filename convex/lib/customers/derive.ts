@@ -8,13 +8,7 @@ import { subMonths as dateFnsSubMonths } from "date-fns";
  * as the sale write.
  */
 
-export type SaleStatus =
-  | "COMPLETED"
-  | "PARTIALLY_PAID"
-  | "PENDING"
-  | "CANCELLED"
-  | "REFUNDED"
-  | "PARTIALLY_REFUNDED";
+export type SaleStatus = "COMPLETED" | "CANCELLED" | "RETURNED" | "PARTIALLY_RETURNED";
 
 export type SizeObservation = {
   saleId: string;

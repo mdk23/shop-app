@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
+import { openSessionForBranch } from "./cashRegister";
+import { paymentMethodValidator } from "./lib/paymentMethods";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import {
@@ -12,19 +13,15 @@ import {
   zeroDeltas,
 } from "./metrics";
 
-const isCash = (m: string) => m.trim().toLowerCase() === "cash";
+const isCash = (m: string) => m === "CASH";
 
-function statusPair(paid: number, total: number): {
-  status: Doc<"sales">["status"];
-  paymentStatus: Doc<"sales">["paymentStatus"];
-} {
-  if (paid <= 0) return { status: "PENDING", paymentStatus: "UNPAID" };
-  if (paid + 1e-6 >= total)
-    return { status: "COMPLETED", paymentStatus: "PAID" };
-  return { status: "PARTIALLY_PAID", paymentStatus: "PARTIALLY_PAID" };
+function paymentStatusFor(paid: number, total: number): Doc<"sales">["paymentStatus"] {
+  if (paid <= 0) return "UNPAID";
+  if (paid + 1e-6 >= total) return "PAID";
+  return "PARTIALLY_PAID";
 }
 
-/** Recompute a sale's paidAmount/balance/status from its payment rows. Returns before/after snapshot. */
+/** Recompute a sale's paidAmount/balance/paymentStatus from its payment rows. Returns before/after snapshot. */
 async function recomputeSale(ctx: MutationCtx, saleId: Id<"sales">) {
   const sale = await ctx.db.get(saleId);
   if (!sale) throw new Error("Sale not found.");
@@ -36,18 +33,19 @@ async function recomputeSale(ctx: MutationCtx, saleId: Id<"sales">) {
   const applied = Math.min(Math.max(0, netPaid), sale.total);
   const balance = Math.max(0, sale.total - applied);
 
-  const keepRefunded =
-    sale.status === "REFUNDED" || sale.status === "PARTIALLY_REFUNDED" ||
+  // A refund (from a return or a cancellation) is final for the payment state.
+  const keepPaymentStatus =
+    sale.paymentStatus === "REFUNDED" ||
+    sale.paymentStatus === "PARTIALLY_REFUNDED" ||
     sale.status === "CANCELLED";
-  const next = keepRefunded
-    ? { status: sale.status, paymentStatus: sale.paymentStatus }
-    : statusPair(applied, sale.total);
+  const paymentStatus = keepPaymentStatus
+    ? sale.paymentStatus
+    : paymentStatusFor(applied, sale.total);
 
   await ctx.db.patch(saleId, {
     paidAmount: applied,
     balance,
-    status: next.status,
-    paymentStatus: next.paymentStatus,
+    paymentStatus,
     updatedAt: Date.now(),
   });
   return { sale, before: { paidAmount: sale.paidAmount, balance: sale.balance } };
@@ -67,7 +65,7 @@ export const add = mutation({
   args: {
     token: v.string(),
     saleId: v.id("sales"),
-    method: v.string(),
+    method: paymentMethodValidator,
     amount: v.number(),
   },
   handler: async (ctx, args) => {
@@ -79,34 +77,19 @@ export const add = mutation({
       throw new Error("Cannot add a payment to a cancelled sale.");
 
     const now = Date.now();
+    // Cash goes through the branch's open register; the payment row is the drawer's record.
+    const session = isCash(args.method) ? await openSessionForBranch(ctx, sale.branchId) : null;
     await ctx.db.insert("payments", {
       saleId: args.saleId,
       method: args.method,
       amount: args.amount,
       kind: "payment",
+      cashRegisterSessionId: session?._id,
+      userId: actor._id,
+      username: actor.username,
       createdAt: now,
     });
     await recomputeSale(ctx, args.saleId);
-
-    if (isCash(args.method)) {
-      const open = await ctx.db
-        .query("cashRegisterSessions")
-        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
-        .collect();
-      const session =
-        open.find((s) => s.branchId === sale.branchId) ??
-        open.find((s) => !s.branchId);
-      if (session) {
-        await ctx.runMutation(internal.cashRegister.recordCashSale, {
-          sessionId: session._id,
-          userId: actor._id,
-          username: actor.username,
-          amount: args.amount,
-          saleId: args.saleId,
-          saleNumber: sale.saleNumber,
-        });
-      }
-    }
 
     const dateString = getLocalDateString(sale.createdAt);
     await applyDailyMetrics(ctx, dateString, {

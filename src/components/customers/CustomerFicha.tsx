@@ -12,7 +12,7 @@ import { FichaHistorico } from "./FichaHistorico";
 import { FichaPreferencias } from "./FichaPreferencias";
 import { FichaContatos } from "./FichaContatos";
 import { FichaProcuras } from "./FichaProcuras";
-import { FichaContactosExtra } from "./FichaContactosExtra";
+import { FichaNuit } from "./FichaNuit";
 import { FichaRelacao } from "./FichaRelacao";
 import { useTranslation } from "@/contexts/LanguageContext";
 
@@ -23,7 +23,7 @@ const TABS = [
   "Preferences",
   "Contacts",
   "Requests",
-  "Extra contacts",
+  "Tax number",
   "Relation",
 ] as const;
 type Tab = (typeof TABS)[number];
@@ -78,7 +78,7 @@ export function CustomerFicha({
       {tab === "Preferences" && <FichaPreferencias customerId={customerId} context={context} />}
       {tab === "Contacts" && <FichaContatos customerId={customerId} />}
       {tab === "Requests" && <FichaProcuras customerId={customerId} />}
-      {tab === "Extra contacts" && <FichaContactosExtra customerId={customerId} />}
+      {tab === "Tax number" && <FichaNuit customerId={customerId} />}
       {tab === "Relation" && <FichaRelacao customerId={customerId} />}
     </div>
   );

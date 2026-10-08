@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { receiveIntoStock } from "./lib/receiving";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 /**
  * Goods-received note. With `purchaseOrderId`, lines match the order: quantities
@@ -107,7 +108,7 @@ export const openOrders = query({
               _id: line._id,
               productVariantId: line.productVariantId,
               productName: product?.name ?? "—",
-              variantLabel: variant ? [variant.color, variant.size].filter(Boolean).join(" / ") || variant.sku : "—",
+              variantLabel: variant ? formatVariantLabel(await variantNames(ctx, variant), variant.sku) : "—",
               outstanding: line.quantityOrdered - line.quantityReceived,
               unitCost: line.unitCost,
             };
@@ -152,7 +153,7 @@ export const get = query({
         return {
           ...item,
           productName: product?.name ?? "—",
-          variantLabel: variant ? [variant.color, variant.size].filter(Boolean).join(" / ") || variant.sku : "—",
+          variantLabel: variant ? formatVariantLabel(await variantNames(ctx, variant), variant.sku) : "—",
         };
       })
     );

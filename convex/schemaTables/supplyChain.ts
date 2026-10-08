@@ -1,9 +1,10 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// Supplier side: evaluation, partnership terms, receipt inspection, shipments and
-// customs. Defects in received goods are `qualityIssues` with source RECEIPT. Supply commitments are purchaseOrders; their progress is
-// purchaseOrders.status plus purchaseReceipts.
+// Supplier side: evaluation, supply relations and their partnership terms, receipt
+// inspection, shipments and customs. Every purchase order is placed under a supply
+// relation (purchaseOrders.supplyRelationId); its progress is purchaseOrders.status plus
+// purchaseReceipts. Defects in received goods are `qualityIssues` with source RECEIPT.
 export const supplyChainTables = {
   supplierEvaluations: defineTable({
     supplierId: v.id("suppliers"),

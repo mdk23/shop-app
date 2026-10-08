@@ -35,7 +35,6 @@ import {
   Ship,
   ShieldCheck,
   ClipboardCheck,
-  MapPin,
   Percent,
   TrendingUp,
   Wallet,
@@ -113,7 +112,6 @@ const menuGroups: MenuGroup[] = [
       { name: "Transfers", href: "/inventory/transfers", icon: ArrowLeftRight, allowedRoles: MANAGER },
       { name: "Stock Ledger", href: "/inventory/ledger", icon: ScrollText, allowedRoles: MANAGER },
       { name: "Stock counts", href: "/stock-counts", icon: ClipboardCheck, allowedRoles: MANAGER },
-      { name: "Locations", href: "/settings/locations", icon: MapPin, allowedRoles: MANAGER },
     ],
   },
   {

@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -48,8 +49,8 @@ async function seed() {
     const variantId = await ctx.db.insert("productVariants", {
       productId,
       sku: "BASIC-BLK-M",
-      size: "M",
-      color: "Black",
+      sizeId: await findOrCreateSize(ctx, "M"),
+      colorId: await findOrCreateColor(ctx, "Black"),
       costPrice: 100,
       sellingPrice: 250,
       reorderLevel: 3,
@@ -152,7 +153,7 @@ describe("sales", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 3 }],
-      payments: [{ method: "Card", amount: 750 }],
+      payments: [{ method: "CARD", amount: 750 }],
     });
 
     expect(await stockAt()).toBe(7);
@@ -168,7 +169,7 @@ describe("sales", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantId, quantity: 5 }],
-        payments: [{ method: "Card", amount: 1250 }],
+        payments: [{ method: "CARD", amount: 1250 }],
       })
     ).rejects.toThrow(/[Ii]nsufficient stock/);
 
@@ -179,7 +180,7 @@ describe("sales", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantId, quantity: 5 }],
-        payments: [{ method: "Card", amount: 1250 }],
+        payments: [{ method: "CARD", amount: 1250 }],
       })
     ).resolves.toBeDefined();
   });
@@ -193,7 +194,7 @@ describe("sales", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
 
     await t.mutation(api.productVariants.update, {
@@ -224,7 +225,7 @@ describe("sales", () => {
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantId, quantity: 1 }],
         discount: 100, // 40% of 250
-        payments: [{ method: "Card", amount: 150 }],
+        payments: [{ method: "CARD", amount: 150 }],
       })
     ).rejects.toThrow(/[Aa]ccess denied|discount_large/);
 
@@ -236,7 +237,7 @@ describe("sales", () => {
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantId, quantity: 1 }],
         discount: 100,
-        payments: [{ method: "Card", amount: 150 }],
+        payments: [{ method: "CARD", amount: 150 }],
       })
     ).resolves.toBeDefined();
   });
@@ -249,7 +250,7 @@ describe("sales", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
     await expect(
       t.mutation(api.sales.cancel, {
@@ -258,6 +259,61 @@ describe("sales", () => {
         reason: "nope",
       })
     ).rejects.toThrow(/[Aa]ccess denied/);
+  });
+});
+
+describe("sale status vs payment status", () => {
+  test("a part-paid sale is COMPLETED and owes money through paymentStatus", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+      payments: [{ method: "CARD", amount: 100 }],
+    })) as Id<"sales">;
+    const sale = await t.run((ctx) => ctx.db.get(saleId));
+    expect(sale).toMatchObject({ status: "COMPLETED", paymentStatus: "PARTIALLY_PAID", balance: 150 });
+
+    const debt = await t.query(api.analytics.customerDebt, { token: ids.admin.token });
+    expect(JSON.stringify(debt)).toContain("150");
+  });
+
+  test("returning everything marks the goods RETURNED and the money REFUNDED", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      payments: [{ method: "CARD", amount: 500 }],
+    })) as Id<"sales">;
+    const saleItemId = await t.run(async (ctx) => {
+      const it = await ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+        .first();
+      return it!._id;
+    });
+
+    const returnOne = (quantity: number) =>
+      t.mutation(api.salesReturns.create, {
+        token: ids.admin.token,
+        saleId,
+        items: [{ saleItemId, quantity, reason: "WRONG_SIZE", restock: true }],
+        refundMethod: "CARD",
+        notes: "test",
+      });
+
+    await returnOne(1);
+    let sale = await t.run((ctx) => ctx.db.get(saleId));
+    expect(sale).toMatchObject({ status: "PARTIALLY_RETURNED", paymentStatus: "PARTIALLY_REFUNDED" });
+
+    await returnOne(1);
+    sale = await t.run((ctx) => ctx.db.get(saleId));
+    expect(sale).toMatchObject({ status: "RETURNED", paymentStatus: "REFUNDED" });
   });
 });
 
@@ -271,7 +327,7 @@ describe("returns", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 2 }],
-      payments: [{ method: "Card", amount: 500 }],
+      payments: [{ method: "CARD", amount: 500 }],
     })) as Id<"sales">;
     expect(await stockAt()).toBe(8);
 
@@ -335,7 +391,7 @@ describe("returns", () => {
       branchId: ids.branchId,
       customerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     })) as Id<"sales">;
     const saleItemId = await t.run(async (ctx) => {
       const it = await ctx.db
@@ -499,7 +555,7 @@ describe("delivery fees", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 300 }],
+      payments: [{ method: "CARD", amount: 300 }],
       isDelivery: true,
       deliveryFeeId: feeId,
     });
@@ -555,7 +611,7 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
     const rows = await t.run((ctx) =>
       ctx.db
@@ -582,8 +638,8 @@ describe("customer profile & tier", () => {
       const variantLId = await ctx.db.insert("productVariants", {
         productId: ids.productId,
         sku: "BASIC-BLK-L",
-        size: "L",
-        color: "Black",
+        sizeId: await findOrCreateSize(ctx, "L"),
+        colorId: await findOrCreateColor(ctx, "Black"),
         costPrice: 100,
         sellingPrice: 250,
         reorderLevel: 3,
@@ -608,14 +664,14 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
     await t.mutation(api.sales.create, {
       token: ids.admin.token,
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: variantLId, quantity: 2 }],
-      payments: [{ method: "Card", amount: 500 }],
+      payments: [{ method: "CARD", amount: 500 }],
     });
 
     const rows = await t.run((ctx) =>
@@ -647,7 +703,7 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 3 }],
-      payments: [{ method: "Card", amount: 750 }],
+      payments: [{ method: "CARD", amount: 750 }],
     });
 
     const rows = await t.run((ctx) =>
@@ -669,7 +725,7 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     })) as Id<"sales">;
 
     let rows = await t.run((ctx) =>
@@ -717,8 +773,8 @@ describe("customer profile & tier", () => {
       const variantLId = await ctx.db.insert("productVariants", {
         productId: ids.productId,
         sku: "BASIC-BLK-L",
-        size: "L",
-        color: "Black",
+        sizeId: await findOrCreateSize(ctx, "L"),
+        colorId: await findOrCreateColor(ctx, "Black"),
         costPrice: 100,
         sellingPrice: 250,
         reorderLevel: 3,
@@ -743,7 +799,7 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     })) as Id<"sales">;
     const saleItemId = await t.run(async (ctx) => {
       const it = await ctx.db
@@ -784,7 +840,7 @@ describe("customer profile & tier", () => {
         branchId: ids.branchId,
         customerId: ids.namedCustomerId,
         items: [{ productVariantId: ids.variantId, quantity: 1 }],
-        payments: [{ method: "Card", amount: 250 }],
+        payments: [{ method: "CARD", amount: 250 }],
       });
 
     await sell();
@@ -808,7 +864,7 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.customerId, // generic walk-in
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
     const rows = await t.run((ctx) =>
       ctx.db
@@ -830,14 +886,14 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
     await t.mutation(api.sales.create, {
       token: ids.admin.token,
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "Card", amount: 250 }],
+      payments: [{ method: "CARD", amount: 250 }],
     });
 
     const rows = await t.run((ctx) =>
@@ -867,7 +923,7 @@ describe("customer profile & tier", () => {
         branchId: ids.branchId,
         customerId: ids.namedCustomerId,
         items: [{ productVariantId: ids.variantId, quantity: 1 }],
-        payments: [{ method: "Card", amount: 250 }],
+        payments: [{ method: "CARD", amount: 250 }],
       });
     }
     const context = await t.query(api.customers.getPosContext, {
@@ -887,7 +943,7 @@ describe("customer profile & tier", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 2 }],
-      payments: [{ method: "Card", amount: 500 }],
+      payments: [{ method: "CARD", amount: 500 }],
     });
 
     const customer = await t.run((ctx) => ctx.db.get(ids.namedCustomerId));

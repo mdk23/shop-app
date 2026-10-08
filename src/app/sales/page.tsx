@@ -30,7 +30,17 @@ import { useClientPage } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Search, Download } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
-import { SALE_STATUS_LABEL } from "@/lib/badgeTones";
+import {
+  SALE_STATUS_LABEL,
+  SALE_STATUS_TONE,
+  SALE_PAYMENT_LABEL,
+  SALE_PAYMENT_TONE,
+} from "@/lib/badgeTones";
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
+  type PaymentMethod,
+} from "../../../convex/lib/paymentMethods";
 
 const RANGES = [
   { key: "today", label: "Today" },
@@ -39,15 +49,6 @@ const RANGES = [
   { key: "90", label: "Last 90 days" },
 ];
 
-const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error"> = {
-  COMPLETED: "success",
-  PARTIALLY_PAID: "warning",
-  PENDING: "info",
-  CANCELLED: "neutral",
-  REFUNDED: "error",
-  PARTIALLY_REFUNDED: "error",
-};
-
 export default function SalesPage() {
   const { t } = useTranslation();
   const fmt = useCurrency();
@@ -55,6 +56,7 @@ export default function SalesPage() {
   const { branchId, isAll } = useResolvedBranch();
   const [range, setRange] = useState("30");
   const [statusFilter, setStatusFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<Id<"sales"> | null>(null);
 
@@ -79,11 +81,12 @@ export default function SalesPage() {
     return (sales ?? []).filter(
       (s) =>
         (!statusFilter || s.status === statusFilter) &&
+        (!paymentFilter || s.paymentStatus === paymentFilter) &&
         (!term ||
           s.saleNumber.toLowerCase().includes(term) ||
           (s.customerName ?? "").toLowerCase().includes(term))
     );
-  }, [sales, statusFilter, search]);
+  }, [sales, statusFilter, paymentFilter, search]);
 
   const page = useClientPage(filtered);
 
@@ -98,7 +101,7 @@ export default function SalesPage() {
   }, [filtered]);
 
   const exportCsv = () => {
-    const header = "sale,date,customer,status,subtotal,discount,tax,total,paid,balance";
+    const header = "sale,date,customer,status,payment,subtotal,discount,tax,total,paid,balance";
     const body = filtered
       .map((s) =>
         [
@@ -106,6 +109,7 @@ export default function SalesPage() {
           new Date(s.createdAt).toISOString(),
           (s.customerName ?? "").replace(/,/g, " "),
           s.status,
+          s.paymentStatus,
           s.subtotal,
           s.discount,
           s.tax,
@@ -149,9 +153,21 @@ export default function SalesPage() {
           className="w-44"
         >
           <option value="">{t("All statuses")}</option>
-          {Object.keys(STATUS_TONE).map((s) => (
-            <option key={s} value={s}>
-              {t(SALE_STATUS_LABEL[s as keyof typeof SALE_STATUS_LABEL])}
+          {Object.entries(SALE_STATUS_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>
+              {t(label)}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={paymentFilter}
+          onChange={(e) => setPaymentFilter(e.target.value)}
+          className="w-44"
+        >
+          <option value="">{t("All payments")}</option>
+          {Object.entries(SALE_PAYMENT_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>
+              {t(label)}
             </option>
           ))}
         </Select>
@@ -185,6 +201,7 @@ export default function SalesPage() {
                 <Th className="text-right">{t("Total")}</Th>
                 <Th className="text-right">{t("Balance")}</Th>
                 <Th>{t("Status")}</Th>
+                <Th>{t("Payment")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -204,8 +221,11 @@ export default function SalesPage() {
                     {fmt(s.balance)}
                   </Td>
                   <Td>
-                    <Badge tone={STATUS_TONE[s.status]}>
-                      {t(SALE_STATUS_LABEL[s.status as keyof typeof SALE_STATUS_LABEL])}
+                    <Badge tone={SALE_STATUS_TONE[s.status]}>{t(SALE_STATUS_LABEL[s.status])}</Badge>
+                  </Td>
+                  <Td>
+                    <Badge tone={SALE_PAYMENT_TONE[s.paymentStatus]}>
+                      {t(SALE_PAYMENT_LABEL[s.paymentStatus])}
                     </Badge>
                   </Td>
                 </tr>
@@ -248,7 +268,7 @@ function SaleDetail({
   const sale = useQuery(api.sales.get, { id });
   const addPayment = useMutation(api.payments.add);
   const cancelSale = useMutation(api.sales.cancel);
-  const [method, setMethod] = useState("Cash");
+  const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -283,8 +303,8 @@ function SaleDetail({
                 {t("Receipt")}
               </Button>
               {sale.status !== "CANCELLED" &&
-                sale.status !== "REFUNDED" &&
-                sale.status !== "PARTIALLY_REFUNDED" && (
+                sale.status !== "RETURNED" &&
+                sale.status !== "PARTIALLY_RETURNED" && (
                   <Button variant="danger" onClick={() => setConfirmCancel(true)}>
                     {t("Cancel sale")}
                   </Button>
@@ -326,7 +346,7 @@ function SaleDetail({
                   <div key={p._id} className="flex justify-between px-3 py-2 text-xs">
                     <span>
                       {p.kind === "refund" ? `${t("Refund")} · ` : ""}
-                      {p.method}
+                      {t(PAYMENT_METHOD_LABEL[p.method])}
                     </span>
                     <span className={p.amount < 0 ? "text-error font-bold" : "font-bold"}>
                       {fmt(p.amount)}
@@ -346,9 +366,11 @@ function SaleDetail({
                 </p>
                 <div className="flex items-end gap-2">
                   <Field label={t("Method")}>
-                    <Select value={method} onChange={(e) => setMethod(e.target.value)}>
-                      {["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"].map((m) => (
-                        <option key={m}>{m}</option>
+                    <Select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+                      {PAYMENT_METHODS.map((m) => (
+                        <option key={m} value={m}>
+                          {t(PAYMENT_METHOD_LABEL[m])}
+                        </option>
                       ))}
                     </Select>
                   </Field>

@@ -1159,4 +1159,13 @@ export const pt: Record<string, string> = {
   "Defective goods are recorded here and treated.": "Os produtos com defeito são registados e tratados aqui.",
   "No quality issues recorded": "Sem problemas de qualidade registados",
   "Unpaid": "Por pagar",
+  "Returned": "Devolvida",
+  "Partially returned": "Devolvida em parte",
+  "All payments": "Todos os pagamentos",
+  "No purchase orders under this relation yet": "Ainda sem ordens de compra nesta relação",
+  "Cash": "Numerário",
+  "Card": "Cartão",
+  "M-Pesa": "M-Pesa",
+  "e-Mola": "e-Mola",
+  "Bank transfer": "Transferência bancária",
 };

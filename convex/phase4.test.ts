@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -37,7 +38,7 @@ async function seed() {
     const variantId = await ctx.db.insert("productVariants", {
       productId,
       sku: "TEE-M",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 100,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -127,7 +128,7 @@ describe("customer orders: reservations", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantId, quantity: 7 }],
-        payments: [{ method: "Card", amount: 5000 }],
+        payments: [{ method: "CARD", amount: 5000 }],
       })
     ).rejects.toThrow(/held for customer orders/);
 
@@ -136,7 +137,7 @@ describe("customer orders: reservations", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 6 }],
-      payments: [{ method: "Card", amount: 5000 }],
+      payments: [{ method: "CARD", amount: 5000 }],
     });
     expect(await stockOf(t, ids.branchId, ids.variantId)).toBe(4);
   });
@@ -167,7 +168,7 @@ describe("customer orders: reservations", () => {
       token,
       orderId,
       amount: 100,
-      method: "Card",
+      method: "CARD",
     });
     await t.mutation(api.customerOrders.cancel, { token, orderId, reason: "Changed mind" });
 
@@ -180,7 +181,7 @@ describe("customer orders: reservations", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 10 }],
-      payments: [{ method: "Card", amount: 5000 }],
+      payments: [{ method: "CARD", amount: 5000 }],
     });
   });
 });
@@ -198,12 +199,12 @@ describe("customer orders: deposits and collection", () => {
       token,
       orderId,
       amount: 200,
-      method: "Card",
+      method: "CARD",
     });
     const saleId = await t.mutation(api.customerOrders.collect, {
       token,
       orderId,
-      payments: [{ method: "Card", amount: 300 }],
+      payments: [{ method: "CARD", amount: 300 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -214,6 +215,39 @@ describe("customer orders: deposits and collection", () => {
     const order = await t.query(api.customerOrders.get, { id: orderId });
     expect(order?.status).toBe("COLLECTED");
     expect(order?.saleId).toBe(saleId);
+
+    // The deposit is one payment row, linked to the sale, not copied onto it.
+    const payments = await t.run((ctx) => ctx.db.query("payments").collect());
+    expect(payments.map((p) => p.amount).sort()).toEqual([200, 300]);
+    expect(payments.every((p) => p.saleId === saleId)).toBe(true);
+    expect(payments.find((p) => p.amount === 200)?.customerOrderId).toBe(orderId);
+    expect(sale?.paidAmount).toBe(500);
+    expect(sale?.paymentStatus).toBe("PAID");
+  });
+
+  test("a cash deposit needs an open register, and then counts in that drawer", async () => {
+    const { t, token, ids } = await seed();
+    const orderId = await t.mutation(api.customerOrders.create, {
+      token,
+      customerId: ids.customerId,
+      branchId: ids.branchId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+    });
+    await expect(
+      t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 100, method: "CASH" })
+    ).rejects.toThrow(/open cash register/i);
+
+    const sessionId = await t.mutation(api.cashRegister.openSession, {
+      token,
+      openingAmount: 50,
+      branchId: ids.branchId,
+    });
+    await t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 100, method: "CASH" });
+
+    const session = await t.query(api.cashRegister.getSessionWithMovements, { sessionId });
+    expect(session?.expectedCash).toBe(150);
+    expect(session?.movements.map((m) => m.type).sort()).toEqual(["opening", "sale"]);
+    expect(session?.movements.find((m) => m.type === "sale")?.description).toMatch(/^Cash deposit/);
   });
 
   test("refuses to collect before the balance is paid", async () => {
@@ -228,7 +262,7 @@ describe("customer orders: deposits and collection", () => {
       t.mutation(api.customerOrders.collect, {
         token,
         orderId,
-        payments: [{ method: "Card", amount: 100 }],
+        payments: [{ method: "CARD", amount: 100 }],
       })
     ).rejects.toThrow(/Pay the balance/);
   });
@@ -242,7 +276,7 @@ describe("customer orders: deposits and collection", () => {
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
     });
     await expect(
-      t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 300, method: "Card" })
+      t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 300, method: "CARD" })
     ).rejects.toThrow(/cannot exceed/);
   });
 

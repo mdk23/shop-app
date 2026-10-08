@@ -267,6 +267,11 @@ function TermsTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
           <p className="text-sm font-bold">
             {t("Since")} {formatDate(rel.startedAt)} {rel.endedAt ? `· ${t("Ended")} ${formatDate(rel.endedAt)}` : ""}
           </p>
+          <p className="text-xs text-on-surface-variant">
+            {rel.orders.length === 0
+              ? t("No purchase orders under this relation yet")
+              : `${t("Purchase orders")}: ${rel.orders.map((o) => o.orderCode).join(", ")}`}
+          </p>
           {rel.terms.filter((x) => x.validTo === undefined).length === 0 ? (
             <p className="text-xs text-on-surface-variant">{t("No terms yet")}</p>
           ) : (

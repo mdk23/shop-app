@@ -48,6 +48,10 @@ export async function recordVariantPrice(
   });
 }
 
+/**
+ * The size with this name (case-insensitive), or undefined for no size. A variant keeps
+ * only the id, so an unknown name is refused rather than silently dropped.
+ */
 export async function resolveSizeId(
   ctx: MutationCtx,
   name: string | undefined
@@ -55,9 +59,12 @@ export async function resolveSizeId(
   const wanted = name?.trim().toLowerCase();
   if (!wanted) return undefined;
   const sizes = await ctx.db.query("sizes").collect();
-  return sizes.find((s) => s.name.trim().toLowerCase() === wanted)?._id;
+  const match = sizes.find((s) => s.name.trim().toLowerCase() === wanted);
+  if (!match) throw new Error(`Size "${name!.trim()}" does not exist. Add it in Settings → Sizes first.`);
+  return match._id;
 }
 
+/** The colour with this name (case-insensitive), or undefined for no colour. Unknown names are refused. */
 export async function resolveColorId(
   ctx: MutationCtx,
   name: string | undefined
@@ -65,5 +72,29 @@ export async function resolveColorId(
   const wanted = name?.trim().toLowerCase();
   if (!wanted) return undefined;
   const colors = await ctx.db.query("colors").collect();
-  return colors.find((c) => c.name.trim().toLowerCase() === wanted)?._id;
+  const match = colors.find((c) => c.name.trim().toLowerCase() === wanted);
+  if (!match) throw new Error(`Color "${name!.trim()}" does not exist. Add it in Settings → Colors first.`);
+  return match._id;
+}
+
+/** The size with this name, created (active, unscaled) if the list does not have it yet. */
+export async function findOrCreateSize(ctx: MutationCtx, name: string): Promise<Id<"sizes">> {
+  const wanted = name.trim();
+  const existing = (await ctx.db.query("sizes").collect()).find(
+    (s) => s.name.trim().toLowerCase() === wanted.toLowerCase()
+  );
+  if (existing) return existing._id;
+  const now = Date.now();
+  return await ctx.db.insert("sizes", { name: wanted, active: true, createdAt: now, updatedAt: now });
+}
+
+/** The colour with this name, created (active) if the list does not have it yet. */
+export async function findOrCreateColor(ctx: MutationCtx, name: string): Promise<Id<"colors">> {
+  const wanted = name.trim();
+  const existing = (await ctx.db.query("colors").collect()).find(
+    (c) => c.name.trim().toLowerCase() === wanted.toLowerCase()
+  );
+  if (existing) return existing._id;
+  const now = Date.now();
+  return await ctx.db.insert("colors", { name: wanted, active: true, createdAt: now, updatedAt: now });
 }

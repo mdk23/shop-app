@@ -120,14 +120,14 @@ describe("variant price history", () => {
 });
 
 describe("phase 1 backfill", () => {
-  test("is idempotent and fills history, size scale and size/colour links", async () => {
+  test("is idempotent and fills price history and the size scale", async () => {
     const { t, ids } = await seed();
     const legacyVariantId = await t.run((ctx) =>
       ctx.db.insert("productVariants", {
         productId: ids.productId,
         sku: "LEGACY-BLK-M",
-        size: "M",
-        color: "Black",
+        sizeId: ids.sizeId,
+        colorId: ids.colorId,
         costPrice: 100,
         sellingPrice: 250,
         reorderLevel: 0,
@@ -140,16 +140,9 @@ describe("phase 1 backfill", () => {
     const first = await t.mutation(internal.phase1Backfill.run, {});
     expect(first.variantsChecked).toBe(1);
     expect(first.sizesScoped).toBe(1);
-    expect(first.variantsSized).toBe(1);
-    expect(first.variantsColored).toBe(1);
 
     const second = await t.mutation(internal.phase1Backfill.run, {});
     expect(second.sizesScoped).toBe(0);
-    expect(second.variantsSized).toBe(0);
-
-    const variant = await t.run((ctx) => ctx.db.get(legacyVariantId));
-    expect(variant?.sizeId).toBe(ids.sizeId);
-    expect(variant?.colorId).toBe(ids.colorId);
 
     const size = await t.run((ctx) => ctx.db.get(ids.sizeId));
     expect(size?.scaleId).toBeDefined();

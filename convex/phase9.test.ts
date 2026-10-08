@@ -54,7 +54,6 @@ describe("diagram tables are registered", () => {
     for (const name of [
       ...Object.keys(planningTables),
       ...Object.keys(supplyChainTables),
-      "locations",
     ]) {
       expect(registered).toContain(name);
     }
@@ -184,26 +183,7 @@ describe("supply chain", () => {
   });
 });
 
-describe("locations and request fields", () => {
-  test("a branch has a central warehouse and a store location", async () => {
-    const t = convexTest(schema, modules);
-    const locations = await t.run(async (ctx) => {
-      const branchId = await ctx.db.insert("branches", {
-        name: "Main",
-        code: "MAIN",
-        status: "ACTIVE",
-        createdAt: Date.now(),
-      });
-      await ctx.db.insert("locations", { branchId, name: "Armazém", locationType: "CENTRAL" });
-      await ctx.db.insert("locations", { branchId, name: "Loja", locationType: "STORE" });
-      return ctx.db
-        .query("locations")
-        .withIndex("by_branch", (q) => q.eq("branchId", branchId))
-        .collect();
-    });
-    expect(locations.map((l) => l.locationType).sort()).toEqual(["CENTRAL", "STORE"]);
-  });
-
+describe("request fields", () => {
   test("a request keeps its quantity, needed-by date and intended use", async () => {
     const t = convexTest(schema, modules);
     const row = await t.run(async (ctx) => {

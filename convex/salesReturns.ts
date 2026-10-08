@@ -9,13 +9,15 @@ import {
   applyDailyMetrics,
   applyTodayCounters,
   getLocalDateString,
-  nextSequence,
   sanitizeKey,
   zeroDeltas,
 } from "./metrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { performSale } from "./sales";
 import { refreshCustomerProfile } from "./customerProfile";
+import { nextDocumentNumber } from "./lib/numbering";
+import { openSessionForBranch } from "./cashRegister";
+import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
 
 const RETURN_ITEM_REASON = v.union(
   v.literal("WRONG_SIZE"),
@@ -37,15 +39,7 @@ const RESOLUTION = v.union(
   v.literal("RECUSA")
 );
 
-const REFUND_METHOD = v.union(
-  v.literal("CASH"),
-  v.literal("CARD"),
-  v.literal("MPESA"),
-  v.literal("EMOLA"),
-  v.literal("BANK_TRANSFER"),
-  v.literal("STORE_CREDIT"),
-  v.literal("OTHER")
-);
+const REFUND_METHOD = refundMethodValidator;
 
 async function getSetting(ctx: MutationCtx, key: string) {
   return await ctx.db
@@ -156,27 +150,12 @@ export const create = mutation({
 
     const now = Date.now();
     const dateString = getLocalDateString(now);
-    const seq = await nextSequence(
-      ctx,
-      `return_sequence_${sale.branchId}`,
-      dateString
-    );
-    const branch = await ctx.db.get(sale.branchId);
-    const returnNumber = `R-${branch?.code ?? "STORE"}-${dateString
-      .replace(/-/g, "")
-      .slice(2)}-${String(seq).padStart(3, "0")}`;
+    const returnNumber = await nextDocumentNumber(ctx, "RETURN", now);
 
     // Cash refund needs an open register.
     let session: Doc<"cashRegisterSessions"> | null = null;
     if (args.refundMethod === "CASH") {
-      const open = await ctx.db
-        .query("cashRegisterSessions")
-        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
-        .collect();
-      session =
-        open.find((s) => s.branchId === sale.branchId) ??
-        open.find((s) => !s.branchId) ??
-        null;
+      session = await openSessionForBranch(ctx, sale.branchId);
       if (!session)
         throw new Error("Open a cash register before issuing a cash refund.");
     }
@@ -250,24 +229,18 @@ export const create = mutation({
         notes: `Store credit for ${returnNumber}`,
       });
     } else {
+      // The payment row is the refund's record, and the drawer's when paid in cash.
       await ctx.db.insert("payments", {
         saleId: args.saleId,
         method: args.refundMethod,
         amount: -refundAmount,
         kind: "refund",
         returnId,
+        cashRegisterSessionId: args.refundMethod === "CASH" ? session?._id : undefined,
+        userId: actor._id,
+        username: actor.username,
         createdAt: now,
       });
-      if (args.refundMethod === "CASH" && session) {
-        await ctx.runMutation(internal.cashRegister.recordCashRefund, {
-          sessionId: session._id,
-          userId: actor._id,
-          username: actor.username,
-          amount: refundAmount,
-          returnId,
-          returnNumber,
-        });
-      }
     }
 
     // Update sale status.
@@ -282,13 +255,14 @@ export const create = mutation({
       returnedTotal += await alreadyReturnedQty(ctx, si._id);
     }
     const fullyReturned = returnedTotal >= soldTotal;
+    // Goods back → status RETURNED / PARTIALLY_RETURNED; money back → paymentStatus.
     // KNOWN GAP: this only patches status/paymentStatus — sale.total/balance/
     // paidAmount are NOT reduced on refund, so customers.ts's lifetime-spend/
     // debt aggregates overstate for refunded sales. Not fixed here (see
     // convex/customerProfile.ts's docstring); refreshCustomerProfile below
     // works around it locally for its own trailing-12-month tier figure only.
     await ctx.db.patch(args.saleId, {
-      status: fullyReturned ? "REFUNDED" : "PARTIALLY_REFUNDED",
+      status: fullyReturned ? "RETURNED" : "PARTIALLY_RETURNED",
       paymentStatus: fullyReturned ? "REFUNDED" : "PARTIALLY_REFUNDED",
       updatedAt: now,
     });
@@ -355,7 +329,7 @@ export const exchange = mutation({
     ),
     // Payment the customer makes when the replacement costs more.
     additionalPayments: v.optional(
-      v.array(v.object({ method: v.string(), amount: v.number() }))
+      v.array(v.object({ method: paymentMethodValidator, amount: v.number() }))
     ),
     // Where to send a positive balance when the replacement costs less.
     refundMethod: REFUND_METHOD,
@@ -390,15 +364,7 @@ export const exchange = mutation({
     const dateString = getLocalDateString(now);
 
     // 3. Record the return itself (store credit for any leftover value).
-    const seq = await nextSequence(
-      ctx,
-      `return_sequence_${sale.branchId}`,
-      dateString
-    );
-    const branch = await ctx.db.get(sale.branchId);
-    const returnNumber = `R-${branch?.code ?? "STORE"}-${dateString
-      .replace(/-/g, "")
-      .slice(2)}-${String(seq).padStart(3, "0")}`;
+    const returnNumber = await nextDocumentNumber(ctx, "RETURN", now);
     const leftoverCredit = Math.max(0, returnValue - discountToApply);
 
     const returnId = await ctx.db.insert("salesReturns", {
@@ -483,7 +449,7 @@ export const exchange = mutation({
     const difference = Math.round((grossNew - returnValue) * 100) / 100;
 
     await ctx.db.patch(args.saleId, {
-      status: "PARTIALLY_REFUNDED",
+      status: "PARTIALLY_RETURNED",
       paymentStatus: "PARTIALLY_REFUNDED",
       updatedAt: now,
     });

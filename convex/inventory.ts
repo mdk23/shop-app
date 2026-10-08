@@ -7,25 +7,25 @@ import {
   MutationCtx,
   QueryCtx,
 } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { validateToken } from "./auth";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { syncGlobalStockCounters } from "./metrics";
 import { movementTypeValidator } from "./schema";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 // ─────────────────────────────────────────────
 // VARIANT CONTEXT + STOCK CACHE HELPERS
 // ─────────────────────────────────────────────
 
-export function variantLabel(variant: {
-  size?: string;
-  color?: string;
-  sku: string;
-}): string {
-  const parts = [variant.color, variant.size].filter(Boolean);
-  return parts.length ? parts.join(" / ") : variant.sku;
+/** "Black / M" for a variant (or its SKU), from its size and colour ids. */
+export async function variantLabel(
+  ctx: QueryCtx | MutationCtx,
+  variant: Doc<"productVariants">
+): Promise<string> {
+  return formatVariantLabel(await variantNames(ctx, variant), variant.sku);
 }
 
 export async function getVariantContext(
@@ -39,7 +39,7 @@ export async function getVariantContext(
     variant,
     product,
     productName: product?.name ?? "Unknown product",
-    label: variantLabel(variant),
+    label: await variantLabel(ctx, variant),
   };
 }
 

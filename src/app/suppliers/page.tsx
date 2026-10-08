@@ -38,8 +38,9 @@ type Supplier = {
   phone?: string;
   email?: string;
   address?: string;
-  taxNumber?: string;
-  paymentTerms?: string;
+  paymentTermId?: Id<"paymentTerms">;
+  paymentTermName?: string;
+  nuit?: string;
   notes?: string;
   status: "ACTIVE" | "INACTIVE";
 };
@@ -119,7 +120,7 @@ export default function SuppliersPage() {
                   </Td>
                   <Td className="text-on-surface-variant">{s.contactName ?? "—"}</Td>
                   <Td>{s.phone ?? "—"}</Td>
-                  <Td className="text-on-surface-variant">{s.paymentTerms ?? "—"}</Td>
+                  <Td className="text-on-surface-variant">{s.paymentTermName ?? "—"}</Td>
                   <Td>
                     <Badge tone={s.status === "ACTIVE" ? "success" : "neutral"}>
                       {t(s.status === "ACTIVE" ? "Active" : "Inactive")}
@@ -206,14 +207,15 @@ function SupplierModal({
   const { t } = useTranslation();
   const create = useMutation(api.suppliers.create);
   const update = useMutation(api.suppliers.update);
+  const terms = useQuery(api.commercialSettings.listPaymentTerms, {});
   const [f, setF] = useState({
     name: existing?.name ?? "",
     contactName: existing?.contactName ?? "",
     phone: existing?.phone ?? "",
     email: existing?.email ?? "",
     address: existing?.address ?? "",
-    taxNumber: existing?.taxNumber ?? "",
-    paymentTerms: existing?.paymentTerms ?? "",
+    nuit: existing?.nuit ?? "",
+    paymentTermId: (existing?.paymentTermId ?? "") as string,
     notes: existing?.notes ?? "",
     status: existing?.status ?? "ACTIVE",
   });
@@ -231,8 +233,8 @@ function SupplierModal({
         phone: f.phone || undefined,
         email: f.email || undefined,
         address: f.address || undefined,
-        taxNumber: f.taxNumber || undefined,
-        paymentTerms: f.paymentTerms || undefined,
+        nuit: f.nuit.trim() && f.nuit.trim() !== existing?.nuit ? f.nuit : undefined,
+        paymentTermId: f.paymentTermId ? (f.paymentTermId as Id<"paymentTerms">) : undefined,
         notes: f.notes || undefined,
         status: f.status as "ACTIVE" | "INACTIVE",
       };
@@ -278,8 +280,8 @@ function SupplierModal({
         <Field label={t("Email")}>
           <TextInput value={f.email} onChange={(e) => set("email", e.target.value)} />
         </Field>
-        <Field label={t("Tax number")}>
-          <TextInput value={f.taxNumber} onChange={(e) => set("taxNumber", e.target.value)} />
+        <Field label={t("Tax number (NUIT)")}>
+          <TextInput value={f.nuit} onChange={(e) => set("nuit", e.target.value)} placeholder="400000000" />
         </Field>
       </div>
       <Field label={t("Address")}>
@@ -287,11 +289,16 @@ function SupplierModal({
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={t("Payment terms")}>
-          <TextInput
-            value={f.paymentTerms}
-            onChange={(e) => set("paymentTerms", e.target.value)}
-            placeholder={t("e.g. Net 30")}
-          />
+          <Select value={f.paymentTermId} onChange={(e) => set("paymentTermId", e.target.value)}>
+            <option value="">{t("Not set")}</option>
+            {(terms ?? [])
+              .filter((x) => x.active || x._id === f.paymentTermId)
+              .map((x) => (
+                <option key={x._id} value={x._id}>
+                  {x.name}
+                </option>
+              ))}
+          </Select>
         </Field>
         <Field label={t("Status")}>
           <Select value={f.status} onChange={(e) => set("status", e.target.value)}>

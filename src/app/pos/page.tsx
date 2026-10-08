@@ -19,6 +19,7 @@ import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Search, Plus, Minus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { PaymentMethod } from "../../../convex/lib/paymentMethods";
 
 type Gender = "women" | "men" | "unisex";
 
@@ -271,7 +272,7 @@ export default function PosPage() {
   const total = taxable + tax;
 
   const completeSale = async (
-    payments: { method: string; amount: number }[]
+    payments: { method: PaymentMethod; amount: number }[]
   ): Promise<void> => {
     if (!branchId) {
       toast.error(t("No branch selected."));

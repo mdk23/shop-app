@@ -5,7 +5,8 @@ import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
-import { nextSequence } from "./metrics";
+import { nextDocumentNumber } from "./lib/numbering";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 async function hydrate(ctx: MutationCtx, transferId: Id<"stockTransfers">) {
   const transfer = await ctx.db.get(transferId);
@@ -36,10 +37,9 @@ export const create = mutation({
     for (const it of args.items)
       if (it.quantity <= 0) throw new Error("Quantities must be positive.");
 
-    const seq = await nextSequence(ctx, "transfer_sequence");
     const now = Date.now();
     const transferId = await ctx.db.insert("stockTransfers", {
-      transferNumber: `TR-${String(seq).padStart(5, "0")}`,
+      transferNumber: await nextDocumentNumber(ctx, "TRANSFER", now),
       sourceBranchId: args.sourceBranchId,
       destinationBranchId: args.destinationBranchId,
       status: args.submit ? "PENDING" : "DRAFT",
@@ -169,13 +169,15 @@ export const receive = mutation({
     }
 
     const now = Date.now();
-    await ctx.db.insert("stockTransferReceipts", {
+    const receiptId = await ctx.db.insert("stockTransferReceipts", {
       transferId: args.transferId,
       receivedBy: actor._id,
       receivedByUsername: actor.username,
       receivedAt: now,
-      lines,
     });
+    for (const line of lines) {
+      await ctx.db.insert("stockTransferReceiptLines", { receiptId, ...line });
+    }
     await ctx.db.patch(args.transferId, {
       status: "RECEIVED",
       completedAt: now,
@@ -193,13 +195,20 @@ export const receive = mutation({
   },
 });
 
+/** The arrival count of a transfer, with its lines. */
 export const getReceipt = query({
   args: { transferId: v.id("stockTransfers") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const receipt = await ctx.db
       .query("stockTransferReceipts")
       .withIndex("by_transfer", (q) => q.eq("transferId", args.transferId))
       .first();
+    if (!receipt) return null;
+    const lines = await ctx.db
+      .query("stockTransferReceiptLines")
+      .withIndex("by_receipt", (q) => q.eq("receiptId", receipt._id))
+      .collect();
+    return { ...receipt, lines };
   },
 });
 
@@ -263,7 +272,7 @@ export const get = query({
         return {
           ...it,
           sku: variant?.sku ?? "?",
-          label: `${product?.name ?? "?"} — ${[variant?.color, variant?.size].filter(Boolean).join(" / ")}`,
+          label: `${product?.name ?? "?"} — ${variant ? formatVariantLabel(await variantNames(ctx, variant), "") : ""}`,
         };
       })
     );

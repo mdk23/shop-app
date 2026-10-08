@@ -43,29 +43,40 @@ export const SIZE_CONFIDENCE_LABEL: Record<SizeConfidence, string> = {
   INFERIDO: "Suggested from history",
 };
 
-export type SaleStatus =
-  | "COMPLETED"
-  | "PARTIALLY_PAID"
-  | "PENDING"
-  | "CANCELLED"
-  | "REFUNDED"
-  | "PARTIALLY_REFUNDED";
+/** What happened to the sale (goods). */
+export type SaleStatus = "COMPLETED" | "CANCELLED" | "RETURNED" | "PARTIALLY_RETURNED";
 
 export const SALE_STATUS_TONE: Record<SaleStatus, Tone> = {
   COMPLETED: "success",
-  PARTIALLY_PAID: "warning",
-  PENDING: "warning",
   CANCELLED: "neutral",
-  REFUNDED: "error",
-  PARTIALLY_REFUNDED: "error",
+  RETURNED: "error",
+  PARTIALLY_RETURNED: "warning",
 };
 
 /** Canonical English `t()` keys — see the `TIER_LABEL` note above. */
 export const SALE_STATUS_LABEL: Record<SaleStatus, string> = {
   COMPLETED: "Completed",
-  PARTIALLY_PAID: "Partially paid",
-  PENDING: "Pending",
   CANCELLED: "Cancelled",
+  RETURNED: "Returned",
+  PARTIALLY_RETURNED: "Partially returned",
+};
+
+/** The money on a sale. */
+export type SalePaymentStatus = "PAID" | "PARTIALLY_PAID" | "UNPAID" | "REFUNDED" | "PARTIALLY_REFUNDED";
+
+export const SALE_PAYMENT_TONE: Record<SalePaymentStatus, Tone> = {
+  PAID: "success",
+  PARTIALLY_PAID: "warning",
+  UNPAID: "warning",
+  REFUNDED: "error",
+  PARTIALLY_REFUNDED: "error",
+};
+
+/** Canonical English `t()` keys — see the `TIER_LABEL` note above. */
+export const SALE_PAYMENT_LABEL: Record<SalePaymentStatus, string> = {
+  PAID: "Paid",
+  PARTIALLY_PAID: "Partially paid",
+  UNPAID: "Unpaid",
   REFUNDED: "Refunded",
   PARTIALLY_REFUNDED: "Partially refunded",
 };

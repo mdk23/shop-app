@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 const SOURCE = v.union(v.literal("RECEIPT"), v.literal("STOCK"), v.literal("CUSTOMER"));
 
@@ -47,7 +48,7 @@ export const list = query({
               const variant = await ctx.db.get(item.productVariantId);
               const product = variant ? await ctx.db.get(variant.productId) : null;
               const variantLabel = variant
-                ? [variant.color, variant.size].filter(Boolean).join(" / ") || variant.sku
+                ? formatVariantLabel(await variantNames(ctx, variant), variant.sku)
                 : "";
               return { ...item, label: product ? `${product.name} ${variantLabel}`.trim() : "—" };
             })

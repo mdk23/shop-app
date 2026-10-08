@@ -4,6 +4,7 @@ import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { getLocalDateString } from "./metrics";
 import { stockStatus } from "./stock";
+import { loadVariantNames } from "./lib/variantNames";
 
 // ─────────────────────────────────────────────
 // BRANCH FILTER
@@ -83,6 +84,7 @@ export const getDashboardMetrics = query({
     const methods: Record<string, { amount: number; count: number }> = {};
     const productQty: Record<string, number> = {};
     const categoryQty: Record<string, number> = {};
+    const namesOf = await loadVariantNames(ctx);
     const sizeQty: Record<string, number> = {};
     const colorQty: Record<string, number> = {};
 
@@ -126,10 +128,9 @@ export const getDashboardMetrics = query({
             categoryQty[category.name] =
               (categoryQty[category.name] ?? 0) + it.quantity;
         }
-        if (variant?.size)
-          sizeQty[variant.size] = (sizeQty[variant.size] ?? 0) + it.quantity;
-        if (variant?.color)
-          colorQty[variant.color] = (colorQty[variant.color] ?? 0) + it.quantity;
+        const names = variant ? namesOf(variant) : { size: undefined, color: undefined };
+        if (names.size) sizeQty[names.size] = (sizeQty[names.size] ?? 0) + it.quantity;
+        if (names.color) colorQty[names.color] = (colorQty[names.color] ?? 0) + it.quantity;
       }
     }
 
@@ -276,6 +277,7 @@ export const salesBreakdown = query({
     const sales = (await salesInRange(ctx, args.start, args.end, branchId)).filter(
       (s) => s.status !== "CANCELLED"
     );
+    const namesOf = await loadVariantNames(ctx);
     const cat: Record<string, { qty: number; revenue: number }> = {};
     const size: Record<string, { qty: number; revenue: number }> = {};
     const color: Record<string, { qty: number; revenue: number }> = {};
@@ -304,8 +306,9 @@ export const salesBreakdown = query({
         bump(product, it.productName, it.quantity, it.total, profit);
         const variant = await ctx.db.get(it.productVariantId);
         if (variant) {
-          if (variant.size) bump(size, variant.size, it.quantity, it.total);
-          if (variant.color) bump(color, variant.color, it.quantity, it.total);
+          const names = namesOf(variant);
+          if (names.size) bump(size, names.size, it.quantity, it.total);
+          if (names.color) bump(color, names.color, it.quantity, it.total);
           const p = await ctx.db.get(variant.productId);
           if (p) {
             const c = await ctx.db.get(p.categoryId);
@@ -335,16 +338,17 @@ export const customerDebt = query({
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
     const branchId = normalizeBranchId(args.branchId);
-    let sales = await ctx.db
+    const partlyPaid = await ctx.db
       .query("sales")
-      .withIndex("by_status", (q) => q.eq("status", "PARTIALLY_PAID"))
+      .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "PARTIALLY_PAID"))
       .collect();
-    const pending = await ctx.db
+    const unpaid = await ctx.db
       .query("sales")
-      .withIndex("by_status", (q) => q.eq("status", "PENDING"))
+      .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "UNPAID"))
       .collect();
-    sales = [...sales, ...pending].filter(
-      (s) => (!branchId || s.branchId === branchId) && s.balance > 0
+    const sales = [...partlyPaid, ...unpaid].filter(
+      (s) =>
+        s.status !== "CANCELLED" && (!branchId || s.branchId === branchId) && s.balance > 0
     );
     const byCustomer: Record<string, { name: string; balance: number; sales: number }> = {};
     for (const s of sales) {

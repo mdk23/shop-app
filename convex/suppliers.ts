@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { currentNuitOf, recordNuit } from "./lib/fiscal";
 
 export const list = query({
   args: {
@@ -23,7 +24,14 @@ export const list = query({
           (r.contactName ?? "").toLowerCase().includes(s) ||
           (r.phone ?? "").includes(s)
       );
-    return rows.sort((a, b) => a.name.localeCompare(b.name));
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return await Promise.all(
+      rows.map(async (r) => ({
+        ...r,
+        paymentTermName: r.paymentTermId ? (await ctx.db.get(r.paymentTermId))?.name : undefined,
+        nuit: await currentNuitOf(ctx, { supplierId: r._id }),
+      }))
+    );
   },
 });
 
@@ -33,18 +41,21 @@ const SUPPLIER_FIELDS = {
   phone: v.optional(v.string()),
   email: v.optional(v.string()),
   address: v.optional(v.string()),
-  taxNumber: v.optional(v.string()),
   status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE")),
-  paymentTerms: v.optional(v.string()),
+  paymentTermId: v.optional(v.id("paymentTerms")),
   notes: v.optional(v.string()),
+  // Recorded in fiscalIdentities, not on the supplier.
+  nuit: v.optional(v.string()),
 };
 
 export const create = mutation({
   args: { token: v.string(), ...SUPPLIER_FIELDS },
   handler: async (ctx, args) => {
-    const { token, ...data } = args;
+    const { token, nuit, ...data } = args;
     const actor = await authorize(ctx, token, "suppliers.manage");
+    if (data.paymentTermId && !(await ctx.db.get(data.paymentTermId))) throw new Error("Payment term not found.");
     const id = await ctx.db.insert("suppliers", { ...data, createdAt: Date.now() });
+    if (nuit?.trim()) await recordNuit(ctx, { supplierId: id }, nuit);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -60,9 +71,11 @@ export const create = mutation({
 export const update = mutation({
   args: { token: v.string(), id: v.id("suppliers"), ...SUPPLIER_FIELDS },
   handler: async (ctx, args) => {
-    const { token, id, ...data } = args;
+    const { token, id, nuit, ...data } = args;
     const actor = await authorize(ctx, token, "suppliers.manage");
+    if (data.paymentTermId && !(await ctx.db.get(data.paymentTermId))) throw new Error("Payment term not found.");
     await ctx.db.patch(id, data);
+    if (nuit?.trim()) await recordNuit(ctx, { supplierId: id }, nuit);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -87,6 +100,11 @@ export const remove = mutation({
       throw new Error(
         "This supplier has purchase orders and cannot be deleted. Set it inactive instead."
       );
+    const identities = await ctx.db
+      .query("fiscalIdentities")
+      .withIndex("by_supplier", (q) => q.eq("supplierId", args.id))
+      .collect();
+    for (const row of identities) await ctx.db.delete(row._id);
     await ctx.db.delete(args.id);
     await writeAudit(ctx, {
       userId: actor._id,

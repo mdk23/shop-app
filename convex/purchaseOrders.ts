@@ -4,8 +4,10 @@ import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
-import { nextSequence } from "./metrics";
+import { nextDocumentNumber } from "./lib/numbering";
 import { receiveIntoStock } from "./lib/receiving";
+import { openRelationFor } from "./supplyRelations";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 const PO_ITEM = v.object({
   productVariantId: v.id("productVariants"),
@@ -88,7 +90,7 @@ export const get = query({
           ...item,
           sku: variant?.sku ?? "—",
           variantLabel: variant
-            ? [variant.color, variant.size].filter(Boolean).join(" / ") || variant.sku
+            ? formatVariantLabel(await variantNames(ctx, variant), variant.sku)
             : "—",
           productName: product?.name ?? "Unknown product",
         };
@@ -120,16 +122,18 @@ export const create = mutation({
   handler: async (ctx, args): Promise<Id<"purchaseOrders">> => {
     const actor = await authorize(ctx, args.token, "purchasing.manage");
     if (args.items.length === 0) throw new Error("Add at least one line.");
+    if (!(await ctx.db.get(args.supplierId))) throw new Error("Supplier not found.");
+    const supplyRelationId = await openRelationFor(ctx, args.supplierId);
 
     const totalAmount = args.items.reduce(
       (s, i) => s + i.quantityOrdered * i.unitCost,
       0
     );
-    const seq = await nextSequence(ctx, "purchase_order_sequence");
     const now = Date.now();
-    const orderCode = `PO-${String(seq).padStart(5, "0")}`;
+    const orderCode = await nextDocumentNumber(ctx, "PURCHASE_ORDER", now);
 
     const purchaseOrderId = await ctx.db.insert("purchaseOrders", {
+      supplyRelationId,
       supplierId: args.supplierId,
       branchId: args.branchId,
       orderCode,
@@ -185,8 +189,11 @@ export const update = mutation({
       (s, i) => s + i.quantityOrdered * i.unitCost,
       0
     );
+    const supplierChanged = args.supplierId !== po.supplierId;
+    if (supplierChanged && !(await ctx.db.get(args.supplierId))) throw new Error("Supplier not found.");
     await ctx.db.patch(args.id, {
       supplierId: args.supplierId,
+      supplyRelationId: supplierChanged ? await openRelationFor(ctx, args.supplierId) : po.supplyRelationId,
       branchId: args.branchId,
       orderDate: args.orderDate,
       expectedDeliveryDate: args.expectedDeliveryDate,

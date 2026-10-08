@@ -4,9 +4,9 @@ import { ensureDefaultPriceList, recordVariantPrice } from "./lib/catalog";
 const DEFAULT_SCALE_NAME = "Geral";
 
 /**
- * One-off, idempotent: opens price history for variants that predate it, adds a
- * default size scale for existing sizes, and links variants to their size/colour
- * rows by name. Safe to re-run; it only writes what is still missing.
+ * One-off, idempotent: opens price history for variants that predate it and adds a
+ * default size scale for existing sizes. Safe to re-run; it only writes what is
+ * still missing.
  */
 export const run = internalMutation({
   args: {},
@@ -42,36 +42,9 @@ export const run = internalMutation({
       }
     }
 
-    const colors = await ctx.db.query("colors").collect();
-    const sizeIdByName = new Map(
-      sizes.map((s) => [s.name.trim().toLowerCase(), s._id] as const)
-    );
-    const colorIdByName = new Map(
-      colors.map((c) => [c.name.trim().toLowerCase(), c._id] as const)
-    );
-
-    let variantsSized = 0;
-    let variantsColored = 0;
-    for (const variant of variants) {
-      const sizeKey = variant.size?.trim().toLowerCase();
-      const colorKey = variant.color?.trim().toLowerCase();
-      const patch: { sizeId?: (typeof sizes)[number]["_id"]; colorId?: (typeof colors)[number]["_id"] } = {};
-      if (variant.sizeId === undefined && sizeKey && sizeIdByName.has(sizeKey)) {
-        patch.sizeId = sizeIdByName.get(sizeKey);
-        variantsSized += 1;
-      }
-      if (variant.colorId === undefined && colorKey && colorIdByName.has(colorKey)) {
-        patch.colorId = colorIdByName.get(colorKey);
-        variantsColored += 1;
-      }
-      if (Object.keys(patch).length > 0) await ctx.db.patch(variant._id, patch);
-    }
-
     return {
       variantsChecked: variants.length,
       sizesScoped,
-      variantsSized,
-      variantsColored,
     };
   },
 });

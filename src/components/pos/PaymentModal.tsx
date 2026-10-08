@@ -5,12 +5,11 @@ import { Modal, Button, Select } from "@/components/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/contexts/LanguageContext";
-
-// Payment method identifiers — stored as-is on `payments.method` and matched
-// against elsewhere (e.g. `sales.ts`'s `isCash` cash-register logic), so these
-// are data values, not UI copy: they stay in English/brand form rather than
-// being translated.
-const METHODS = ["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"];
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
+  type PaymentMethod,
+} from "../../../convex/lib/paymentMethods";
 
 export function PaymentModal({
   total,
@@ -23,22 +22,22 @@ export function PaymentModal({
   total: number;
   fmt: (n: number) => string;
   onClose: () => void;
-  onComplete: (payments: { method: string; amount: number }[]) => void | Promise<void>;
+  onComplete: (payments: { method: PaymentMethod; amount: number }[]) => void | Promise<void>;
   title?: string;
   /** Rendered below the payment rows, above the paid/change summary — e.g. the
    *  anonymous-sale phone capture field. Keeps this modal about payments. */
   extraFields?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const [rows, setRows] = useState<{ method: string; amount: string }[]>([
-    { method: "Cash", amount: total.toFixed(2) },
+  const [rows, setRows] = useState<{ method: PaymentMethod; amount: string }[]>([
+    { method: "CASH", amount: total.toFixed(2) },
   ]);
   const [busy, setBusy] = useState(false);
 
   const paid = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const change = paid - total;
 
-  const submit = async (rowsToSend: { method: string; amount: number }[]) => {
+  const submit = async (rowsToSend: { method: PaymentMethod; amount: number }[]) => {
     setBusy(true);
     try {
       await onComplete(rowsToSend);
@@ -84,14 +83,14 @@ export function PaymentModal({
               value={row.method}
               onChange={(e) =>
                 setRows((p) =>
-                  p.map((r, j) => (j === i ? { ...r, method: e.target.value } : r))
+                  p.map((r, j) => (j === i ? { ...r, method: e.target.value as PaymentMethod } : r))
                 )
               }
               className="w-40"
             >
-              {METHODS.map((m) => (
+              {PAYMENT_METHODS.map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {t(PAYMENT_METHOD_LABEL[m])}
                 </option>
               ))}
             </Select>
@@ -119,7 +118,7 @@ export function PaymentModal({
           onClick={() =>
             setRows((p) => [
               ...p,
-              { method: "Card", amount: Math.max(0, total - paid).toFixed(2) },
+              { method: "CARD", amount: Math.max(0, total - paid).toFixed(2) },
             ])
           }
           className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-primary"

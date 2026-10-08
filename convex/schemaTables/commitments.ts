@@ -2,7 +2,7 @@ import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // Price adjustments on a customer order (SQL module M03). Order status lives on
-// customerOrders; deposits and refunds are customerDeposits and payments; quantities
+// customerOrders; deposits and refunds are payments rows; quantities
 // come from purchaseOrderItems and customerOrderItems.
 export const commitmentTables = {
   commitmentAdjustments: defineTable({

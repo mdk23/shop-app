@@ -54,15 +54,13 @@ const RESOLUTIONS = [
 ] as const;
 type Resolution = (typeof RESOLUTIONS)[number]["value"];
 
-const REFUND_METHODS = [
-  "CASH",
-  "CARD",
-  "MPESA",
-  "EMOLA",
-  "BANK_TRANSFER",
-  "STORE_CREDIT",
-  "OTHER",
-] as const;
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
+  REFUND_METHODS,
+  type PaymentMethod,
+  type RefundMethod,
+} from "../../../convex/lib/paymentMethods";
 
 export default function ReturnsPage() {
   const { t } = useTranslation();
@@ -162,7 +160,7 @@ export default function ReturnsPage() {
                     <tr key={r._id}>
                       <Td className="font-mono text-[11px]">{r.returnNumber}</Td>
                       <Td>
-                        <Badge tone="info">{r.refundMethod}</Badge>
+                        <Badge tone="info">{t(PAYMENT_METHOD_LABEL[r.refundMethod])}</Badge>
                       </Td>
                       <Td className="text-right font-bold">{fmt(r.refundAmount)}</Td>
                       <Td className="text-on-surface-variant text-xs">
@@ -229,14 +227,14 @@ function ReturnModal({
     Record<string, { qty: number; reason: (typeof REASONS)[number]; restock: boolean; condition: Condition }>
   >({});
   const [refundMethod, setRefundMethod] =
-    useState<(typeof REFUND_METHODS)[number]>("CASH");
+    useState<RefundMethod>("CASH");
   const [resolution, setResolution] = useState<Resolution | "">("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [replacements, setReplacements] = useState<
     (PickedVariant & { quantity: number })[]
   >([]);
-  const [extraPayMethod, setExtraPayMethod] = useState("Cash");
+  const [extraPayMethod, setExtraPayMethod] = useState<PaymentMethod>("CASH");
 
   const toggle = (id: string, item: (typeof sale.items)[number]) =>
     setRows((p) =>
@@ -535,22 +533,24 @@ function ReturnModal({
           {mode === "exchange" && difference > 0 ? (
             <Select
               value={extraPayMethod}
-              onChange={(e) => setExtraPayMethod(e.target.value)}
+              onChange={(e) => setExtraPayMethod(e.target.value as PaymentMethod)}
             >
-              {["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"].map((m) => (
-                <option key={m}>{m}</option>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {t(PAYMENT_METHOD_LABEL[m])}
+                </option>
               ))}
             </Select>
           ) : (
             <Select
               value={refundMethod}
               onChange={(e) =>
-                setRefundMethod(e.target.value as (typeof REFUND_METHODS)[number])
+                setRefundMethod(e.target.value as RefundMethod)
               }
             >
               {REFUND_METHODS.map((m) => (
                 <option key={m} value={m}>
-                  {m.replace(/_/g, " ")}
+                  {t(PAYMENT_METHOD_LABEL[m])}
                 </option>
               ))}
             </Select>

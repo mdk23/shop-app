@@ -10,25 +10,26 @@ import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authorize, requirePermission } from "./permissions";
 import { writeAudit } from "./audit";
-import { variantLabel } from "./inventory";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
+import { paymentMethodValidator, type PaymentMethod } from "./lib/paymentMethods";
 import {
   applyDailyMetrics,
   applyTodayCounters,
   getLocalDateString,
-  nextSequence,
   sanitizeKey,
   zeroDeltas,
   type SaleMetricDeltas,
 } from "./metrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { refreshCustomerProfile } from "./customerProfile";
-import { currentNuit, nextFiscalNumber, round2 } from "./lib/fiscal";
+import { currentNuit, round2 } from "./lib/fiscal";
+import { nextDocumentNumber } from "./lib/numbering";
 
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
 
-const isCash = (method: string) => method.trim().toLowerCase() === "cash";
+const isCash = (method: string) => method === "CASH";
 
 async function getSetting(ctx: MutationCtx, key: string) {
   return await ctx.db
@@ -59,12 +60,6 @@ function paymentStatusFor(paid: number, total: number): Doc<"sales">["paymentSta
   return "PARTIALLY_PAID";
 }
 
-function saleStatusFor(paid: number, total: number): Doc<"sales">["status"] {
-  if (paid <= 0) return "PENDING";
-  if (paid + 1e-6 >= total) return "COMPLETED";
-  return "PARTIALLY_PAID";
-}
-
 // ─────────────────────────────────────────────
 // CREATE SALE (POS checkout) — atomic
 // ─────────────────────────────────────────────
@@ -84,9 +79,7 @@ const saleInputValidator = {
   items: saleItemsValidator,
   discount: v.optional(v.number()), // absolute, sale-level
   taxRate: v.optional(v.number()), // percent; falls back to settings
-  payments: v.optional(
-    v.array(v.object({ method: v.string(), amount: v.number() }))
-  ),
+  payments: v.optional(v.array(v.object({ method: paymentMethodValidator, amount: v.number() }))),
   cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
   isDelivery: v.optional(v.boolean()),
   deliveryFeeId: v.optional(v.id("deliveryFees")),
@@ -104,7 +97,9 @@ type SaleInput = {
   }[];
   discount?: number;
   taxRate?: number;
-  payments?: { method: string; amount: number }[];
+  payments?: { method: PaymentMethod; amount: number }[];
+  /** Money already received for this sale (customer-order deposits). Linked, not copied. */
+  priorPayments?: Doc<"payments">[];
   cashRegisterSessionId?: Id<"cashRegisterSessions">;
   isDelivery?: boolean;
   deliveryFeeId?: Id<"deliveryFees">;
@@ -161,6 +156,7 @@ export async function performSale(
       const product = await ctx.db.get(variant.productId);
       if (!product) throw new Error("Parent product missing for a variant.");
       const category = await ctx.db.get(product.categoryId);
+      const names = await variantNames(ctx, variant);
       const taxRate = product.taxRateId ? await ctx.db.get(product.taxRateId) : null;
       if (taxRate && !taxRate.active) {
         throw new Error(`The IVA rate on ${product.name} is inactive. Update the product before selling it.`);
@@ -190,22 +186,22 @@ export async function performSale(
       if (available < item.quantity && !allowNegSetting) {
         const reservedNote = reserved > 0 ? ` (${reserved} held for customer orders)` : "";
         throw new Error(
-          `Insufficient stock for ${product.name} (${variantLabel(variant)}). Available: ${available}${reservedNote}, requested: ${item.quantity}.`
+          `Insufficient stock for ${product.name} (${formatVariantLabel(names, variant.sku)}). Available: ${available}${reservedNote}, requested: ${item.quantity}.`
         );
       }
 
       lines.push({
         productVariantId: item.productVariantId,
         productName: product.name,
-        label: variantLabel(variant),
+        label: formatVariantLabel(names, variant.sku),
         sku: variant.sku,
         quantity: item.quantity,
         unitPrice,
         discount: lineDiscount,
         total: lineTotal,
         costPriceAtSale: variant.costPrice,
-        size: variant.size,
-        color: variant.color,
+        size: names.size,
+        color: names.color,
         categoryName: category?.name ?? "Uncategorised",
         taxRateId: taxRate?._id,
         taxPercent: taxRate ? taxRate.percentage : defaultTaxPercent,
@@ -283,29 +279,33 @@ export async function performSale(
       requirePermission(actor, "sales.discount");
     }
 
-    // 4. Payments.
-    const payments = (args.payments ?? []).filter((p) => p.amount > 0);
+    // 4. Payments: new money taken now, plus any already received (deposits).
+    const newPayments = (args.payments ?? []).filter((p) => p.amount > 0);
+    const priorPayments = args.priorPayments ?? [];
+    const payments = [
+      ...priorPayments.map((p) => ({ method: p.method, amount: p.amount })),
+      ...newPayments,
+    ];
     const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
     const appliedToSale = Math.min(paidAmount, total);
     const overpayment = Math.max(0, paidAmount - total);
     const balance = Math.max(0, total - appliedToSale);
-    const status = saleStatusFor(appliedToSale, total);
+    // A rung-up sale is COMPLETED; whether it is paid is its paymentStatus.
+    const status = "COMPLETED" as const;
     const paymentStatus = paymentStatusFor(appliedToSale, total);
 
-    // 5. Sale number.
+    // 5. Sale number: the gapless fiscal number, the sale's only number.
     const now = Date.now();
     const dateString = getLocalDateString(now);
-    const seq = await nextSequence(ctx, `sale_sequence_${args.branchId}`, dateString);
-    const saleNumber = `${branch.code}-${dateString.replace(/-/g, "").slice(2)}-${String(seq).padStart(3, "0")}`;
-    const fiscal = await nextFiscalNumber(ctx, "SALE", Number(dateString.slice(0, 4)), now);
+    const saleNumber = await nextDocumentNumber(ctx, "SALE", now);
 
     // 6. Session.
-    const session = payments.some((p) => isCash(p.method))
+    const session = newPayments.some((p) => isCash(p.method))
       ? await resolveOpenSession(ctx, args.branchId, args.cashRegisterSessionId)
       : args.cashRegisterSessionId
         ? await ctx.db.get(args.cashRegisterSessionId)
         : null;
-    if (payments.some((p) => isCash(p.method)) && !session) {
+    if (newPayments.some((p) => isCash(p.method)) && !session) {
       throw new Error(
         "No open cash register session for this branch. Open the register before taking cash."
       );
@@ -331,8 +331,6 @@ export async function performSale(
       deliveryFeeId: args.deliveryFeeId,
       deliveryFeeAmount: deliveryFeeAmount || undefined,
       tierDiscountAmount: tierDiscountAmount || undefined,
-      fiscalSeriesId: fiscal.seriesId,
-      fiscalNumber: fiscal.fiscalNumber,
       customerNuit: await currentNuit(ctx, customer._id),
       customerName: customer.name,
       itemSummary: lines.map((l) => ({
@@ -340,7 +338,6 @@ export async function performSale(
         label: `${l.productName} — ${l.label}`,
         quantity: l.quantity,
       })),
-      splitPayments: payments.length > 1 ? payments : undefined,
       createdAt: now,
       updatedAt: now,
     });
@@ -376,32 +373,20 @@ export async function performSale(
       });
     }
 
-    // 9. Payment rows.
-    for (const p of payments) {
+    // 9. Payment rows. Cash rows carry the register session: that is the drawer's record.
+    // Money already received is linked to the sale rather than recorded again.
+    for (const p of priorPayments) await ctx.db.patch(p._id, { saleId });
+    for (const p of newPayments) {
       await ctx.db.insert("payments", {
         saleId,
         method: p.method,
         amount: p.amount,
         kind: "payment",
+        cashRegisterSessionId: isCash(p.method) ? session?._id : undefined,
+        userId: actor._id,
+        username: actor.username,
         createdAt: now,
       });
-    }
-
-    // 10. Cash movement.
-    if (session) {
-      const cashTotal = payments
-        .filter((p) => isCash(p.method))
-        .reduce((s, p) => s + p.amount, 0);
-      if (cashTotal > 0) {
-        await ctx.runMutation(internal.cashRegister.recordCashSale, {
-          sessionId: session._id,
-          userId: actor._id,
-          username: actor.username,
-          amount: cashTotal,
-          saleId,
-          saleNumber,
-        });
-      }
     }
 
     // 11. Overpayment → store credit.
@@ -445,9 +430,9 @@ export async function performSale(
         .filter((p) => isCash(p.method))
         .reduce((s, p) => s + p.amount, 0),
       outstandingDebt: balance,
-      fullyPaidCount: status === "COMPLETED" ? 1 : 0,
-      partiallyPaidCount: status === "PARTIALLY_PAID" ? 1 : 0,
-      pendingCount: status === "PENDING" ? 1 : 0,
+      fullyPaidCount: paymentStatus === "PAID" ? 1 : 0,
+      partiallyPaidCount: paymentStatus === "PARTIALLY_PAID" ? 1 : 0,
+      pendingCount: paymentStatus === "UNPAID" ? 1 : 0,
       paymentMethods: {},
       categorySales: {},
       productSales: {},
@@ -523,7 +508,7 @@ export const cancel = mutation({
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new Error("Sale not found.");
     if (sale.status === "CANCELLED") throw new Error("Sale is already cancelled.");
-    if (sale.status === "REFUNDED" || sale.status === "PARTIALLY_REFUNDED") {
+    if (sale.status === "RETURNED" || sale.status === "PARTIALLY_RETURNED") {
       throw new Error("Cancel is not allowed after a return. Process a return instead.");
     }
 
@@ -556,29 +541,15 @@ export const cancel = mutation({
       .filter((p) => p.kind !== "refund" && isCash(p.method))
       .reduce((s, p) => s + p.amount, 0);
     if (cashPaid > 0) {
-      const open = await ctx.db
-        .query("cashRegisterSessions")
-        .withIndex("by_status", (q) => q.eq("status", "OPEN"))
-        .collect();
-      const session =
-        open.find((s) => s.branchId === sale.branchId) ?? open.find((s) => !s.branchId);
-      if (session) {
-        await ctx.db.insert("cashRegisterMovements", {
-          sessionId: session._id,
-          userId: actor._id,
-          username: actor.username,
-          type: "refund",
-          amount: cashPaid,
-          description: `Cancellation refund — ${sale.saleNumber}`,
-          saleId: args.saleId,
-          createdAt: Date.now(),
-        });
-      }
+      const session = await resolveOpenSession(ctx, sale.branchId);
       await ctx.db.insert("payments", {
         saleId: args.saleId,
-        method: "Cash",
+        method: "CASH",
         amount: -cashPaid,
         kind: "refund",
+        cashRegisterSessionId: session?._id,
+        userId: actor._id,
+        username: actor.username,
         createdAt: Date.now(),
       });
     }

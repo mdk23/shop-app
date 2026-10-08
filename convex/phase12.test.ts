@@ -49,21 +49,6 @@ async function seed() {
 }
 
 describe("customer tabs", () => {
-  test("an extra contact can be retired once and is kept", async () => {
-    const { t, token, ids } = await seed();
-    const id = await t.mutation(api.contactMeans.add, {
-      token,
-      customerId: ids.customerId,
-      contactType: "WHATSAPP",
-      contactValue: "845555555",
-    });
-    await t.mutation(api.contactMeans.retire, { token, id });
-    await expect(t.mutation(api.contactMeans.retire, { token, id })).rejects.toThrow(/already retired/);
-    const rows = await t.query(api.contactMeans.listByCustomer, { customerId: ids.customerId });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].validTo).toBeDefined();
-  });
-
   test("a business relation lists everyone on it", async () => {
     const { t, token, ids } = await seed();
     const other = await t.run((ctx) =>

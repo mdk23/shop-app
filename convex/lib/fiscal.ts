@@ -1,57 +1,59 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
-const PREFIX_BY_TYPE = { SALE: "FT", RETURN: "NC" } as const;
-
 export const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Whose tax number: a customer or a supplier. */
+export type NuitOwner = { customerId: Id<"customers"> } | { supplierId: Id<"suppliers"> };
+
+async function identitiesOf(ctx: QueryCtx | MutationCtx, owner: NuitOwner) {
+  return "customerId" in owner
+    ? await ctx.db
+        .query("fiscalIdentities")
+        .withIndex("by_customer", (q) => q.eq("customerId", owner.customerId))
+        .collect()
+    : await ctx.db
+        .query("fiscalIdentities")
+        .withIndex("by_supplier", (q) => q.eq("supplierId", owner.supplierId))
+        .collect();
+}
+
+/** The owner's open NUIT, if one is recorded in fiscalIdentities. */
+export async function currentNuitOf(
+  ctx: QueryCtx | MutationCtx,
+  owner: NuitOwner
+): Promise<string | undefined> {
+  const rows = await identitiesOf(ctx, owner);
+  return rows.find((r) => r.identificationType === "NUIT" && r.validTo === undefined)?.number;
+}
 
 /** The customer's open NUIT, if one is recorded in fiscalIdentities. */
 export async function currentNuit(
   ctx: QueryCtx | MutationCtx,
   customerId: Id<"customers">
 ): Promise<string | undefined> {
-  const rows = await ctx.db
-    .query("fiscalIdentities")
-    .withIndex("by_customer", (q) => q.eq("customerId", customerId))
-    .collect();
-  return rows.find((r) => r.identificationType === "NUIT" && r.validTo === undefined)?.number;
+  return await currentNuitOf(ctx, { customerId });
 }
 
 /**
- * Takes the next gapless fiscal number for a document type in a fiscal year.
- * Must run inside the mutation that creates the document: Convex rolls the whole
- * mutation back on error, so a failed sale never leaves a gap in the series.
+ * Records a NUIT for the owner and closes the previous one, keeping history. A NUIT has
+ * nine digits; recording the current number again changes nothing.
  */
-export async function nextFiscalNumber(
-  ctx: MutationCtx,
-  documentType: "SALE" | "RETURN",
-  fiscalYear: number,
-  now: number = Date.now()
-): Promise<{ seriesId: Id<"documentSeries">; fiscalNumber: string }> {
-  let series = await ctx.db
-    .query("documentSeries")
-    .withIndex("by_type_year", (q) =>
-      q.eq("documentType", documentType).eq("fiscalYear", fiscalYear)
-    )
-    .unique();
-
-  if (!series) {
-    const seriesId = await ctx.db.insert("documentSeries", {
-      documentType,
-      prefix: PREFIX_BY_TYPE[documentType],
-      fiscalYear,
-      lastNumber: 0,
-      active: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-    series = (await ctx.db.get(seriesId))!;
+export async function recordNuit(ctx: MutationCtx, owner: NuitOwner, rawNumber: string) {
+  const number = rawNumber.trim();
+  if (!/^\d{9}$/.test(number)) throw new Error("A NUIT has nine digits.");
+  const now = Date.now();
+  for (const row of await identitiesOf(ctx, owner)) {
+    if (row.identificationType === "NUIT" && row.validTo === undefined) {
+      if (row.number === number) return row._id;
+      await ctx.db.patch(row._id, { validTo: now });
+    }
   }
-
-  const lastNumber = series.lastNumber + 1;
-  await ctx.db.patch(series._id, { lastNumber, updatedAt: now });
-  return {
-    seriesId: series._id,
-    fiscalNumber: `${series.prefix} ${fiscalYear}/${String(lastNumber).padStart(6, "0")}`,
-  };
+  return await ctx.db.insert("fiscalIdentities", {
+    ...owner,
+    identificationType: "NUIT",
+    number,
+    country: "MZ",
+    validFrom: now,
+  });
 }

@@ -5,7 +5,7 @@ import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { generateSku } from "./productVariants";
-import { variantLabel } from "./inventory";
+import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
 
 // ─────────────────────────────────────────────
@@ -134,10 +134,13 @@ export const get = query({
           url: await ctx.storage.getUrl(img.storageId),
         }))
     );
+    const namesOf = await loadVariantNames(ctx);
     return {
       ...product,
       category,
-      variants: variants.sort((a, b) => a.sku.localeCompare(b.sku)),
+      variants: variants
+        .sort((a, b) => a.sku.localeCompare(b.sku))
+        .map((variant) => ({ ...variant, ...namesOf(variant) })),
       images: imagesWithUrls,
     };
   },
@@ -159,6 +162,7 @@ export const listForPos = query({
     const categories = await ctx.db.query("categories").collect();
     const catName = new Map(categories.map((c) => [c._id, c.name]));
 
+    const namesOf = await loadVariantNames(ctx);
     const result = [];
     for (const p of products) {
       const variants = await ctx.db
@@ -173,9 +177,11 @@ export const listForPos = query({
             q.eq("branchId", args.branchId).eq("productVariantId", variant._id)
           )
           .unique();
+        const names = namesOf(variant);
         activeVariants.push({
           ...variant,
-          label: variantLabel(variant),
+          ...names,
+          label: formatVariantLabel(names, variant.sku),
           stock: stock?.quantity ?? 0,
         });
       }
@@ -250,8 +256,6 @@ export const create = mutation({
         productId,
         sku,
         barcode: spec.barcode?.trim() || undefined,
-        size: spec.size?.trim() || undefined,
-        color: spec.color?.trim() || undefined,
         sizeId: await resolveSizeId(ctx, spec.size),
         colorId: await resolveColorId(ctx, spec.color),
         costPrice: spec.costPrice ?? args.defaultCostPrice,

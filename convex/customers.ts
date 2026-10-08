@@ -11,6 +11,7 @@ import { writeAudit } from "./audit";
 import { nextSequence } from "./metrics";
 import { getSetting } from "./settings";
 import { normalizePhone } from "./lib/phone";
+import { loadVariantNames } from "./lib/variantNames";
 
 // ─────────────────────────────────────────────
 // FINANCIALS
@@ -300,6 +301,7 @@ export const getPosContext = query({
 
     const variantIds = new Set<Id<"productVariants">>();
     for (const lines of lineArrays) for (const l of lines) variantIds.add(l.productVariantId);
+    const namesOf = await loadVariantNames(ctx);
     const variantMap = new Map(
       await Promise.all(
         [...variantIds].map(async (id) => [id, await ctx.db.get(id)] as const)
@@ -351,8 +353,8 @@ export const getPosContext = query({
           productId: variant?.productId,
           productName: l.productName,
           variantLabel: l.variantLabel,
-          sizeName: variant?.size,
-          colorName: variant?.color,
+          sizeName: variant ? namesOf(variant).size : undefined,
+          colorName: variant ? namesOf(variant).color : undefined,
           unitPrice: l.unitPrice,
           quantity: l.quantity,
           variantActive: variant?.active ?? false,

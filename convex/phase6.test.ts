@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -37,7 +38,7 @@ async function seed() {
     const variantId = await ctx.db.insert("productVariants", {
       productId,
       sku: "TEE-M",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 100,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -104,7 +105,7 @@ async function saleWith(
     branchId: ids.branchId,
     customerId: ids.customerId,
     items: [{ productVariantId: ids.variantId, quantity }],
-    payments: [{ method: "Card", amount: 5000 }],
+    payments: [{ method: "CARD", amount: 5000 }],
   });
   const lines = await t.run((ctx) =>
     ctx.db

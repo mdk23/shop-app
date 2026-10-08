@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, MutationCtx } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
@@ -12,7 +13,24 @@ const TERM_TYPE = v.union(
   v.literal("PAYMENT")
 );
 
-/** Relations with a supplier, each with its current terms. */
+/**
+ * The supplier's open relation, opened now if it has none. Purchase orders are placed
+ * under it, so the terms in force for an order are always reachable from the order.
+ */
+export async function openRelationFor(
+  ctx: MutationCtx,
+  supplierId: Id<"suppliers">
+): Promise<Id<"supplyRelations">> {
+  const relations = await ctx.db
+    .query("supplyRelations")
+    .withIndex("by_supplier", (q) => q.eq("supplierId", supplierId))
+    .collect();
+  const open = relations.find((r) => r.endedAt === undefined);
+  if (open) return open._id;
+  return await ctx.db.insert("supplyRelations", { supplierId, startedAt: Date.now() });
+}
+
+/** Relations with a supplier, each with its terms and the latest orders placed under it. */
 export const listBySupplier = query({
   args: { supplierId: v.id("suppliers") },
   handler: async (ctx, args) => {
@@ -27,6 +45,13 @@ export const listBySupplier = query({
           .query("partnershipTerms")
           .withIndex("by_relation", (q) => q.eq("supplyRelationId", rel._id))
           .collect(),
+        orders: (
+          await ctx.db
+            .query("purchaseOrders")
+            .withIndex("by_supply_relation", (q) => q.eq("supplyRelationId", rel._id))
+            .order("desc")
+            .take(50)
+        ).map((po) => ({ _id: po._id, orderCode: po.orderCode, status: po.status })),
       }))
     );
   },

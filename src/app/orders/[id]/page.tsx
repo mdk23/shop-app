@@ -13,7 +13,11 @@ import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Wallet, XCircle } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
-const METHODS = ["Cash", "Card", "MPESA", "EMOLA", "Bank Transfer", "Other"];
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
+  type PaymentMethod,
+} from "../../../../convex/lib/paymentMethods";
 
 const STATUS_TONE = {
   OPEN: "info",
@@ -44,10 +48,10 @@ export default function OrderDetailPage() {
   const cancel = useMutation(api.customerOrders.cancel);
 
   const [depositAmount, setDepositAmount] = useState("");
-  const [depositMethod, setDepositMethod] = useState("Card");
+  const [depositMethod, setDepositMethod] = useState<PaymentMethod>("CARD");
   const [depositRef, setDepositRef] = useState("");
   const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("Card");
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("CARD");
   const [cancelReason, setCancelReason] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -144,10 +148,10 @@ export default function OrderDetailPage() {
                 <TextInput type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
               </Field>
               <Field label={t("Method")}>
-                <Select value={depositMethod} onChange={(e) => setDepositMethod(e.target.value)}>
-                  {METHODS.map((m) => (
+                <Select value={depositMethod} onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)}>
+                  {PAYMENT_METHODS.map((m) => (
                     <option key={m} value={m}>
-                      {m}
+                      {t(PAYMENT_METHOD_LABEL[m])}
                     </option>
                   ))}
                 </Select>
@@ -201,10 +205,10 @@ export default function OrderDetailPage() {
                 />
               </Field>
               <Field label={t("Method")}>
-                <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
-                  {METHODS.map((m) => (
+                <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}>
+                  {PAYMENT_METHODS.map((m) => (
                     <option key={m} value={m}>
-                      {m}
+                      {t(PAYMENT_METHOD_LABEL[m])}
                     </option>
                   ))}
                 </Select>
@@ -269,8 +273,8 @@ export default function OrderDetailPage() {
           <ul className="space-y-1 text-sm">
             {order.deposits.map((d) => (
               <li key={d._id}>
-                {formatDate(d.createdAt)} · {d.method} · {fmt(d.amount)}
-                {d.referenceExternal ? ` · ${d.referenceExternal}` : ""} · {d.receivedByUsername}
+                {formatDate(d.createdAt)} · {t(PAYMENT_METHOD_LABEL[d.method])} · {fmt(d.amount)}
+                {d.reference ? ` · ${d.reference}` : ""} · {d.username ?? "—"}
               </li>
             ))}
           </ul>

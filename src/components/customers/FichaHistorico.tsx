@@ -8,7 +8,12 @@ import { Card, Table, Th, Td, Badge, PagedFooter, Spinner, EmptyState } from "@/
 import { usePagedQuery } from "@/lib/pagination";
 import { useCurrency } from "@/lib/useShop";
 import { formatDateTime } from "@/lib/utils";
-import { SALE_STATUS_TONE, SALE_STATUS_LABEL, type SaleStatus } from "@/lib/badgeTones";
+import {
+  SALE_STATUS_TONE,
+  SALE_STATUS_LABEL,
+  SALE_PAYMENT_TONE,
+  SALE_PAYMENT_LABEL,
+} from "@/lib/badgeTones";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 /** Unbounded sales history for one customer — the one Ficha tab that doesn't share `getPosContext`. */
@@ -43,9 +48,14 @@ export function FichaHistorico({ customerId }: { customerId: Id<"customers"> }) 
                 <Td className="font-mono text-[11px] font-bold">{s.saleNumber}</Td>
                 <Td className="text-xs text-on-surface-variant">{formatDateTime(s.createdAt)}</Td>
                 <Td>
-                  <Badge tone={SALE_STATUS_TONE[s.status as SaleStatus]}>
-                    {t(SALE_STATUS_LABEL[s.status as SaleStatus])}
-                  </Badge>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge tone={SALE_STATUS_TONE[s.status]}>{t(SALE_STATUS_LABEL[s.status])}</Badge>
+                    {s.paymentStatus !== "PAID" && (
+                      <Badge tone={SALE_PAYMENT_TONE[s.paymentStatus]}>
+                        {t(SALE_PAYMENT_LABEL[s.paymentStatus])}
+                      </Badge>
+                    )}
+                  </div>
                 </Td>
                 <Td className="text-right font-bold">{fmt(s.total)}</Td>
               </tr>

@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/utils";
 import { getReceiptChannel } from "@/lib/receipts";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { Printer, MessageCircle } from "lucide-react";
+import { PAYMENT_METHOD_LABEL } from "../../../convex/lib/paymentMethods";
 
 export function ReceiptModal({
   saleId,
@@ -40,7 +41,7 @@ export function ReceiptModal({
     const pays = sale.payments
       .map(
         (p) =>
-          `<tr><td>${p.kind === "refund" ? "Reembolso " : ""}${p.method}</td><td style="text-align:right">${fmt(
+          `<tr><td>${p.kind === "refund" ? "Reembolso " : ""}${t(PAYMENT_METHOD_LABEL[p.method])}</td><td style="text-align:right">${fmt(
             p.amount
           )}</td></tr>`
       )

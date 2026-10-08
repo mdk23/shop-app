@@ -3,6 +3,7 @@ import { mutation, query, QueryCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 const itemInput = v.object({
   variantId: v.id("productVariants"),
@@ -14,7 +15,7 @@ async function variantLabel(ctx: QueryCtx, variantId?: Id<"productVariants">) {
   const variant = await ctx.db.get(variantId);
   if (!variant) return "—";
   const product = await ctx.db.get(variant.productId);
-  return `${product?.name ?? "—"} ${[variant.color, variant.size].filter(Boolean).join(" / ")}`.trim();
+  return `${product?.name ?? "—"} ${formatVariantLabel(await variantNames(ctx, variant), "")}`.trim();
 }
 
 /** Needs recognised (what the shop should buy) and decisions taken to cover them. */

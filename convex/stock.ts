@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { variantLabel } from "./inventory";
+import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 
 export type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK";
 
@@ -84,11 +85,13 @@ export const listInventory = query({
     for (const c of await ctx.db.query("categories").collect())
       categoryName.set(c._id, c.name);
 
+    const namesOf = await loadVariantNames(ctx);
     const rows = [];
     const search = args.search?.trim().toLowerCase();
     for (const variant of variants) {
-      if (args.size && variant.size !== args.size) continue;
-      if (args.color && variant.color !== args.color) continue;
+      const names = namesOf(variant);
+      if (args.size && names.size !== args.size) continue;
+      if (args.color && names.color !== args.color) continue;
 
       let product = productCache.get(variant.productId);
       if (product === undefined) {
@@ -104,7 +107,7 @@ export const listInventory = query({
       const status = stockStatus(quantity, reorderLevel);
       if (args.status && status !== args.status) continue;
 
-      const label = variantLabel(variant);
+      const label = formatVariantLabel(names, variant.sku);
       if (
         search &&
         !product.name.toLowerCase().includes(search) &&
@@ -121,8 +124,8 @@ export const listInventory = query({
         productVariantId: variant._id,
         sku: variant.sku,
         barcode: variant.barcode ?? null,
-        size: variant.size ?? null,
-        color: variant.color ?? null,
+        size: names.size ?? null,
+        color: names.color ?? null,
         label,
         costPrice: variant.costPrice,
         sellingPrice: variant.sellingPrice,
@@ -168,7 +171,7 @@ export const lowStockSummary = query({
       const product = await ctx.db.get(variant.productId);
       items.push({
         productVariantId: row.productVariantId,
-        label: `${product?.name ?? "?"} — ${variantLabel(variant)}`,
+        label: `${product?.name ?? "?"} — ${await variantLabel(ctx, variant)}`,
         quantity: row.quantity,
         reorderLevel,
         status,

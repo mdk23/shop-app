@@ -85,7 +85,7 @@ export const getBySkuOrBarcode = query({
         .unique());
     if (!variant) return null;
     const product = await ctx.db.get(variant.productId);
-    return { ...variant, product, label: variantLabel(variant) };
+    return { ...variant, product, label: await variantLabel(ctx, variant) };
   },
 });
 
@@ -143,8 +143,6 @@ export const create = mutation({
       productId: args.productId,
       sku,
       barcode: args.barcode?.trim() || undefined,
-      size: args.size?.trim() || undefined,
-      color: args.color?.trim() || undefined,
       sizeId: await resolveSizeId(ctx, args.size),
       colorId: await resolveColorId(ctx, args.color),
       costPrice: args.costPrice ?? product.defaultCostPrice,
@@ -187,9 +185,7 @@ export const generateMatrix = mutation({
       .query("productVariants")
       .withIndex("by_product", (q) => q.eq("productId", args.productId))
       .collect();
-    const seen = new Set(
-      existing.map((v) => `${v.color ?? ""}|${v.size ?? ""}`)
-    );
+    const seen = new Set(existing.map((v) => `${v.colorId ?? ""}|${v.sizeId ?? ""}`));
 
     const sizes = args.sizes.length ? args.sizes : [""];
     const colors = args.colors.length ? args.colors : [""];
@@ -199,7 +195,9 @@ export const generateMatrix = mutation({
 
     for (const color of colors) {
       for (const size of sizes) {
-        const key = `${color.trim()}|${size.trim()}`;
+        const sizeId = await resolveSizeId(ctx, size);
+        const colorId = await resolveColorId(ctx, color);
+        const key = `${colorId ?? ""}|${sizeId ?? ""}`;
         if (seen.has(key)) {
           skipped += 1;
           continue;
@@ -215,10 +213,8 @@ export const generateMatrix = mutation({
         const variantId = await ctx.db.insert("productVariants", {
           productId: args.productId,
           sku,
-          size: size.trim() || undefined,
-          color: color.trim() || undefined,
-          sizeId: await resolveSizeId(ctx, size),
-          colorId: await resolveColorId(ctx, color),
+          sizeId,
+          colorId,
           costPrice: args.costPrice ?? product.defaultCostPrice,
           sellingPrice,
           reorderLevel: args.reorderLevel ?? 0,
@@ -268,11 +264,9 @@ export const update = mutation({
     const now = Date.now();
     const patch: Record<string, unknown> = { updatedAt: now };
     if (args.size !== undefined) {
-      patch.size = args.size.trim() || undefined;
       patch.sizeId = await resolveSizeId(ctx, args.size);
     }
     if (args.color !== undefined) {
-      patch.color = args.color.trim() || undefined;
       patch.colorId = await resolveColorId(ctx, args.color);
     }
     if (args.barcode !== undefined)

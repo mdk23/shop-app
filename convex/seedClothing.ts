@@ -5,6 +5,7 @@ import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ensureDefaultSettings } from "./settings";
 import { slugify } from "./productVariants";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 
 const CATEGORIES = [
   "T-Shirts",
@@ -214,8 +215,8 @@ export const seed = mutation({
           const variantId = await ctx.db.insert("productVariants", {
             productId,
             sku: `${sku}-${variantCount}`,
-            size: size || undefined,
-            color: color || undefined,
+            sizeId: size ? await findOrCreateSize(ctx, size) : undefined,
+            colorId: color ? await findOrCreateColor(ctx, color) : undefined,
             costPrice: spec.cost,
             sellingPrice: spec.price,
             reorderLevel: spec.reorder,

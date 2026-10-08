@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
 import { governanceTables } from "./schemaTables/governance";
 import { catalogTables } from "./schemaTables/catalog";
 import { relationTables } from "./schemaTables/relations";
@@ -128,15 +129,12 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_active", ["active"]),
 
-  // `size`/`color` strings stay for display and the existing POS paths; `sizeId`/
-  // `colorId` are the normalised references, filled by the phase-1 backfill and by
-  // every variant write.
+  // A variant's size and colour are `sizeId` / `colorId` only; names are read from the
+  // `sizes` / `colors` lists (see convex/lib/variantNames.ts).
   productVariants: defineTable({
     productId: v.id("products"),
     sku: v.string(),
     barcode: v.optional(v.string()),
-    size: v.optional(v.string()),
-    color: v.optional(v.string()),
     sizeId: v.optional(v.id("sizes")),
     colorId: v.optional(v.id("colors")),
     costPrice: v.number(),
@@ -240,11 +238,19 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_active", ["active"]),
 
-  // Gapless numbering per document type and fiscal year. `lastNumber` is bumped in
-  // the same mutation that creates the document, so a rolled-back sale consumes no
-  // number and a cancelled sale keeps its number.
+  // The one source of document numbers: a gapless series per document type and year
+  // (see convex/lib/numbering.ts). `lastNumber` is bumped in the same mutation that
+  // creates the document, so a rolled-back document consumes no number and a cancelled
+  // one keeps its number.
   documentSeries: defineTable({
-    documentType: v.union(v.literal("SALE"), v.literal("RETURN")),
+    documentType: v.union(
+      v.literal("SALE"),
+      v.literal("RETURN"),
+      v.literal("PURCHASE_ORDER"),
+      v.literal("PURCHASE_RECEIPT"),
+      v.literal("TRANSFER"),
+      v.literal("CUSTOMER_ORDER")
+    ),
     prefix: v.string(),
     fiscalYear: v.number(),
     lastNumber: v.number(),
@@ -258,18 +264,17 @@ export default defineSchema({
   // ─────────────────────────────────────────────
 
   sales: defineTable({
-    saleNumber: v.string(),
+    saleNumber: v.string(), // the gapless fiscal number, e.g. "FT 2026/000042"
     branchId: v.id("branches"),
     customerId: v.id("customers"),
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
+    // What happened to the sale (goods). Money owed or refunded is `paymentStatus`.
     status: v.union(
       v.literal("COMPLETED"),
-      v.literal("PARTIALLY_PAID"),
-      v.literal("PENDING"),
       v.literal("CANCELLED"),
-      v.literal("REFUNDED"),
-      v.literal("PARTIALLY_REFUNDED")
+      v.literal("RETURNED"),
+      v.literal("PARTIALLY_RETURNED")
     ),
     subtotal: v.number(),
     discount: v.number(),
@@ -277,6 +282,7 @@ export default defineSchema({
     total: v.number(),
     paidAmount: v.number(),
     balance: v.number(),
+    // The money: paid, owed (UNPAID / PARTIALLY_PAID) or given back.
     paymentStatus: v.union(
       v.literal("PAID"),
       v.literal("PARTIALLY_PAID"),
@@ -291,10 +297,6 @@ export default defineSchema({
     // Automatic tier discount applied by performSale — separate from the
     // cashier-entered `discount` above, for auditability.
     tierDiscountAmount: v.optional(v.number()),
-    // Gapless fiscal number (e.g. "FT 2026/000042"). Absent on sales made before
-    // the fiscal layer existed.
-    fiscalSeriesId: v.optional(v.id("documentSeries")),
-    fiscalNumber: v.optional(v.string()),
     customerNuit: v.optional(v.string()),
     customerName: v.optional(v.string()),
     itemSummary: v.optional(
@@ -306,18 +308,15 @@ export default defineSchema({
         })
       )
     ),
-    splitPayments: v.optional(
-      v.array(v.object({ method: v.string(), amount: v.number() }))
-    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
+    .index("by_payment_status", ["paymentStatus"])
     .index("by_customer", ["customerId"])
     .index("by_branch", ["branchId"])
     .index("by_created_at", ["createdAt"])
     .index("by_sale_number", ["saleNumber"])
-    .index("by_fiscal_number", ["fiscalNumber"])
     .index("by_delivery_fee", ["deliveryFeeId"]),
 
   saleItems: defineTable({
@@ -347,15 +346,7 @@ export default defineSchema({
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
     status: v.union(v.literal("COMPLETED"), v.literal("CANCELLED")),
-    refundMethod: v.union(
-      v.literal("CASH"),
-      v.literal("CARD"),
-      v.literal("MPESA"),
-      v.literal("EMOLA"),
-      v.literal("BANK_TRANSFER"),
-      v.literal("STORE_CREDIT"),
-      v.literal("OTHER")
-    ),
+    refundMethod: refundMethodValidator,
     refundAmount: v.number(),
     reason: v.string(),
     notes: v.optional(v.string()),
@@ -396,15 +387,26 @@ export default defineSchema({
     .index("by_return", ["returnId"])
     .index("by_sale_item", ["saleItemId"]),
 
+  // Every amount received or given back: on a sale, or a deposit on a customer order
+  // (`customerOrderId`; linked to the sale too once the order is collected). Cash rows
+  // carry the register session they went through: they are the drawer's record.
   payments: defineTable({
     saleId: v.optional(v.id("sales")),
-    method: v.string(),
+    customerOrderId: v.optional(v.id("customerOrders")),
+    method: paymentMethodValidator,
     amount: v.number(),
     // Negative amount = refund. `kind` disambiguates for reporting.
     kind: v.optional(v.union(v.literal("payment"), v.literal("refund"))),
     returnId: v.optional(v.id("salesReturns")),
+    cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
+    userId: v.optional(v.id("users")),
+    username: v.optional(v.string()),
+    reference: v.optional(v.string()), // external reference, e.g. an M-Pesa code
     createdAt: v.number(),
-  }).index("by_sale", ["saleId"]),
+  })
+    .index("by_sale", ["saleId"])
+    .index("by_customer_order", ["customerOrderId"])
+    .index("by_session", ["cashRegisterSessionId"]),
 
   // ─────────────────────────────────────────────
   // INVENTORY
@@ -489,22 +491,23 @@ export default defineSchema({
     quantity: v.number(),
   }).index("by_transfer", ["transferId"]),
 
-  // What the destination actually counted when a transfer arrived. Lines are kept
-  // with the transfer's sent quantity so a short delivery is visible without a
-  // second query.
+  // What the destination actually counted when a transfer arrived. Lines live in
+  // `stockTransferReceiptLines`, like purchase receipt and stock count lines.
   stockTransferReceipts: defineTable({
     transferId: v.id("stockTransfers"),
     receivedBy: v.id("users"),
     receivedByUsername: v.string(),
     receivedAt: v.number(),
-    lines: v.array(
-      v.object({
-        productVariantId: v.id("productVariants"),
-        quantitySent: v.number(),
-        quantityObserved: v.number(),
-      })
-    ),
   }).index("by_transfer", ["transferId"]),
+
+  // One line per variant: what was sent and what the destination counted, so a short
+  // delivery is visible on the line.
+  stockTransferReceiptLines: defineTable({
+    receiptId: v.id("stockTransferReceipts"),
+    productVariantId: v.id("productVariants"),
+    quantitySent: v.number(),
+    quantityObserved: v.number(),
+  }).index("by_receipt", ["receiptId"]),
 
   // Physical count session for one branch. Lines snapshot the book quantity when the
   // count starts; closing applies the difference between the counted quantity and
@@ -641,17 +644,6 @@ export default defineSchema({
     lineTotal: v.number(),
   }).index("by_order", ["orderId"]),
 
-  customerDeposits: defineTable({
-    orderId: v.id("customerOrders"),
-    customerId: v.id("customers"),
-    amount: v.number(),
-    method: v.string(),
-    referenceExternal: v.optional(v.string()),
-    receivedBy: v.id("users"),
-    receivedByUsername: v.string(),
-    createdAt: v.number(),
-  }).index("by_order", ["orderId"]),
-
   // Stock set aside for an order. Holds reduce what the POS can sell, and are
   // released when the order is collected or cancelled.
   stockHolds: defineTable({
@@ -775,14 +767,18 @@ export default defineSchema({
     phone: v.optional(v.string()),
     email: v.optional(v.string()),
     address: v.optional(v.string()),
-    taxNumber: v.optional(v.string()),
     status: v.union(v.literal("ACTIVE"), v.literal("INACTIVE")),
-    paymentTerms: v.optional(v.string()),
+    // The terms this supplier works on, from the shared `paymentTerms` list. Its tax
+    // number (NUIT) is in `fiscalIdentities`.
+    paymentTermId: v.optional(v.id("paymentTerms")),
     notes: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_status", ["status"]),
 
+  // An order is placed under a supply relation (the partnership and its terms in force);
+  // `supplierId` is that relation's supplier, kept here for direct lookups.
   purchaseOrders: defineTable({
+    supplyRelationId: v.id("supplyRelations"),
     supplierId: v.id("suppliers"),
     branchId: v.optional(v.id("branches")),
     orderCode: v.string(),
@@ -801,6 +797,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_supplier", ["supplierId"])
+    .index("by_supply_relation", ["supplyRelationId"])
     .index("by_status", ["status"])
     .index("by_branch", ["branchId"]),
 
@@ -876,27 +873,24 @@ export default defineSchema({
     .index("by_user_and_status", ["userId", "status"])
     .index("by_branch", ["branchId"]),
 
+  // Drawer movements that are not sale payments: opening float, cash in/out, closing.
+  // Cash taken or refunded on sales is read from `payments` (by session).
   cashRegisterMovements: defineTable({
     sessionId: v.id("cashRegisterSessions"),
     userId: v.id("users"),
     username: v.string(),
     type: v.union(
       v.literal("opening"),
-      v.literal("sale"),
-      v.literal("refund"),
       v.literal("cash_in"),
       v.literal("cash_out"),
       v.literal("closing")
     ),
     amount: v.number(),
     description: v.string(),
-    saleId: v.optional(v.id("sales")),
-    returnId: v.optional(v.id("salesReturns")),
     createdAt: v.number(),
   })
     .index("by_session", ["sessionId"])
-    .index("by_user", ["userId"])
-    .index("by_sale", ["saleId"]),
+    .index("by_user", ["userId"]),
 
   // ─────────────────────────────────────────────
   // USERS & SECURITY
@@ -983,9 +977,8 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
-  // O(1) sequences (sale_sequence_<branchId>, purchase_order_sequence,
-  // return_sequence, transfer_sequence, customer_code_sequence) and aggregate
-  // caches (today_* live counters, low_stock_items, out_of_stock_items).
+  // Aggregate caches (today_* live counters, low_stock_items, out_of_stock_items) and
+  // the customer code sequence. Document numbers come from `documentSeries`.
   counters: defineTable({
     key: v.string(),
     value: v.number(),

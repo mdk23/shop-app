@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -48,7 +49,7 @@ async function seed() {
     const variantA = await ctx.db.insert("productVariants", {
       productId,
       sku: "TEE-A",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 40,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -59,7 +60,7 @@ async function seed() {
     const variantB = await ctx.db.insert("productVariants", {
       productId,
       sku: "TEE-B",
-      size: "L",
+      sizeId: await findOrCreateSize(ctx, "L"),
       costPrice: 40,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -125,6 +126,50 @@ async function sentPurchaseOrder(
   return poId;
 }
 
+describe("purchase orders and supply relations", () => {
+  test("orders are placed under the supplier's open relation, opened on first order", async () => {
+    const { t, token, ids } = await seed();
+    const first = await sentPurchaseOrder(t, token, ids, 5);
+    const second = await sentPurchaseOrder(t, token, ids, 3);
+
+    const relations = await t.query(api.supplyRelations.listBySupplier, { supplierId: ids.supplierId });
+    expect(relations).toHaveLength(1);
+    expect(relations[0].endedAt).toBeUndefined();
+    expect(relations[0].orders.map((o) => o._id).sort()).toEqual([first, second].sort());
+
+    const [a, b] = await t.run(async (ctx) => [await ctx.db.get(first), await ctx.db.get(second)]);
+    expect(a?.supplyRelationId).toBe(relations[0]._id);
+    expect(b?.supplyRelationId).toBe(relations[0]._id);
+  });
+
+  test("moving a draft to another supplier moves it to that supplier's relation", async () => {
+    const { t, token, ids } = await seed();
+    const otherSupplier = await t.run((ctx) =>
+      ctx.db.insert("suppliers", { name: "Other", status: "ACTIVE", createdAt: Date.now() })
+    );
+    const items = [{ productVariantId: ids.variantA, quantityOrdered: 2, unitCost: 40 }];
+    const poId = await t.mutation(api.purchaseOrders.create, {
+      token,
+      supplierId: ids.supplierId,
+      branchId: ids.main,
+      orderDate: Date.now(),
+      items,
+    });
+    await t.mutation(api.purchaseOrders.update, {
+      token,
+      id: poId,
+      supplierId: otherSupplier,
+      branchId: ids.main,
+      orderDate: Date.now(),
+      items,
+    });
+    const po = await t.run((ctx) => ctx.db.get(poId));
+    const relation = await t.run((ctx) => ctx.db.get(po!.supplyRelationId));
+    expect(po?.supplierId).toBe(otherSupplier);
+    expect(relation?.supplierId).toBe(otherSupplier);
+  });
+});
+
 describe("purchase receipts", () => {
   test("partial then over-receipt: stock follows the lines, the order completes, the over line is flagged", async () => {
     const { t, token, ids } = await seed();
@@ -136,7 +181,7 @@ describe("purchase receipts", () => {
       lines: [{ productVariantId: ids.variantA, quantityReceived: 4 }],
     });
     const first = await t.query(api.purchaseReceipts.get, { id: r1 });
-    expect(first?.receiptNumber).toMatch(/^RC-\d{5}$/);
+    expect(first?.receiptNumber).toMatch(/^RC \d{4}\/000001$/);
     expect(first?.items[0].discrepancy).toBeUndefined();
     expect(await stockOf(t, ids.main, ids.variantA)).toBe(4);
 

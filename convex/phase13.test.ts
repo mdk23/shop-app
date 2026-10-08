@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -32,7 +33,7 @@ async function seed() {
     const variantId = await ctx.db.insert("productVariants", {
       productId,
       sku: "TEE-M",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 40,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -124,11 +125,11 @@ describe("follow-ups and resolution succession", () => {
 describe("procurement planning and demand responses", () => {
   test("a decision can only cover a need for the same variant", async () => {
     const { t, token, ids } = await seed();
-    const otherVariant = await t.run((ctx) =>
+    const otherVariant = await t.run(async (ctx) =>
       ctx.db.insert("productVariants", {
         productId: ids.productId,
         sku: "TEE-L",
-        size: "L",
+        sizeId: await findOrCreateSize(ctx, "L"),
         costPrice: 40,
         sellingPrice: 250,
         reorderLevel: 0,

@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -41,7 +42,7 @@ async function seed() {
     const variantId = await ctx.db.insert("productVariants", {
       productId,
       sku: "TEE-M",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 40,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -49,7 +50,9 @@ async function seed() {
       createdAt: now,
       updatedAt: now,
     });
+    const supplyRelationId = await ctx.db.insert("supplyRelations", { supplierId, startedAt: now });
     const poId = await ctx.db.insert("purchaseOrders", {
+      supplyRelationId,
       supplierId,
       branchId,
       orderCode: "PO-00001",
@@ -86,6 +89,45 @@ async function seed() {
   return { t, token, ids };
 }
 
+describe("supplier terms and tax number", () => {
+  test("a supplier points at a payment term, and its NUIT is kept with history", async () => {
+    const { t, token } = await seed();
+    const termId = await t.run((ctx) =>
+      ctx.db.insert("paymentTerms", { name: "30 dias", days: 30, active: true })
+    );
+    const supplierId = await t.mutation(api.suppliers.create, {
+      token,
+      name: "Tecidos Lda",
+      status: "ACTIVE",
+      paymentTermId: termId,
+      nuit: "400000001",
+    });
+    await t.mutation(api.suppliers.update, {
+      token,
+      id: supplierId,
+      name: "Tecidos Lda",
+      status: "ACTIVE",
+      paymentTermId: termId,
+      nuit: "400000002",
+    });
+    const row = (await t.query(api.suppliers.list, {})).find((s) => s._id === supplierId);
+    expect(row).toMatchObject({ paymentTermName: "30 dias", nuit: "400000002" });
+
+    const identities = await t.run((ctx) =>
+      ctx.db
+        .query("fiscalIdentities")
+        .withIndex("by_supplier", (q) => q.eq("supplierId", supplierId))
+        .collect()
+    );
+    expect(identities).toHaveLength(2);
+    expect(identities.filter((i) => i.validTo === undefined).map((i) => i.number)).toEqual(["400000002"]);
+
+    await expect(
+      t.mutation(api.suppliers.update, { token, id: supplierId, name: "Tecidos Lda", status: "ACTIVE", nuit: "123" })
+    ).rejects.toThrow(/nine digits/);
+  });
+});
+
 describe("supplier evaluation and relations", () => {
   test("scores must be between 1 and 5", async () => {
     const { t, token, ids } = await seed();
@@ -107,13 +149,14 @@ describe("supplier evaluation and relations", () => {
   });
 
   test("a supplier has one open relation, and a new term closes the previous one", async () => {
-    const { t, token, ids } = await seed();
-    const relationId = await t.mutation(api.supplyRelations.createRelation, {
-      token,
-      supplierId: ids.supplierId,
-    });
+    const { t, token } = await seed();
+    // A supplier with no orders yet, so it has no relation.
+    const supplierId = await t.run((ctx) =>
+      ctx.db.insert("suppliers", { name: "New supplier", status: "ACTIVE", createdAt: Date.now() })
+    );
+    const relationId = await t.mutation(api.supplyRelations.createRelation, { token, supplierId });
     await expect(
-      t.mutation(api.supplyRelations.createRelation, { token, supplierId: ids.supplierId })
+      t.mutation(api.supplyRelations.createRelation, { token, supplierId })
     ).rejects.toThrow(/open relation/);
 
     await t.mutation(api.supplyRelations.addTerm, {
@@ -128,7 +171,7 @@ describe("supplier evaluation and relations", () => {
       termType: "DEADLINES",
       content: "10 dias",
     });
-    const [rel] = await t.query(api.supplyRelations.listBySupplier, { supplierId: ids.supplierId });
+    const [rel] = await t.query(api.supplyRelations.listBySupplier, { supplierId });
     const deadlines = rel.terms.filter((term) => term.termType === "DEADLINES");
     expect(deadlines.filter((term) => term.validTo === undefined).map((term) => term.content)).toEqual(["10 dias"]);
   });
@@ -222,7 +265,7 @@ describe("quality issues, inspections and shipments", () => {
   });
 });
 
-describe("receiving lists, locations and holds", () => {
+describe("receiving lists and holds", () => {
   test("open orders show only what is still outstanding", async () => {
     const { t } = await seed();
     const orders = await t.query(api.purchaseReceipts.openOrders, {});
@@ -230,16 +273,8 @@ describe("receiving lists, locations and holds", () => {
     expect(orders[0].lines[0].outstanding).toBe(6);
   });
 
-  test("locations are per branch and holds add up per variant", async () => {
+  test("holds add up per variant", async () => {
     const { t, token, ids } = await seed();
-    await t.mutation(api.locations.create, {
-      token,
-      branchId: ids.branchId,
-      name: "Armazém",
-      locationType: "CENTRAL",
-    });
-    expect(await t.query(api.locations.listByBranch, { branchId: ids.branchId })).toHaveLength(1);
-
     await t.run(async (ctx) => {
       const orderId = await ctx.db.insert("customerOrders", {
         orderNumber: "CE-1",

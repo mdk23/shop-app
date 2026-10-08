@@ -89,10 +89,13 @@ export async function refreshCustomerProfile(
     .filter((r) => r.createdAt >= twelveMonthsAgo)
     .reduce((s, r) => s + r.refundAmount, 0);
 
-  // Resolve variant → product → category, and variant.size → sizeId, with
-  // memoized lookups so repeat products/sizes across many sales cost nothing.
-  const sizesByName = new Map(
-    (await ctx.db.query("sizes").collect()).map((s) => [s.name, s])
+  // Resolve variant → product → category, and the variant's size and colour ids to
+  // names, with memoized lookups so repeat products across many sales cost nothing.
+  const sizesById = new Map(
+    (await ctx.db.query("sizes").collect()).map((s) => [s._id, s])
+  );
+  const colorNameById = new Map(
+    (await ctx.db.query("colors").collect()).map((c) => [c._id, c.name])
   );
   const categoryNameById = new Map(
     (await ctx.db.query("categories").collect()).map((c) => [c._id, c.name])
@@ -111,13 +114,13 @@ export async function refreshCustomerProfile(
         variantCache.set(item.productVariantId, await ctx.db.get(item.productVariantId));
       }
       const variant = variantCache.get(item.productVariantId) as
-        | { productId: Id<"products">; size?: string; color?: string }
+        | { productId: Id<"products">; sizeId?: Id<"sizes">; colorId?: Id<"colors"> }
         | null
         | undefined;
-      if (!variant || !variant.size) continue; // no size on this line — nothing to observe
+      if (!variant || !variant.sizeId) continue; // no size on this line — nothing to observe
 
-      const size = sizesByName.get(variant.size);
-      if (!size) continue; // free-text size doesn't map to the sizes taxonomy — skip
+      const size = sizesById.get(variant.sizeId);
+      if (!size) continue;
 
       if (!productCache.has(variant.productId)) {
         productCache.set(variant.productId, await ctx.db.get(variant.productId));
@@ -138,7 +141,7 @@ export async function refreshCustomerProfile(
         sizeId: size._id,
         sizeName: size.name,
         gender: product.gender,
-        colorName: variant.color,
+        colorName: variant.colorId ? colorNameById.get(variant.colorId) : undefined,
         quantity: item.quantity,
         returnedQuantity: returnedQtyBySaleItem.get(item._id) ?? 0,
       });

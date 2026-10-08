@@ -1,5 +1,4 @@
 import {
-  internalMutation,
   mutation,
   query,
   QueryCtx,
@@ -29,7 +28,7 @@ function calcExpectedCash(movements: { type: string; amount: number }[]): number
   return total;
 }
 
-async function openSessionForBranch(
+export async function openSessionForBranch(
   ctx: QueryCtx | MutationCtx,
   branchId?: Id<"branches"> | string
 ): Promise<Doc<"cashRegisterSessions"> | null> {
@@ -48,55 +47,58 @@ async function openSessionForBranch(
   return open[0] ?? null;
 }
 
-// ─────────────────────────────────────────────
-// INTERNAL MUTATIONS — called by sales / returns
-// ─────────────────────────────────────────────
+/** One line in a drawer's history: a drawer movement, or a cash payment / refund on a sale. */
+export type DrawerEntry = {
+  _id: string;
+  type: "opening" | "sale" | "refund" | "cash_in" | "cash_out" | "closing";
+  amount: number;
+  description: string;
+  username: string;
+  createdAt: number;
+};
 
-export const recordCashSale = internalMutation({
-  args: {
-    sessionId: v.id("cashRegisterSessions"),
-    userId: v.id("users"),
-    username: v.string(),
-    amount: v.number(),
-    saleId: v.id("sales"),
-    saleNumber: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.insert("cashRegisterMovements", {
-      sessionId: args.sessionId,
-      userId: args.userId,
-      username: args.username,
-      type: "sale",
-      amount: args.amount,
-      description: `Cash sale${args.saleNumber ? ` — ${args.saleNumber}` : ""}`,
-      saleId: args.saleId,
-      createdAt: Date.now(),
+/**
+ * The drawer's full history: its own movements (opening, cash in/out, closing) plus the
+ * cash payments and refunds taken on sales through this session, read from `payments`.
+ * Cash on a sale is recorded once, on the payment row; nothing is copied here.
+ */
+async function drawerEntries(
+  ctx: QueryCtx | MutationCtx,
+  sessionId: Id<"cashRegisterSessions">
+): Promise<DrawerEntry[]> {
+  const movements = await ctx.db
+    .query("cashRegisterMovements")
+    .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
+    .collect();
+  const cash = await ctx.db
+    .query("payments")
+    .withIndex("by_session", (q) => q.eq("cashRegisterSessionId", sessionId))
+    .collect();
+  const entries: DrawerEntry[] = movements.map((m) => ({
+    _id: m._id,
+    type: m.type,
+    amount: m.amount,
+    description: m.description,
+    username: m.username,
+    createdAt: m.createdAt,
+  }));
+  for (const p of cash) {
+    const sale = p.saleId ? await ctx.db.get(p.saleId) : null;
+    const order = !sale && p.customerOrderId ? await ctx.db.get(p.customerOrderId) : null;
+    const refund = p.amount < 0;
+    const what = refund ? "Cash refund" : order ? "Cash deposit" : "Cash sale";
+    const ref = sale?.saleNumber ?? order?.orderNumber;
+    entries.push({
+      _id: p._id,
+      type: refund ? "refund" : "sale",
+      amount: Math.abs(p.amount),
+      description: `${what}${ref ? ` — ${ref}` : ""}`,
+      username: p.username ?? "—",
+      createdAt: p.createdAt,
     });
-  },
-});
-
-export const recordCashRefund = internalMutation({
-  args: {
-    sessionId: v.id("cashRegisterSessions"),
-    userId: v.id("users"),
-    username: v.string(),
-    amount: v.number(),
-    returnId: v.id("salesReturns"),
-    returnNumber: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.insert("cashRegisterMovements", {
-      sessionId: args.sessionId,
-      userId: args.userId,
-      username: args.username,
-      type: "refund",
-      amount: args.amount,
-      description: `Cash refund${args.returnNumber ? ` — ${args.returnNumber}` : ""}`,
-      returnId: args.returnId,
-      createdAt: Date.now(),
-    });
-  },
-});
+  }
+  return entries.sort((a, b) => b.createdAt - a.createdAt);
+}
 
 // ─────────────────────────────────────────────
 // QUERIES
@@ -134,11 +136,7 @@ export const getSessionWithMovements = query({
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.sessionId);
     if (!session) return null;
-    const movements = await ctx.db
-      .query("cashRegisterMovements")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-      .order("desc")
-      .collect();
+    const movements = await drawerEntries(ctx, args.sessionId);
     return { ...session, movements, expectedCash: calcExpectedCash(movements) };
   },
 });
@@ -168,10 +166,7 @@ export const listSessionsPaged = query({
 
     const page = await Promise.all(
       filtered.map(async (session) => {
-        const movements = await ctx.db
-          .query("cashRegisterMovements")
-          .withIndex("by_session", (q) => q.eq("sessionId", session._id))
-          .collect();
+        const movements = await drawerEntries(ctx, session._id);
         const sum = (t: string) =>
           movements.filter((m) => m.type === t).reduce((s, m) => s + m.amount, 0);
         const user = await ctx.db.get(session.userId);
@@ -220,10 +215,7 @@ export const sessionTotals = query({
     let refunds = 0;
     let shortages = 0;
     for (const session of sessions) {
-      const movements = await ctx.db
-        .query("cashRegisterMovements")
-        .withIndex("by_session", (q) => q.eq("sessionId", session._id))
-        .collect();
+      const movements = await drawerEntries(ctx, session._id);
       sales += movements.filter((m) => m.type === "sale").reduce((s, m) => s + m.amount, 0);
       refunds += movements
         .filter((m) => m.type === "refund")
@@ -317,10 +309,7 @@ export const closeSession = mutation({
     if (!session) throw new Error("Cash register session not found.");
     if (session.status === "CLOSED") throw new Error("Session already closed.");
 
-    const movements = await ctx.db
-      .query("cashRegisterMovements")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-      .collect();
+    const movements = await drawerEntries(ctx, args.sessionId);
     const expectedCash = calcExpectedCash(movements);
     const difference = args.actualCash - expectedCash;
     const now = Date.now();
@@ -394,10 +383,7 @@ export const addMovement = mutation({
       throw new Error("No active cash register session.");
 
     if (args.type === "cash_out") {
-      const movements = await ctx.db
-        .query("cashRegisterMovements")
-        .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
-        .collect();
+      const movements = await drawerEntries(ctx, args.sessionId);
       const balance = calcExpectedCash(movements);
       if (args.amount > balance) {
         throw new Error(

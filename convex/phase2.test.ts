@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { findOrCreateColor, findOrCreateSize } from "./lib/catalog";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -46,7 +47,7 @@ async function seed() {
     const variantM = await ctx.db.insert("productVariants", {
       productId: productAId,
       sku: "TEE-M",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 100,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -57,7 +58,7 @@ async function seed() {
     const variantL = await ctx.db.insert("productVariants", {
       productId: productAId,
       sku: "TEE-L",
-      size: "L",
+      sizeId: await findOrCreateSize(ctx, "L"),
       costPrice: 100,
       sellingPrice: 250,
       reorderLevel: 0,
@@ -68,7 +69,7 @@ async function seed() {
     const variantSocks = await ctx.db.insert("productVariants", {
       productId: productBId,
       sku: "SOCK-M",
-      size: "M",
+      sizeId: await findOrCreateSize(ctx, "M"),
       costPrice: 50,
       sellingPrice: 100,
       reorderLevel: 0,
@@ -133,7 +134,7 @@ describe("IVA per line", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 2 }],
-      payments: [{ method: "Card", amount: 1000 }],
+      payments: [{ method: "CARD", amount: 1000 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -163,7 +164,7 @@ describe("IVA per line", () => {
         { productVariantId: ids.variantM, quantity: 2 },
         { productVariantId: ids.variantSocks, quantity: 1 },
       ],
-      payments: [{ method: "Card", amount: 1000 }],
+      payments: [{ method: "CARD", amount: 1000 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -185,7 +186,7 @@ describe("IVA per line", () => {
         { productVariantId: ids.variantL, quantity: 1 },
       ],
       discount: 100,
-      payments: [{ method: "Card", amount: 1000 }],
+      payments: [{ method: "CARD", amount: 1000 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -206,7 +207,7 @@ describe("IVA per line", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantM, quantity: 1 }],
-        payments: [{ method: "Card", amount: 1000 }],
+        payments: [{ method: "CARD", amount: 1000 }],
       })
     ).rejects.toThrow(/inactive/);
   });
@@ -227,10 +228,10 @@ describe("fiscal numbering", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantM, quantity: 1 }],
-        payments: [{ method: "Card", amount: 1000 }],
+        payments: [{ method: "CARD", amount: 1000 }],
       });
       const sale = await t.run((ctx) => ctx.db.get(saleId));
-      numbers.push(sale!.fiscalNumber!);
+      numbers.push(sale!.saleNumber);
     }
     const seqs = numbers.map((n) => Number(n.split("/")[1]));
     expect(seqs).toEqual([1, 2, 3]);
@@ -244,7 +245,7 @@ describe("fiscal numbering", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 1 }],
-      payments: [{ method: "Card", amount: 1000 }],
+      payments: [{ method: "CARD", amount: 1000 }],
     });
     await expect(
       t.mutation(api.sales.create, {
@@ -252,7 +253,7 @@ describe("fiscal numbering", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantM, quantity: 999 }],
-        payments: [{ method: "Card", amount: 1000 }],
+        payments: [{ method: "CARD", amount: 1000 }],
       })
     ).rejects.toThrow(/Insufficient stock/);
     const next = await t.mutation(api.sales.create, {
@@ -260,13 +261,13 @@ describe("fiscal numbering", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 1 }],
-      payments: [{ method: "Card", amount: 1000 }],
+      payments: [{ method: "CARD", amount: 1000 }],
     });
 
     const a = await t.run((ctx) => ctx.db.get(first));
     const b = await t.run((ctx) => ctx.db.get(next));
-    expect(Number(b!.fiscalNumber!.split("/")[1])).toBe(
-      Number(a!.fiscalNumber!.split("/")[1]) + 1
+    expect(Number(b!.saleNumber.split("/")[1])).toBe(
+      Number(a!.saleNumber.split("/")[1]) + 1
     );
   });
 
@@ -286,7 +287,7 @@ describe("fiscal numbering", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 1 }],
-      payments: [{ method: "Card", amount: 1000 }],
+      payments: [{ method: "CARD", amount: 1000 }],
     });
     const sale = await t.run((ctx) => ctx.db.get(saleId as Id<"sales">));
     expect(sale?.customerNuit).toBe("400123456");

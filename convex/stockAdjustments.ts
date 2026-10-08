@@ -56,7 +56,7 @@ export const create = mutation({
     if (!variant) throw new Error("Variant not found.");
     const product = await ctx.db.get(variant.productId);
     const resolvedName = product?.name ?? "Unknown product";
-    const resolvedLabel = variantLabel(variant);
+    const resolvedLabel = await variantLabel(ctx, variant);
 
     const stock = await ctx.db
       .query("variantStock")

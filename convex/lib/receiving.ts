@@ -2,7 +2,7 @@ import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { writeAudit } from "../audit";
-import { nextSequence } from "../metrics";
+import { nextDocumentNumber } from "./numbering";
 
 export type ReceiptLine = {
   productVariantId: Id<"productVariants">;
@@ -76,7 +76,7 @@ export async function receiveIntoStock(
     };
   });
 
-  const receiptNumber = `RC-${String(await nextSequence(ctx, "purchase_receipt_sequence")).padStart(5, "0")}`;
+  const receiptNumber = await nextDocumentNumber(ctx, "PURCHASE_RECEIPT");
   const receiptId = await ctx.db.insert("purchaseReceipts", {
     receiptNumber,
     purchaseOrderId: po?._id,

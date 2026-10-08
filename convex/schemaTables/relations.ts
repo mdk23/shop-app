@@ -4,15 +4,6 @@ import { v } from "convex/values";
 // Customer relations and demand responses (SQL module M01), plus offers and
 // assortments (M02). Demand is `demands`; supplier identity is suppliers.
 export const relationTables = {
-  contactMeans: defineTable({
-    customerId: v.id("customers"),
-    contactType: v.string(),
-    contactValue: v.string(),
-    validFrom: v.number(),
-    validTo: v.optional(v.number()),
-    registeredAt: v.number(),
-  }).index("by_customer", ["customerId"]),
-
   businessRelations: defineTable({
     startedAt: v.number(),
     endedAt: v.optional(v.number()),

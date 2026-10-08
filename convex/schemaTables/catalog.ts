@@ -14,8 +14,11 @@ export const catalogTables = {
     .index("by_from", ["fromSizeId"])
     .index("by_to", ["toSizeId"]),
 
+  // The one place a tax number (NUIT) is kept, with history, for a customer, a supplier
+  // or a branch. Sales keep a snapshot (`sales.customerNuit`) of the number at sale time.
   fiscalIdentities: defineTable({
     customerId: v.optional(v.id("customers")),
+    supplierId: v.optional(v.id("suppliers")),
     branchId: v.optional(v.id("branches")),
     identificationType: v.string(),
     number: v.string(),
@@ -24,5 +27,6 @@ export const catalogTables = {
     validTo: v.optional(v.number()),
   })
     .index("by_customer", ["customerId"])
+    .index("by_supplier", ["supplierId"])
     .index("by_branch", ["branchId"]),
 };
