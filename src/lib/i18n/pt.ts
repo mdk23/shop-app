@@ -1181,4 +1181,5 @@ export const pt: Record<string, string> = {
   "Selling price": "Preço de venda",
   "Cost price for its variants": "Preço de custo das variantes",
   "Selling price for its variants": "Preço de venda das variantes",
+  "Period": "Período",
 };

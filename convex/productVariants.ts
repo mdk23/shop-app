@@ -90,21 +90,15 @@ export const getBySkuOrBarcode = query({
   },
 });
 
+/** A variant's selling price and cost over time, newest first. */
 export const priceHistory = query({
   args: { productVariantId: v.id("productVariants") },
   handler: async (ctx, args) => {
-    const list = await ctx.db
-      .query("priceLists")
-      .withIndex("by_default", (q) => q.eq("isDefault", true))
-      .first();
-    if (!list) return [];
     return await ctx.db
       .query("variantPrices")
-      .withIndex("by_variant_list_from", (q) =>
-        q.eq("productVariantId", args.productVariantId).eq("priceListId", list._id)
-      )
+      .withIndex("by_variant_and_from", (q) => q.eq("productVariantId", args.productVariantId))
       .order("desc")
-      .collect();
+      .take(200);
   },
 });
 
@@ -175,7 +169,7 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
-    await recordVariantPrice(ctx, id, sellingPrice, now);
+    await recordVariantPrice(ctx, id, { sellingPrice, costPrice }, now);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -246,7 +240,7 @@ export const generateMatrix = mutation({
           createdAt: now,
           updatedAt: now,
         });
-        await recordVariantPrice(ctx, variantId, sellingPrice, now);
+        await recordVariantPrice(ctx, variantId, { sellingPrice, costPrice }, now);
         created += 1;
       }
     }
@@ -301,8 +295,16 @@ export const update = mutation({
     if (args.active !== undefined) patch.active = args.active;
 
     await ctx.db.patch(args.id, patch);
-    if (args.sellingPrice !== undefined) {
-      await recordVariantPrice(ctx, args.id, args.sellingPrice, now);
+    if (args.sellingPrice !== undefined || args.costPrice !== undefined) {
+      await recordVariantPrice(
+        ctx,
+        args.id,
+        {
+          sellingPrice: args.sellingPrice ?? existing.sellingPrice,
+          costPrice: args.costPrice ?? existing.costPrice,
+        },
+        now
+      );
     }
     // Log every changed field, old → new, with size and colour by name.
     const otherChanges = Object.fromEntries(

@@ -1,48 +1,30 @@
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
-const DEFAULT_PRICE_LIST_NAME = "Preço de venda";
-
-export async function ensureDefaultPriceList(ctx: MutationCtx): Promise<Id<"priceLists">> {
-  const existing = await ctx.db
-    .query("priceLists")
-    .withIndex("by_default", (q) => q.eq("isDefault", true))
-    .first();
-  if (existing) return existing._id;
-  const now = Date.now();
-  return await ctx.db.insert("priceLists", {
-    name: DEFAULT_PRICE_LIST_NAME,
-    isDefault: true,
-    active: true,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
-
-/** Closes the open price row and opens a new one, only when the price actually changes. */
+/**
+ * Records a variant's prices in its history: closes the open row and opens a new one, only
+ * when the selling price or the cost actually changed.
+ */
 export async function recordVariantPrice(
   ctx: MutationCtx,
   productVariantId: Id<"productVariants">,
-  price: number,
+  prices: { sellingPrice: number; costPrice: number },
   now: number = Date.now()
 ): Promise<void> {
-  const priceListId = await ensureDefaultPriceList(ctx);
   const latest = await ctx.db
     .query("variantPrices")
-    .withIndex("by_variant_list_from", (q) =>
-      q.eq("productVariantId", productVariantId).eq("priceListId", priceListId)
-    )
+    .withIndex("by_variant_and_from", (q) => q.eq("productVariantId", productVariantId))
     .order("desc")
     .first();
 
   if (latest && latest.validTo === undefined) {
-    if (latest.price === price) return;
+    if (latest.sellingPrice === prices.sellingPrice && latest.costPrice === prices.costPrice) return;
     await ctx.db.patch(latest._id, { validTo: now });
   }
   await ctx.db.insert("variantPrices", {
     productVariantId,
-    priceListId,
-    price,
+    sellingPrice: prices.sellingPrice,
+    costPrice: prices.costPrice,
     validFrom: now,
     createdAt: now,
   });

@@ -290,7 +290,7 @@ export const create = mutation({
         createdAt: now,
         updatedAt: now,
       });
-      await recordVariantPrice(ctx, variantId, sellingPrice, now);
+      await recordVariantPrice(ctx, variantId, { sellingPrice, costPrice }, now);
     }
 
     await writeAudit(ctx, {

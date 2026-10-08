@@ -151,17 +151,27 @@ export default function ProductDetailPage() {
         ) : history.length === 0 ? (
           <p className="text-sm">{t("No price changes recorded")}</p>
         ) : (
-          <ul className="space-y-2 text-sm">
-            {history.map((h) => (
-              <li key={h._id} className="flex justify-between">
-                <span>
-                  {formatDate(h.validFrom)}
-                  {h.validTo ? ` → ${formatDate(h.validTo)}` : ` → ${t("now")}`}
-                </span>
-                <span className="font-bold">{fmt(h.price)}</span>
-              </li>
-            ))}
-          </ul>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-widest text-on-surface-variant">
+                <th className="text-left font-black pb-1">{t("Period")}</th>
+                <th className="text-right font-black pb-1">{t("Selling price")}</th>
+                <th className="text-right font-black pb-1">{t("Cost price")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h) => (
+                <tr key={h._id}>
+                  <td className="py-1">
+                    {formatDate(h.validFrom)}
+                    {h.validTo ? ` → ${formatDate(h.validTo)}` : ` → ${t("now")}`}
+                  </td>
+                  <td className="py-1 text-right font-bold">{fmt(h.sellingPrice)}</td>
+                  <td className="py-1 text-right">{fmt(h.costPrice)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Modal>
     </PageLayout>

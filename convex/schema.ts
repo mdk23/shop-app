@@ -163,28 +163,18 @@ export default defineSchema({
     .index("by_barcode", ["barcode"])
     .index("by_active", ["active"]),
 
-  // Price lists. The default list mirrors `productVariants.sellingPrice`; further
-  // lists (wholesale, staff) can be added without schema changes.
-  priceLists: defineTable({
-    name: v.string(),
-    isDefault: v.boolean(),
-    active: v.boolean(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  }).index("by_default", ["isDefault"]),
-
-  // Price history by validity. Never updated in place: a change closes the open row
-  // (validTo) and inserts a new one. The open row is the one with validTo undefined.
+  // Each variant's price history: selling price and cost, with the period they applied.
+  // Never updated in place: a change of either closes the open row (validTo) and inserts
+  // a new one. The open row (validTo undefined) matches the variant's current prices,
+  // which `productVariants` keeps for fast reads, like `variantStock` for stock.
   variantPrices: defineTable({
     productVariantId: v.id("productVariants"),
-    priceListId: v.id("priceLists"),
-    price: v.number(),
+    sellingPrice: v.number(),
+    costPrice: v.number(),
     validFrom: v.number(),
     validTo: v.optional(v.number()),
     createdAt: v.number(),
-  })
-    .index("by_variant_list_from", ["productVariantId", "priceListId", "validFrom"])
-    .index("by_list", ["priceListId"]),
+  }).index("by_variant_and_from", ["productVariantId", "validFrom"]),
 
   // Promotions. Targets live in `promotionTargets`, one catalogue level per row.
   promotions: defineTable({

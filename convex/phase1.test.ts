@@ -88,9 +88,9 @@ describe("variant price history", () => {
       productVariantId: variantId,
     });
     expect(history).toHaveLength(2);
-    expect(history[0].price).toBe(300);
+    expect(history[0].sellingPrice).toBe(300);
     expect(history[0].validTo).toBeUndefined();
-    expect(history[1].price).toBe(250);
+    expect(history[1].sellingPrice).toBe(250);
     expect(history[1].validTo).toBeDefined();
 
     await t.mutation(api.productVariants.update, {
@@ -102,6 +102,15 @@ describe("variant price history", () => {
       productVariantId: variantId,
     });
     expect(history).toHaveLength(2);
+
+    // A cost change also opens a new period, keeping the selling price.
+    await t.mutation(api.productVariants.update, { token, id: variantId, costPrice: 120 });
+    history = await t.query(api.productVariants.priceHistory, {
+      productVariantId: variantId,
+    });
+    expect(history).toHaveLength(3);
+    expect(history[0]).toMatchObject({ sellingPrice: 300, costPrice: 120 });
+    expect(history[1]).toMatchObject({ sellingPrice: 300, costPrice: 100 });
   });
 
   test("resolves sizeId and colorId from the size/colour names", async () => {
@@ -213,7 +222,7 @@ describe("phase 1 backfill", () => {
       productVariantId: legacyVariantId,
     });
     expect(historyRows).toHaveLength(1);
-    expect(historyRows[0].price).toBe(250);
+    expect(historyRows[0].sellingPrice).toBe(250);
     expect(historyRows[0].validFrom).toBe(1_000);
   });
 });

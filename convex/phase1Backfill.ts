@@ -1,5 +1,5 @@
 import { internalMutation } from "./_generated/server";
-import { ensureDefaultPriceList, recordVariantPrice } from "./lib/catalog";
+import { recordVariantPrice } from "./lib/catalog";
 
 const DEFAULT_SCALE_NAME = "Geral";
 
@@ -11,11 +11,14 @@ const DEFAULT_SCALE_NAME = "Geral";
 export const run = internalMutation({
   args: {},
   handler: async (ctx) => {
-    await ensureDefaultPriceList(ctx);
-
     const variants = await ctx.db.query("productVariants").collect();
     for (const variant of variants) {
-      await recordVariantPrice(ctx, variant._id, variant.sellingPrice, variant.createdAt);
+      await recordVariantPrice(
+        ctx,
+        variant._id,
+        { sellingPrice: variant.sellingPrice, costPrice: variant.costPrice },
+        variant.createdAt
+      );
     }
 
     let defaultScale = (await ctx.db.query("sizeScales").collect()).find(
