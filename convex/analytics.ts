@@ -3,8 +3,7 @@ import { v } from "convex/values";
 import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { getLocalDateString } from "./metrics";
-import { stockStatus } from "./stock";
-import { loadVariantNames } from "./lib/variantNames";
+import { dayRows, sumTotals, totalsByBranch, totalsOf } from "./lib/salesMetrics";
 
 // ─────────────────────────────────────────────
 // BRANCH FILTER
@@ -22,23 +21,38 @@ function normalizeBranchId(
 
 // ─────────────────────────────────────────────
 // DASHBOARD
+// Everything here reads the sales totals (dailyMetrics / monthlyMetrics), never the sales
+// themselves: a month is a handful of rows however busy the shop is.
 // ─────────────────────────────────────────────
 
-async function salesInRange(
+const localRange = (start: number, end: number) => ({
+  from: getLocalDateString(start),
+  to: getLocalDateString(end),
+});
+
+type Agg = { qty: number; revenue: number; profit: number };
+
+/** Turns an id-keyed breakdown into named rows, biggest revenue first. */
+async function namedRows(
   ctx: QueryCtx,
-  start: number,
-  end: number,
-  branchId?: Id<"branches">
-): Promise<Doc<"sales">[]> {
-  let rows = await ctx.db
-    .query("sales")
-    .withIndex("by_created_at", (q) =>
-      q.gte("createdAt", start).lte("createdAt", end)
-    )
-    .collect();
-  if (branchId) rows = rows.filter((s) => s.branchId === branchId);
-  return rows;
+  map: Record<string, Agg>,
+  limit?: number
+): Promise<({ name: string } & Agg)[]> {
+  const sorted = Object.entries(map).sort((a, b) => b[1].revenue - a[1].revenue);
+  const picked = limit ? sorted.slice(0, limit) : sorted;
+  return await Promise.all(
+    picked.map(async ([id, agg]) => {
+      const doc = (await ctx.db.get(id as Id<"products">)) as { name?: string } | null;
+      return { name: doc?.name ?? "—", ...agg };
+    })
+  );
 }
+
+const topByQty = async (ctx: QueryCtx, map: Record<string, Agg>, n: number) =>
+  (await namedRows(ctx, map))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, n)
+    .map(({ name, qty }) => ({ name, qty }));
 
 export const getDashboardMetrics = query({
   args: {
@@ -49,162 +63,65 @@ export const getDashboardMetrics = query({
   },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
-    const { start, end } = args;
     const branchId = normalizeBranchId(args.branchId);
-    const span = Math.max(1, end - start);
+    const span = Math.max(1, args.end - args.start);
+    const { from, to } = localRange(args.start, args.end);
+    const prev = localRange(args.start - span, args.start - 1);
 
-    const current = (await salesInRange(ctx, start, end, branchId)).filter(
-      (s) => s.status !== "CANCELLED"
+    // Every branch, for the leaderboard; the figures use the chosen one(s).
+    const byBranch = await totalsByBranch(ctx, from, to);
+    const t = sumTotals(
+      [...byBranch.entries()].filter(([b]) => !branchId || b === branchId).map(([, x]) => x)
     );
-    const previous = (
-      await salesInRange(ctx, start - span, start - 1, branchId)
-    ).filter((s) => s.status !== "CANCELLED");
+    const previous = sumTotals((await totalsByBranch(ctx, prev.from, prev.to, branchId)).values());
 
-    const returns = (
-      await ctx.db
-        .query("salesReturns")
-        .withIndex("by_created_at", (q) =>
-          q.gte("createdAt", start).lte("createdAt", end)
-        )
-        .collect()
-    ).filter((r) => !branchId || r.branchId === branchId);
-
-    let grossRevenue = 0;
-    let cashCollected = 0;
-    let outstandingDebt = 0;
-    let discountTotal = 0;
-    let taxTotal = 0;
-    let itemsSold = 0;
-    let grossProfit = 0;
-    let fullyPaid = 0;
-    let partiallyPaid = 0;
-    let pending = 0;
-
-    const customerIds = new Set<string>();
-    const methods: Record<string, { amount: number; count: number }> = {};
-    const productQty: Record<string, number> = {};
-    const categoryQty: Record<string, number> = {};
-    const namesOf = await loadVariantNames(ctx);
-    const sizeQty: Record<string, number> = {};
-    const colorQty: Record<string, number> = {};
-
-    for (const sale of current) {
-      grossRevenue += sale.total;
-      cashCollected += sale.paidAmount;
-      outstandingDebt += sale.balance;
-      discountTotal += sale.discount;
-      taxTotal += sale.tax;
-      if (!(sale.customerName ?? "").toLowerCase().includes("walk-in"))
-        customerIds.add(sale.customerId);
-
-      if (sale.paymentStatus === "PAID") fullyPaid += 1;
-      else if (sale.paymentStatus === "PARTIALLY_PAID") partiallyPaid += 1;
-      else if (sale.paymentStatus === "UNPAID") pending += 1;
-
-      const payments = await ctx.db
-        .query("payments")
-        .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
-        .collect();
-      for (const p of payments) {
-        if (p.kind === "refund") continue;
-        methods[p.method] = methods[p.method] ?? { amount: 0, count: 0 };
-        methods[p.method].amount += p.amount;
-        methods[p.method].count += 1;
-      }
-
-      const items = await ctx.db
-        .query("saleItems")
-        .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
-        .collect();
-      for (const it of items) {
-        itemsSold += it.quantity;
-        grossProfit += it.total - it.costPriceAtSale * it.quantity;
-        productQty[it.productName] = (productQty[it.productName] ?? 0) + it.quantity;
-        const variant = await ctx.db.get(it.productVariantId);
-        const product = variant ? await ctx.db.get(variant.productId) : null;
-        if (product) {
-          const category = await ctx.db.get(product.categoryId);
-          if (category)
-            categoryQty[category.name] =
-              (categoryQty[category.name] ?? 0) + it.quantity;
-        }
-        const names = variant ? namesOf(variant) : { size: undefined, color: undefined };
-        if (names.size) sizeQty[names.size] = (sizeQty[names.size] ?? 0) + it.quantity;
-        if (names.color) colorQty[names.color] = (colorQty[names.color] ?? 0) + it.quantity;
-      }
-    }
-
-    const prevRevenue = previous.reduce((s, x) => s + x.total, 0);
     const revenueGrowth =
-      prevRevenue > 0
-        ? ((grossRevenue - prevRevenue) / prevRevenue) * 100
-        : grossRevenue > 0
+      previous.revenue > 0
+        ? ((t.revenue - previous.revenue) / previous.revenue) * 100
+        : t.revenue > 0
           ? 100
           : 0;
 
-    const returnsCount = returns.length;
-    // A return's value is the sum of its lines.
-    let refundAmount = 0;
-    for (const r of returns) {
-      const lines = await ctx.db
-        .query("salesReturnItems")
-        .withIndex("by_return", (q) => q.eq("returnId", r._id))
-        .collect();
-      refundAmount += lines.reduce((s, l) => s + l.refundAmount, 0);
-    }
-    const salesCount = current.length;
-
-    const top = (rec: Record<string, number>, n: number) =>
-      Object.entries(rec)
-        .map(([name, qty]) => ({ name, qty }))
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, n);
-
-    // Branch leaderboard (ignores the branch filter).
-    const branchBoard: Record<string, { name: string; revenue: number; sales: number }> = {};
-    if (!branchId) {
-      const all = (await salesInRange(ctx, start, end)).filter(
-        (s) => s.status !== "CANCELLED"
-      );
-      for (const s of all) {
-        const key = s.branchId;
-        if (!branchBoard[key]) {
-          const b = await ctx.db.get(s.branchId);
-          branchBoard[key] = { name: b?.name ?? "?", revenue: 0, sales: 0 };
-        }
-        branchBoard[key].revenue += s.total;
-        branchBoard[key].sales += 1;
-      }
-    }
+    const branchLeaderboard = branchId
+      ? []
+      : (
+          await Promise.all(
+            [...byBranch.entries()].map(async ([b, x]) => ({
+              name: (await ctx.db.get(b))?.name ?? "?",
+              revenue: x.revenue,
+              sales: x.salesCount,
+            }))
+          )
+        )
+          .filter((r) => r.sales !== 0 || r.revenue !== 0)
+          .sort((a, b) => b.revenue - a.revenue);
 
     return {
-      grossRevenue,
-      salesCount,
+      grossRevenue: t.revenue,
+      salesCount: t.salesCount,
       revenueGrowth,
-      cashCollected,
-      collectedPercentage: grossRevenue > 0 ? (cashCollected / grossRevenue) * 100 : 0,
-      outstandingDebt,
-      discountTotal,
-      taxTotal,
-      grossProfit,
-      marginPercent: grossRevenue > 0 ? (grossProfit / grossRevenue) * 100 : 0,
-      itemsSold,
-      avgSaleValue: salesCount > 0 ? grossRevenue / salesCount : 0,
-      avgItemsPerSale: salesCount > 0 ? itemsSold / salesCount : 0,
-      activeCustomersCount: customerIds.size,
-      fullyPaidCount: fullyPaid,
-      partiallyPaidCount: partiallyPaid,
-      pendingCount: pending,
-      returnsCount,
-      refundAmount,
-      paymentMethodsBreakdown: methods,
-      topProducts: top(productQty, 5),
-      topCategories: top(categoryQty, 5),
-      topSizes: top(sizeQty, 5),
-      topColors: top(colorQty, 5),
-      branchLeaderboard: Object.values(branchBoard).sort(
-        (a, b) => b.revenue - a.revenue
-      ),
+      cashCollected: t.collected,
+      collectedPercentage: t.revenue > 0 ? (t.collected / t.revenue) * 100 : 0,
+      outstandingDebt: t.outstanding,
+      discountTotal: t.discount,
+      taxTotal: t.tax,
+      grossProfit: t.profit,
+      marginPercent: t.revenue > 0 ? (t.profit / t.revenue) * 100 : 0,
+      itemsSold: t.itemsSold,
+      avgSaleValue: t.salesCount > 0 ? t.revenue / t.salesCount : 0,
+      avgItemsPerSale: t.salesCount > 0 ? t.itemsSold / t.salesCount : 0,
+      activeCustomersCount: Object.keys(t.customers).length,
+      fullyPaidCount: t.paidCount,
+      partiallyPaidCount: t.partlyPaidCount,
+      pendingCount: t.unpaidCount,
+      returnsCount: t.returnsCount,
+      refundAmount: t.returnValue,
+      paymentMethodsBreakdown: t.paymentMethods,
+      topProducts: await topByQty(ctx, t.products, 5),
+      topCategories: await topByQty(ctx, t.categories, 5),
+      topSizes: await topByQty(ctx, t.sizes, 5),
+      topColors: await topByQty(ctx, t.colors, 5),
+      branchLeaderboard,
     };
   },
 });
@@ -218,29 +135,20 @@ export const todaySnapshot = query({
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
     const today = getLocalDateString(Date.now());
-    const row = await ctx.db
-      .query("dailyMetrics")
-      .withIndex("by_date", (q) => q.eq("dateString", today))
-      .first();
-    const readCounter = async (key: string) => {
-      const c = await ctx.db
-        .query("counters")
-        .withIndex("by_key", (q) => q.eq("key", key))
-        .first();
-      return c?.value ?? 0;
-    };
+    // Today's totals are the day's rows, one per branch (none yet = nothing sold today).
+    const t = sumTotals((await dayRows(ctx, today, today)).map(totalsOf));
+    const stock = await stockTotalsFor(ctx);
     return {
       dateString: today,
-      // Today's totals are the day's dailyMetrics row (none yet = nothing sold today).
-      revenue: row?.totalRevenue ?? 0,
-      salesCount: row?.totalSales ?? 0,
-      itemsSold: row?.totalItemsSold ?? 0,
-      discount: row?.totalDiscount ?? 0,
-      returnsCount: row?.totalReturns ?? 0,
-      refundAmount: row?.refundAmount ?? 0,
-      grossProfit: row?.totalProfit ?? 0,
-      lowStockItems: await readCounter("low_stock_items"),
-      outOfStockItems: await readCounter("out_of_stock_items"),
+      revenue: t.revenue,
+      salesCount: t.salesCount,
+      itemsSold: t.itemsSold,
+      discount: t.discount,
+      returnsCount: t.returnsCount,
+      refundAmount: t.returnValue,
+      grossProfit: t.profit,
+      lowStockItems: stock.lowCount,
+      outOfStockItems: stock.outCount,
     };
   },
 });
@@ -254,21 +162,25 @@ export const salesTrend = query({
   },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
-    const rows = (
-      await salesInRange(ctx, args.start, args.end, normalizeBranchId(args.branchId))
-    ).filter((s) => s.status !== "CANCELLED");
-    const singleDay = args.end - args.start <= 26 * 60 * 60 * 1000;
+    const { from, to } = localRange(args.start, args.end);
+    const rows = await dayRows(ctx, from, to, normalizeBranchId(args.branchId));
     const buckets: Record<string, { revenue: number; sales: number }> = {};
-    for (const s of rows) {
-      const key = singleDay
-        ? `${String(new Date(s.createdAt).getHours()).padStart(2, "0")}:00`
-        : getLocalDateString(s.createdAt);
-      buckets[key] = buckets[key] ?? { revenue: 0, sales: 0 };
-      buckets[key].revenue += s.total;
-      buckets[key].sales += 1;
+    const add = (key: string, revenue: number, sales: number) => {
+      const b = (buckets[key] = buckets[key] ?? { revenue: 0, sales: 0 });
+      b.revenue += revenue;
+      b.sales += sales;
+    };
+    // One day: by hour (Maputo time). Longer: by day.
+    for (const row of rows) {
+      if (from === to) {
+        for (const [hour, h] of Object.entries(row.hours)) add(`${hour}:00`, h.revenue, h.sales);
+      } else {
+        add(row.dateString, row.revenue, row.salesCount);
+      }
     }
     return Object.entries(buckets)
-      .map(([label, v]) => ({ label, ...v }))
+      .filter(([, b]) => b.sales !== 0 || b.revenue !== 0)
+      .map(([label, b]) => ({ label, ...b }))
       .sort((a, b) => a.label.localeCompare(b.label));
   },
 });
@@ -282,61 +194,17 @@ export const salesBreakdown = query({
   },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
-    const branchId = normalizeBranchId(args.branchId);
-    const sales = (await salesInRange(ctx, args.start, args.end, branchId)).filter(
-      (s) => s.status !== "CANCELLED"
+    const { from, to } = localRange(args.start, args.end);
+    const t = sumTotals(
+      (await totalsByBranch(ctx, from, to, normalizeBranchId(args.branchId))).values()
     );
-    const namesOf = await loadVariantNames(ctx);
-    const cat: Record<string, { qty: number; revenue: number }> = {};
-    const size: Record<string, { qty: number; revenue: number }> = {};
-    const color: Record<string, { qty: number; revenue: number }> = {};
-    const product: Record<string, { qty: number; revenue: number; profit: number }> = {};
-    const bump = (
-      rec: Record<string, { qty: number; revenue: number; profit?: number }>,
-      key: string,
-      qty: number,
-      revenue: number,
-      profit?: number
-    ) => {
-      const e = rec[key] ?? { qty: 0, revenue: 0, profit: 0 };
-      e.qty += qty;
-      e.revenue += revenue;
-      if (profit !== undefined) e.profit = (e.profit ?? 0) + profit;
-      rec[key] = e;
-    };
-
-    for (const s of sales) {
-      const items = await ctx.db
-        .query("saleItems")
-        .withIndex("by_sale", (q) => q.eq("saleId", s._id))
-        .collect();
-      for (const it of items) {
-        const profit = it.total - it.costPriceAtSale * it.quantity;
-        bump(product, it.productName, it.quantity, it.total, profit);
-        const variant = await ctx.db.get(it.productVariantId);
-        if (variant) {
-          const names = namesOf(variant);
-          if (names.size) bump(size, names.size, it.quantity, it.total);
-          if (names.color) bump(color, names.color, it.quantity, it.total);
-          const p = await ctx.db.get(variant.productId);
-          if (p) {
-            const c = await ctx.db.get(p.categoryId);
-            if (c) bump(cat, c.name, it.quantity, it.total);
-          }
-        }
-      }
-    }
-
-    const toRows = (r: Record<string, { qty: number; revenue: number; profit?: number }>) =>
-      Object.entries(r)
-        .map(([name, v2]) => ({ name, ...v2 }))
-        .sort((a, b) => b.revenue - a.revenue);
-
+    const withoutProfit = (rows: ({ name: string } & Agg)[]) =>
+      rows.map(({ name, qty, revenue }) => ({ name, qty, revenue }));
     return {
-      byCategory: toRows(cat),
-      bySize: toRows(size),
-      byColor: toRows(color),
-      byProduct: toRows(product),
+      byCategory: withoutProfit(await namedRows(ctx, t.categories)),
+      bySize: withoutProfit(await namedRows(ctx, t.sizes)),
+      byColor: withoutProfit(await namedRows(ctx, t.colors)),
+      byProduct: await namedRows(ctx, t.products),
     };
   },
 });
@@ -382,30 +250,34 @@ export const inventoryValuation = query({
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
     const branchId = normalizeBranchId(args.branchId);
-    const stockRows = branchId
-      ? await ctx.db
-          .query("variantStock")
-          .withIndex("by_branch", (q) => q.eq("branchId", branchId))
-          .collect()
-      : await ctx.db.query("variantStock").collect();
-    let costValue = 0;
-    let retailValue = 0;
-    let units = 0;
-    let low = 0;
-    let out = 0;
-    for (const row of stockRows) {
-      const variant = await ctx.db.get(row.productVariantId);
-      if (!variant || !variant.active) continue;
-      units += row.quantity;
-      costValue += row.quantity * variant.costPrice;
-      retailValue += row.quantity * variant.sellingPrice;
-      const status = stockStatus(
-        row.quantity,
-        variant.reorderLevel
-      );
-      if (status === "LOW_STOCK") low += 1;
-      else if (status === "OUT_OF_STOCK") out += 1;
-    }
-    return { costValue, retailValue, units, lowStockCount: low, outOfStockCount: out };
+    // The running stock totals (lib/stockTotals.ts): one row per branch.
+    const s = await stockTotalsFor(ctx, branchId);
+    return {
+      costValue: s.costValue,
+      retailValue: s.retailValue,
+      units: s.units,
+      lowStockCount: s.lowCount,
+      outOfStockCount: s.outCount,
+    };
   },
 });
+
+/** Stock totals for one branch, or summed over all of them (one row per branch). */
+async function stockTotalsFor(ctx: QueryCtx, branchId?: Id<"branches">) {
+  const rows = branchId
+    ? await ctx.db
+        .query("stockTotals")
+        .withIndex("by_branch", (q) => q.eq("branchId", branchId))
+        .collect()
+    : await ctx.db.query("stockTotals").collect();
+  return rows.reduce(
+    (s, r) => ({
+      units: s.units + r.units,
+      costValue: s.costValue + r.costValue,
+      retailValue: s.retailValue + r.retailValue,
+      lowCount: s.lowCount + r.lowCount,
+      outCount: s.outCount + r.outCount,
+    }),
+    { units: 0, costValue: 0, retailValue: 0, lowCount: 0, outCount: 0 }
+  );
+}

@@ -5,6 +5,7 @@ import {
   internalMutation,
   query,
   MutationCtx,
+  QueryCtx,
 } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -14,17 +15,13 @@ import { formatVariantLabel, variantNames } from "./lib/variantNames";
 import { paymentMethodValidator, type PaymentMethod } from "./lib/paymentMethods";
 import { requireOpenSession } from "./cashRegister";
 import { assertCustomerCanBuy } from "./customers";
-import {
-  applyDailyMetrics,
-  getLocalDateString,
-  sanitizeKey,
-  zeroDeltas,
-  type SaleMetricDeltas,
-} from "./metrics";
+import { getLocalDateString } from "./metrics";
+import { recordSaleMetrics, sumTotals, totalsByBranch, trackSale } from "./lib/salesMetrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { refreshCustomerProfile } from "./customerProfile";
 import { currentNuit, round2 } from "./lib/fiscal";
 import { nextDocumentNumber } from "./lib/numbering";
+import { paymentStatusFor, saleMoney, settleSale } from "./lib/saleMoney";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -53,12 +50,6 @@ async function resolveOpenSession(
     .withIndex("by_status", (q) => q.eq("status", "OPEN"))
     .collect();
   return open.find((s) => s.branchId === branchId) ?? open.find((s) => !s.branchId) ?? null;
-}
-
-function paymentStatusFor(paid: number, total: number): Doc<"sales">["paymentStatus"] {
-  if (paid <= 0) return "UNPAID";
-  if (paid + 1e-6 >= total) return "PAID";
-  return "PARTIALLY_PAID";
 }
 
 // ─────────────────────────────────────────────
@@ -101,6 +92,12 @@ type SaleInput = {
   payments?: { method: PaymentMethod; amount: number }[];
   /** Money already received for this sale (customer-order deposits). Linked, not copied. */
   priorPayments?: Doc<"payments">[];
+  /**
+   * The line prices were agreed earlier and already checked (a customer order being
+   * collected). Otherwise a price other than the variant's selling price is a price
+   * override and needs discount authority.
+   */
+  agreedPrices?: boolean;
   cashRegisterSessionId?: Id<"cashRegisterSessions">;
   isDelivery?: boolean;
   deliveryFeeId?: Id<"deliveryFees">;
@@ -149,8 +146,16 @@ export async function performSale(
       taxAmount: number;
     }[] = [];
 
+    // Price overrides: lines sold at a price other than the selling price, and how much
+    // below it they went. Both count as discounts for the authority check.
+    let overriddenLines = 0;
+    let priceCut = 0;
+
     for (const item of args.items) {
       if (item.quantity <= 0) throw new Error("Quantities must be positive.");
+      if (item.unitPrice !== undefined && item.unitPrice < 0) {
+        throw new Error("A price cannot be negative.");
+      }
       const variant = await ctx.db.get(item.productVariantId);
       if (!variant || !variant.active)
         throw new Error("A selected product variant is unavailable.");
@@ -164,7 +169,12 @@ export async function performSale(
       }
 
       const unitPrice = item.unitPrice ?? variant.sellingPrice;
+      if (!args.agreedPrices && Math.abs(unitPrice - variant.sellingPrice) > 1e-6) {
+        overriddenLines += 1;
+        priceCut += Math.max(0, variant.sellingPrice - unitPrice) * item.quantity;
+      }
       const lineDiscount = item.discount ?? 0;
+      if (lineDiscount < 0) throw new Error("A discount cannot be negative.");
       const lineTotal = Math.max(0, unitPrice * item.quantity - lineDiscount);
 
       const stock = await ctx.db
@@ -268,15 +278,18 @@ export async function performSale(
 
     const total = Math.max(0, taxableBase + tax + deliveryFeeAmount);
 
-    // 3. Discount authority — only the manual portion counts; the automatic
-    // tier discount is never a cashier choice and can't trip this.
-    const discountPct = subtotal > 0 ? (manualDiscount / subtotal) * 100 : 0;
+    // 3. Discount authority — the manual discounts plus any price overrides, measured
+    // against the list-price value; the automatic tier discount is never a cashier
+    // choice and can't trip this. Any changed price needs `sales.discount`.
+    const cashierDiscount = manualDiscount + priceCut;
+    const listSubtotal = subtotal + priceCut;
+    const discountPct = listSubtotal > 0 ? (cashierDiscount / listSubtotal) * 100 : 0;
     const maxWithoutApproval = Number(
       (await getSetting(ctx, "discountMaxPercentWithoutApproval"))?.value ?? "100"
     );
     if (discountPct > maxWithoutApproval) {
       requirePermission(actor, "sales.discount_large");
-    } else if (manualDiscount > 0) {
+    } else if (cashierDiscount > 0 || overriddenLines > 0) {
       requirePermission(actor, "sales.discount");
     }
 
@@ -297,7 +310,6 @@ export async function performSale(
 
     // 5. Sale number: the gapless fiscal number, the sale's only number.
     const now = Date.now();
-    const dateString = getLocalDateString(now);
     const saleNumber = await nextDocumentNumber(ctx, "SALE", now);
 
     // 6. Session: every payment goes through the branch's open register.
@@ -345,6 +357,7 @@ export async function performSale(
         discount: l.discount,
         total: l.total,
         costPriceAtSale: l.costPriceAtSale,
+        netAmount: l.net,
         taxRateId: l.taxRateId,
         taxRatePercent: l.taxPercent,
         taxAmount: l.taxAmount,
@@ -402,52 +415,8 @@ export async function performSale(
       username: actor.username,
     });
 
-    // 12. Metrics.
-    const grossProfit = lines.reduce(
-      (s, l) => s + (l.total - l.costPriceAtSale * l.quantity),
-      0
-    );
-    const deltas: SaleMetricDeltas = {
-      ...zeroDeltas(),
-      totalRevenue: total,
-      totalSales: 1,
-      totalItemsSold: lines.reduce((s, l) => s + l.quantity, 0),
-      totalDiscount: discount,
-      totalTax: tax,
-      totalProfit: grossProfit,
-      totalPending: balance,
-      cashCollected: payments
-        .filter((p) => isCash(p.method))
-        .reduce((s, p) => s + p.amount, 0),
-      outstandingDebt: balance,
-      fullyPaidCount: paymentStatus === "PAID" ? 1 : 0,
-      partiallyPaidCount: paymentStatus === "PARTIALLY_PAID" ? 1 : 0,
-      pendingCount: paymentStatus === "UNPAID" ? 1 : 0,
-      paymentMethods: {},
-      categorySales: {},
-      productSales: {},
-      sizeSales: {},
-      colorSales: {},
-    };
-    for (const p of payments) {
-      const k = sanitizeKey(p.method);
-      deltas.paymentMethods![k] = deltas.paymentMethods![k] ?? { amount: 0, count: 0 };
-      deltas.paymentMethods![k].amount += p.amount;
-      deltas.paymentMethods![k].count += 1;
-    }
-    for (const l of lines) {
-      deltas.categorySales![sanitizeKey(l.categoryName)] =
-        (deltas.categorySales![sanitizeKey(l.categoryName)] ?? 0) + l.quantity;
-      deltas.productSales![sanitizeKey(l.productName)] =
-        (deltas.productSales![sanitizeKey(l.productName)] ?? 0) + l.quantity;
-      if (l.size)
-        deltas.sizeSales![sanitizeKey(l.size)] =
-          (deltas.sizeSales![sanitizeKey(l.size)] ?? 0) + l.quantity;
-      if (l.color)
-        deltas.colorSales![sanitizeKey(l.color)] =
-          (deltas.colorSales![sanitizeKey(l.color)] ?? 0) + l.quantity;
-    }
-    await applyDailyMetrics(ctx, dateString, deltas);
+    // 12. Sales totals (dashboard and reports).
+    await recordSaleMetrics(ctx, saleId);
 
     await writeAudit(ctx, {
       userId: actor._id,
@@ -455,7 +424,11 @@ export async function performSale(
       action: "sale.created",
       entityType: "sale",
       entityId: saleId,
-      details: `${saleNumber} — total ${total.toFixed(2)}, paid ${appliedToSale.toFixed(2)}, ${lines.length} line(s)`,
+      details:
+        `${saleNumber} — total ${total.toFixed(2)}, paid ${appliedToSale.toFixed(2)}, ${lines.length} line(s)` +
+        (overriddenLines > 0
+          ? `, price changed on ${overriddenLines} line(s) (${priceCut.toFixed(2)} below list)`
+          : ""),
     });
 
     return saleId;
@@ -505,6 +478,7 @@ export const cancel = mutation({
       throw new Error("Cancel is not allowed after a return. Process a return instead.");
     }
 
+    const metricsDone = await trackSale(ctx, args.saleId);
     const items = await ctx.db
       .query("saleItems")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
@@ -524,35 +498,58 @@ export const cancel = mutation({
       });
     }
 
-    // Return cash taken, if a session is open.
-    const cashPaid = (
-      await ctx.db
-        .query("payments")
-        .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-        .collect()
-    )
-      .filter((p) => p.kind !== "refund" && isCash(p.method))
-      .reduce((s, p) => s + p.amount, 0);
-    if (cashPaid > 0) {
-      const session = await requireOpenSession(ctx, sale.branchId);
+    // Give back the money kept for the sale, by the method it came in: one refund row per
+    // method, never more than that method brought in. Cash goes last, so money paid over
+    // the total (already turned into store credit) is not handed back twice.
+    const now = Date.now();
+    const money = await saleMoney(ctx, sale);
+    const keptByMethod = new Map<Doc<"payments">["method"], number>();
+    for (const p of money.rows) {
+      keptByMethod.set(p.method, (keptByMethod.get(p.method) ?? 0) + p.amount);
+    }
+    const methods = [...keptByMethod.keys()].sort(
+      (a, b) => Number(isCash(a)) - Number(isCash(b))
+    );
+    let toRefund = money.paid;
+    const refunds: { method: Doc<"payments">["method"]; amount: number }[] = [];
+    for (const method of methods) {
+      const amount = round2(Math.min(toRefund, keptByMethod.get(method) ?? 0));
+      if (amount <= 0) continue;
+      refunds.push({ method, amount });
+      toRefund = round2(toRefund - amount);
+    }
+    // Money given back goes through the open register; store credit goes back on the
+    // customer's credit balance.
+    const session = refunds.some((r) => r.method !== "STORE_CREDIT")
+      ? await requireOpenSession(ctx, sale.branchId)
+      : null;
+    for (const r of refunds) {
+      if (r.method === "STORE_CREDIT") {
+        await adjustCustomerCredit(ctx, {
+          customerId: sale.customerId,
+          delta: r.amount,
+          reason: "RETURN_REFUND",
+          referenceType: "sale_cancellation",
+          referenceId: args.saleId,
+          userId: actor._id,
+          username: actor.username,
+          notes: `Store credit back for cancelled ${sale.saleNumber}`,
+        });
+      }
       await ctx.db.insert("payments", {
         saleId: args.saleId,
-        method: "CASH",
-        amount: -cashPaid,
+        method: r.method,
+        amount: -r.amount,
         kind: "refund",
-        cashRegisterSessionId: session?._id,
+        cashRegisterSessionId: r.method === "STORE_CREDIT" ? undefined : session?._id,
         userId: actor._id,
         username: actor.username,
-        createdAt: Date.now(),
+        createdAt: now,
       });
     }
 
-    await ctx.db.patch(args.saleId, {
-      status: "CANCELLED",
-      paymentStatus: "REFUNDED",
-      balance: 0,
-      updatedAt: Date.now(),
-    });
+    await ctx.db.patch(args.saleId, { status: "CANCELLED", updatedAt: now });
+    await settleSale(ctx, args.saleId);
 
     // Cancelling changes both this sale's size observations (now excluded,
     // being CANCELLED) and the customer's trailing spend — same invariant
@@ -562,24 +559,8 @@ export const cancel = mutation({
       username: actor.username,
     });
 
-    // Reverse the sale's metric contribution.
-    const dateString = getLocalDateString(sale.createdAt);
-    const grossProfit = items.reduce(
-      (s, it) => s + (it.total - it.costPriceAtSale * it.quantity),
-      0
-    );
-    await applyDailyMetrics(ctx, dateString, {
-      ...zeroDeltas(),
-      totalRevenue: -sale.total,
-      totalSales: -1,
-      totalItemsSold: -items.reduce((s, it) => s + it.quantity, 0),
-      totalDiscount: -sale.discount,
-      totalTax: -sale.tax,
-      totalProfit: -grossProfit,
-      totalPending: -sale.balance,
-      outstandingDebt: -sale.balance,
-      cashCollected: -cashPaid,
-    });
+    // The sale leaves the sales totals.
+    await metricsDone();
 
     await writeAudit(ctx, {
       userId: actor._id,
@@ -587,7 +568,11 @@ export const cancel = mutation({
       action: "sale.cancelled",
       entityType: "sale",
       entityId: args.saleId,
-      details: `${sale.saleNumber}: ${args.reason}`,
+      details:
+        `${sale.saleNumber}: ${args.reason}` +
+        (refunds.length > 0
+          ? ` — refunded ${refunds.map((r) => `${r.method} ${r.amount.toFixed(2)}`).join(", ")}`
+          : ""),
     });
   },
 });
@@ -609,22 +594,142 @@ export const listRecent = query({
   },
 });
 
-export const listByRange = query({
-  args: {
-    start: v.number(),
-    end: v.number(),
-    branchId: v.optional(v.id("branches")),
-  },
-  handler: async (ctx, args) => {
-    let rows = await ctx.db
-      .query("sales")
-      .withIndex("by_created_at", (q) =>
-        q.gte("createdAt", args.start).lte("createdAt", args.end)
+const saleListFilters = {
+  start: v.number(),
+  end: v.number(),
+  branchId: v.optional(v.id("branches")),
+  status: v.optional(
+    v.union(v.literal("COMPLETED"), v.literal("CANCELLED"), v.literal("RETURNED"), v.literal("PARTIALLY_RETURNED"))
+  ),
+  paymentStatus: v.optional(
+    v.union(
+      v.literal("PAID"),
+      v.literal("PARTIALLY_PAID"),
+      v.literal("UNPAID"),
+      v.literal("REFUNDED"),
+      v.literal("PARTIALLY_REFUNDED")
+    )
+  ),
+};
+
+type SaleListFilters = {
+  start: number;
+  end: number;
+  branchId?: Id<"branches">;
+  status?: Doc<"sales">["status"];
+  paymentStatus?: Doc<"sales">["paymentStatus"];
+};
+
+/**
+ * Sales in a date range, newest first, through the index that narrows them most (each
+ * carries `createdAt`); a second filter, when one is picked as well, is applied by the
+ * database as it reads that range.
+ */
+function salesInRange(ctx: QueryCtx, f: SaleListFilters) {
+  const base = f.paymentStatus
+    ? ctx.db
+        .query("sales")
+        .withIndex("by_payment_status", (q) =>
+          q.eq("paymentStatus", f.paymentStatus!).gte("createdAt", f.start).lte("createdAt", f.end)
+        )
+    : f.status
+      ? ctx.db
+          .query("sales")
+          .withIndex("by_status", (q) =>
+            q.eq("status", f.status!).gte("createdAt", f.start).lte("createdAt", f.end)
+          )
+      : f.branchId
+        ? ctx.db
+            .query("sales")
+            .withIndex("by_branch", (q) =>
+              q.eq("branchId", f.branchId!).gte("createdAt", f.start).lte("createdAt", f.end)
+            )
+        : ctx.db
+            .query("sales")
+            .withIndex("by_created_at", (q) => q.gte("createdAt", f.start).lte("createdAt", f.end));
+  const needsBranch = f.branchId && (f.paymentStatus || f.status);
+  const needsStatus = f.status && f.paymentStatus;
+  return (needsBranch || needsStatus
+    ? base.filter((q) =>
+        q.and(
+          needsBranch ? q.eq(q.field("branchId"), f.branchId!) : true,
+          needsStatus ? q.eq(q.field("status"), f.status!) : true
+        )
       )
-      .order("desc")
-      .collect();
-    if (args.branchId) rows = rows.filter((s) => s.branchId === args.branchId);
-    return rows;
+    : base
+  ).order("desc");
+}
+
+/** The sales list, a page at a time. A search looks up sale numbers and customer names. */
+export const listPaged = query({
+  args: { ...saleListFilters, search: v.optional(v.string()), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const { search, paginationOpts, ...filters } = args;
+    const term = search?.trim();
+    if (!term) return await salesInRange(ctx, filters).paginate(paginationOpts);
+
+    // Sale numbers ("FT 2026/000042") by prefix, or by their number alone ("42").
+    const upper = term.toUpperCase();
+    const byNumber = await ctx.db
+      .query("sales")
+      .withIndex("by_sale_number", (q) => q.gte("saleNumber", upper).lt("saleNumber", upper + "~"))
+      .take(50);
+    if (/^\d+$/.test(term)) {
+      const year = getLocalDateString(args.end).slice(0, 4);
+      const exact = await ctx.db
+        .query("sales")
+        .withIndex("by_sale_number", (q) => q.eq("saleNumber", `FT ${year}/${term.padStart(6, "0")}`))
+        .unique();
+      if (exact) byNumber.push(exact);
+    }
+    const byName = await ctx.db
+      .query("sales")
+      .withSearchIndex("search_customer", (q) => {
+        let s = q.search("customerName", term);
+        if (filters.branchId) s = s.eq("branchId", filters.branchId);
+        if (filters.status) s = s.eq("status", filters.status);
+        if (filters.paymentStatus) s = s.eq("paymentStatus", filters.paymentStatus);
+        return s;
+      })
+      .take(50);
+    const seen = new Set<string>();
+    const page = [...byNumber, ...byName]
+      .filter(
+        (s) =>
+          !seen.has(s._id) &&
+          !!seen.add(s._id) &&
+          s.createdAt >= args.start &&
+          s.createdAt <= args.end &&
+          (!filters.branchId || s.branchId === filters.branchId) &&
+          (!filters.status || s.status === filters.status) &&
+          (!filters.paymentStatus || s.paymentStatus === filters.paymentStatus)
+      )
+      .sort((a, b) => b.createdAt - a.createdAt);
+    return { page, isDone: true, continueCursor: "" };
+  },
+});
+
+/** Every sale for the CSV export, on request (up to 5,000). */
+export const listForExport = query({
+  args: saleListFilters,
+  handler: async (ctx, args) => await salesInRange(ctx, args).take(5000),
+});
+
+/** The period's totals for the sales page, from the daily/monthly sales totals. */
+export const rangeTotals = query({
+  args: { start: v.number(), end: v.number(), branchId: v.optional(v.id("branches")) },
+  handler: async (ctx, args) => {
+    const t = sumTotals(
+      (
+        await totalsByBranch(
+          ctx,
+          getLocalDateString(args.start),
+          getLocalDateString(args.end),
+          args.branchId
+        )
+      ).values()
+    );
+    return { count: t.salesCount, revenue: t.revenue, collected: t.collected, outstanding: t.outstanding };
   },
 });
 

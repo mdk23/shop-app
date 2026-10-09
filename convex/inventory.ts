@@ -12,7 +12,7 @@ import { internal } from "./_generated/api";
 import { validateToken } from "./auth";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
-import { syncGlobalStockCounters } from "./metrics";
+import { addStockRow, setStockQuantity } from "./lib/stockTotals";
 import { adjustmentReasonValidator, movementTypeValidator } from "./schema";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
@@ -59,8 +59,11 @@ async function getOrCreateVariantStock(
     branchId,
     productVariantId,
     quantity: 0,
+    status: "OUT_OF_STOCK",
     updatedAt: Date.now(),
   });
+  // A new row starts at 0: it counts as out of stock in its branch's totals.
+  await addStockRow(ctx, (await ctx.db.get(id))!);
   return (await ctx.db.get(id))!;
 }
 
@@ -140,13 +143,8 @@ export const mutateStock = internalMutation({
       );
     }
 
-    // The reorder level is the variant's, for every branch.
-    await syncGlobalStockCounters(ctx, previousBalance, newBalance, variant.reorderLevel);
-
-    await ctx.db.patch(stock._id, {
-      quantity: newBalance,
-      updatedAt: Date.now(),
-    });
+    // The row's status and its branch's stock totals follow the quantity.
+    await setStockQuantity(ctx, stock, newBalance, variant);
 
     const actor = await resolveActor(ctx, args.userId, args.username);
     const now = Date.now();
@@ -215,7 +213,7 @@ export const listMovements = query({
           q.eq("productVariantId", args.productVariantId!)
         )
         .order("desc")
-        .collect();
+        .take(limit * 3);
     } else {
       rows = await ctx.db
         .query("inventoryMovements")

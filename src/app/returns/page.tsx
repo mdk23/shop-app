@@ -253,11 +253,18 @@ function ReturnModal({
         : { ...p, [id]: { qty: item.quantity, reason: "WRONG_SIZE", restock: true, condition: "SELLABLE" } }
     );
 
-  const estRefund = Object.entries(rows).reduce((sum, [id, r]) => {
-    const it = sale.items.find((x) => x._id === id);
-    if (!it) return sum;
-    return sum + (it.total / it.quantity) * r.qty;
-  }, 0);
+  // The server values the goods and says how much is money back: on an unpaid or
+  // part-paid sale the goods first clear what the customer still owes.
+  const pickedLines = Object.entries(rows).map(([saleItemId, r]) => ({
+    saleItemId: saleItemId as Id<"saleItems">,
+    quantity: r.qty,
+  }));
+  const preview = useQuery(
+    api.salesReturns.previewReturn,
+    pickedLines.length > 0 ? { token, saleId: sale._id, items: pickedLines } : "skip"
+  );
+  const estRefund = preview?.refund ?? 0;
+  const debtCleared = preview?.debtCleared ?? 0;
   const replacementTotal = replacements.reduce(
     (s, r) => s + r.sellingPrice * r.quantity,
     0
@@ -267,7 +274,7 @@ function ReturnModal({
   const registerClosed = useRegisterClosed(sale.branchId);
   const movesMoney =
     mode === "return"
-      ? refundMethod !== "STORE_CREDIT"
+      ? refundMethod !== "STORE_CREDIT" && estRefund > 0
       : difference > 0 || (difference < 0 && refundMethod !== "STORE_CREDIT");
   const blockedByRegister = registerClosed && movesMoney;
 
@@ -297,7 +304,6 @@ function ReturnModal({
           replacementItems: replacements.map((r) => ({
             productVariantId: r.variantId,
             quantity: r.quantity,
-            unitPrice: r.sellingPrice,
           })),
           additionalPayments:
             difference > 0
@@ -344,7 +350,7 @@ function ReturnModal({
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <Button onClick={submit} loading={busy} disabled={blockedByRegister}>
+          <Button onClick={submit} loading={busy} disabled={blockedByRegister || (pickedLines.length > 0 && preview === undefined)}>
             {mode === "exchange"
               ? difference > 0
                 ? t("Collect {amount}", { amount: fmt(difference) })
@@ -357,6 +363,13 @@ function ReturnModal({
       }
     >
       {blockedByRegister && <RegisterClosedNotice className="mb-3" />}
+      {debtCleared > 0 && (
+        <p className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          {t("{amount} of the returned goods only clears what the customer still owes on this sale.", {
+            amount: fmt(debtCleared),
+          })}
+        </p>
+      )}
       <div className="flex gap-1.5 mb-2">
         {(["return", "exchange"] as const).map((m) => (
           <button

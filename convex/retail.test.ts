@@ -273,8 +273,7 @@ describe("reorder level", () => {
     await setStock(5); // seed variant has reorder level 3 → in stock, not low
     const lowCount = () =>
       t.run(async (ctx) =>
-        (await ctx.db.query("counters").withIndex("by_key", (q) => q.eq("key", "low_stock_items")).unique())
-          ?.value ?? 0
+        (await ctx.db.query("stockTotals").first())?.lowCount ?? 0
       );
     expect(await lowCount()).toBe(0);
 
@@ -282,6 +281,7 @@ describe("reorder level", () => {
     expect(await lowCount()).toBe(1);
     const stockRow = await t.run((ctx) => ctx.db.query("variantStock").first());
     expect(stockRow).not.toHaveProperty("reorderLevel");
+    expect(stockRow?.status).toBe("LOW_STOCK");
 
     await t.mutation(api.productVariants.update, { token: ids.admin.token, id: ids.variantId, reorderLevel: 2 });
     expect(await lowCount()).toBe(0);
@@ -556,6 +556,230 @@ describe("returns", () => {
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(page[0]).toMatchObject({ returnValue: 250, refunded: 250, refundMethods: ["CARD"] });
+  });
+});
+
+describe("money on returns, cancellations and prices", () => {
+  const firstLine = (t: Awaited<ReturnType<typeof seed>>["t"], saleId: Id<"sales">) =>
+    t.run(async (ctx) => {
+      const it = await ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+        .first();
+      return it!._id;
+    });
+  const refundRows = (t: Awaited<ReturnType<typeof seed>>["t"], saleId: Id<"sales">) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("payments")
+          .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+          .collect()
+      ).filter((p) => p.kind === "refund")
+    );
+
+  test("returning goods from an unpaid sale clears the debt and gives no money back", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+    })) as Id<"sales">;
+    const saleItemId = await firstLine(t, saleId);
+
+    const preview = await t.query(api.salesReturns.previewReturn, {
+      token: ids.admin.token,
+      saleId,
+      items: [{ saleItemId, quantity: 1 }],
+    });
+    expect(preview).toEqual({ returnValue: 250, debtCleared: 250, refund: 0 });
+
+    await t.mutation(api.salesReturns.create, {
+      token: ids.admin.token,
+      saleId,
+      items: [{ saleItemId, quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      refundMethod: "CASH",
+    });
+    expect(await refundRows(t, saleId)).toHaveLength(0);
+    const sale = await t.run((ctx) => ctx.db.get(saleId));
+    expect(sale).toMatchObject({
+      status: "PARTIALLY_RETURNED",
+      paymentStatus: "UNPAID",
+      paidAmount: 0,
+      balance: 250,
+    });
+
+    // The debt report and the customer's figures follow.
+    const debt = await t.query(api.analytics.customerDebt, { token: ids.admin.token });
+    expect(debt).toEqual([expect.objectContaining({ balance: 250 })]);
+    const customer = await t.query(api.customers.getById, { id: ids.namedCustomerId });
+    expect(customer?.stats).toMatchObject({ totalPurchases: 250, outstandingDebt: 250 });
+  });
+
+  test("on a part-paid sale only what goes beyond the debt is refunded", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      payments: [{ method: "CASH", amount: 300 }],
+    })) as Id<"sales">;
+    const saleItemId = await firstLine(t, saleId);
+
+    // 500 owed, 300 paid (200 owed). Returning everything: 200 clears the debt, 300 back.
+    await t.mutation(api.salesReturns.create, {
+      token: ids.admin.token,
+      saleId,
+      items: [{ saleItemId, quantity: 2, reason: "WRONG_SIZE", restock: true }],
+      refundMethod: "CASH",
+    });
+    const refunds = await refundRows(t, saleId);
+    expect(refunds.map((r) => r.amount)).toEqual([-300]);
+    const sale = await t.run((ctx) => ctx.db.get(saleId));
+    expect(sale).toMatchObject({ status: "RETURNED", paymentStatus: "REFUNDED", paidAmount: 0, balance: 0 });
+  });
+
+  test("a return refunds what was paid for the line, with its IVA and sale discount", async () => {
+    const { t, ids, setStock, setSetting } = await seed();
+    await setStock(10);
+    await setSetting("taxRatePercent", true, "16");
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      discount: 50, // 450 net + 16% = 522
+      payments: [{ method: "CARD", amount: 522 }],
+    })) as Id<"sales">;
+    const saleItemId = await firstLine(t, saleId);
+    await t.mutation(api.salesReturns.create, {
+      token: ids.admin.token,
+      saleId,
+      items: [{ saleItemId, quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      refundMethod: "CARD",
+    });
+    expect((await refundRows(t, saleId)).map((r) => r.amount)).toEqual([-261]);
+  });
+
+  test("an exchange on a paid sale moves the credit to the replacement", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+      payments: [{ method: "CASH", amount: 250 }],
+    })) as Id<"sales">;
+    const saleItemId = await firstLine(t, saleId);
+    const res = await t.mutation(api.salesReturns.exchange, {
+      token: ids.admin.token,
+      saleId,
+      returnItems: [{ saleItemId, quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      replacementItems: [{ productVariantId: ids.variantId, quantity: 1 }],
+      refundMethod: "CASH",
+    });
+    expect(res.difference).toBe(0);
+    const [original, replacement] = await t.run(async (ctx) => [
+      await ctx.db.get(saleId),
+      await ctx.db.get(res.replacementSaleId),
+    ]);
+    expect(original).toMatchObject({ status: "RETURNED", paidAmount: 0, balance: 0 });
+    expect(replacement).toMatchObject({ discount: 0, total: 250, paidAmount: 250, paymentStatus: "PAID" });
+    // The customer bought one item: lifetime spend counts it once.
+    const customer = await t.query(api.customers.getById, { id: ids.namedCustomerId });
+    expect(customer?.stats.totalPurchases).toBe(250);
+  });
+
+  test("an exchange on an unpaid sale gives no free credit", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+    })) as Id<"sales">;
+    const saleItemId = await firstLine(t, saleId);
+    const res = await t.mutation(api.salesReturns.exchange, {
+      token: ids.admin.token,
+      saleId,
+      returnItems: [{ saleItemId, quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      replacementItems: [{ productVariantId: ids.variantId, quantity: 1 }],
+      refundMethod: "CASH",
+    });
+    const replacement = await t.run((ctx) => ctx.db.get(res.replacementSaleId));
+    expect(replacement).toMatchObject({ total: 250, paidAmount: 0, balance: 250 });
+    const customer = await t.query(api.customers.getById, { id: ids.namedCustomerId });
+    expect(customer?.stats).toMatchObject({ totalPurchases: 250, outstandingDebt: 250 });
+  });
+
+  test("cancelling refunds every method it was paid with", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      payments: [
+        { method: "CARD", amount: 200 },
+        { method: "MPESA", amount: 100 },
+        { method: "CASH", amount: 200 },
+      ],
+    })) as Id<"sales">;
+    await t.mutation(api.sales.cancel, { token: ids.admin.token, saleId, reason: "test" });
+    const refunds = await refundRows(t, saleId);
+    expect(
+      Object.fromEntries(refunds.map((r) => [r.method, r.amount]))
+    ).toEqual({ CARD: -200, MPESA: -100, CASH: -200 });
+    const sale = await t.run((ctx) => ctx.db.get(saleId));
+    expect(sale).toMatchObject({ status: "CANCELLED", paymentStatus: "REFUNDED", paidAmount: 0, balance: 0 });
+  });
+
+  test("cancelling does not hand back money already turned into store credit", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+      payments: [{ method: "CASH", amount: 300 }], // 50 over → store credit
+    })) as Id<"sales">;
+    await t.mutation(api.sales.cancel, { token: ids.admin.token, saleId, reason: "test" });
+    expect((await refundRows(t, saleId)).map((r) => r.amount)).toEqual([-250]);
+  });
+
+  test("a changed price needs discount authority and is audited", async () => {
+    const { t, ids, setStock, setSetting } = await seed();
+    await setStock(10);
+    await setSetting("discountMaxPercentWithoutApproval", true, "10");
+    const sell = (token: string, unitPrice: number) =>
+      t.mutation(api.sales.create, {
+        token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1, unitPrice }],
+        payments: [{ method: "CARD", amount: unitPrice }],
+      });
+
+    // The seller cannot sell the 250 item for 50 (an 80% cut) …
+    await expect(sell(ids.seller.token, 50)).rejects.toThrow(/[Aa]ccess denied|discount/);
+    // … but the list price is fine for anyone.
+    await expect(sell(ids.seller.token, 250)).resolves.toBeDefined();
+    // The admin can, and the audit log says so.
+    const saleId = await sell(ids.admin.token, 50);
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).find(
+        (a) => a.action === "sale.created" && a.entityId === saleId
+      )
+    );
+    expect(audit?.details).toMatch(/price changed on 1 line/);
   });
 });
 
@@ -1121,5 +1345,288 @@ describe("customer profile & tier", () => {
     expect(context.customer?.preferredCategoryIds).toEqual([ids.categoryId]);
     expect(context.customer?.preferredCategoryNames).toEqual(["T-Shirts"]);
     expect(context.customer?.preferredBrands).toEqual(["Nike", "Adidas"]);
+  });
+});
+
+describe("document numbers and customer pages", () => {
+  test("a document made just after midnight on 1 January in Maputo gets the new year", async () => {
+    const { t } = await seed();
+    // 31 Dec 2026 22:30 UTC = 1 Jan 2027 00:30 in Maputo.
+    const number = await t.run(async (ctx) => {
+      const { nextDocumentNumber } = await import("./lib/numbering");
+      return await nextDocumentNumber(ctx, "SALE", Date.UTC(2026, 11, 31, 22, 30));
+    });
+    expect(number).toBe("FT 2027/000001");
+  });
+
+  test("customer pages stay full when archived customers sit between them", async () => {
+    const { t, ids } = await seed();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 20; i++) {
+        await ctx.db.insert("customers", {
+          name: `C${i}`,
+          phone1: `84000${i}`,
+          isGeneric: false,
+          status: i % 2 === 0 ? "ARCHIVED" : i % 3 === 0 ? "DISABLED" : "ACTIVE",
+        });
+      }
+    });
+    // The 2 seeded customers + the 10 new ones not archived; archived are skipped.
+    const all: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    for (;;) {
+      const res: { page: { name: string; status: string }[]; isDone: boolean; continueCursor: string } =
+        await t.query(api.customers.listPaginated, { paginationOpts: { numItems: 4, cursor } });
+      pages++;
+      if (!res.isDone) expect(res.page).toHaveLength(4);
+      expect(res.page.every((c) => c.status !== "ARCHIVED")).toBe(true);
+      all.push(...res.page.map((c) => c.name));
+      if (res.isDone) break;
+      cursor = res.continueCursor;
+    }
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.slice(0, 3)).toEqual(["C19", "C17", "C15"]); // newest first
+    expect(all).toContain("C9"); // DISABLED is listed
+    const withArchived = await t.query(api.customers.listPaginated, {
+      paginationOpts: { numItems: 50, cursor: null },
+      showArchived: true,
+    });
+    expect(withArchived.page.length).toBe(all.length + 10);
+    void ids;
+  });
+});
+
+describe("sales totals (daily and monthly)", () => {
+  const firstLine = (t: Awaited<ReturnType<typeof seed>>["t"], saleId: Id<"sales">) =>
+    t.run(async (ctx) => {
+      const it = await ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+        .first();
+      return it!._id;
+    });
+
+  async function busyDay() {
+    const s = await seed();
+    const { t, ids, setStock } = s;
+    await setStock(50);
+    const sell = (quantity: number, payments: { method: "CASH" | "CARD"; amount: number }[], customerId = ids.namedCustomerId) =>
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId,
+        items: [{ productVariantId: ids.variantId, quantity }],
+        payments,
+      }) as Promise<Id<"sales">>;
+    const paidCash = await sell(2, [{ method: "CASH", amount: 500 }]);
+    const unpaid = await sell(1, []);
+    await t.mutation(api.payments.add, { token: ids.admin.token, saleId: unpaid, method: "CARD", amount: 100 });
+    const toCancel = await sell(1, [{ method: "CARD", amount: 250 }], ids.customerId);
+    await t.mutation(api.sales.cancel, { token: ids.admin.token, saleId: toCancel, reason: "test" });
+    await t.mutation(api.salesReturns.create, {
+      token: ids.admin.token,
+      saleId: paidCash,
+      items: [{ saleItemId: await firstLine(t, paidCash), quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      refundMethod: "CASH",
+    });
+    const exchanged = await sell(1, [{ method: "CASH", amount: 250 }]);
+    await t.mutation(api.salesReturns.exchange, {
+      token: ids.admin.token,
+      saleId: exchanged,
+      returnItems: [{ saleItemId: await firstLine(t, exchanged), quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      replacementItems: [{ productVariantId: ids.variantId, quantity: 1 }],
+      refundMethod: "CASH",
+    });
+    return s;
+  }
+
+  const dayRange = () => {
+    const now = Date.now();
+    return { start: now - 60 * 60 * 1000, end: now + 60 * 60 * 1000 };
+  };
+
+  test("follow every change to a sale", async () => {
+    const { t, ids } = await busyDay();
+    const m = await t.query(api.analytics.getDashboardMetrics, { token: ids.admin.token, ...dayRange() });
+    // Sales kept: 500 (cash) + 250 (unpaid, 100 paid) + 250 (exchanged) + 250 (replacement).
+    expect(m).toMatchObject({
+      salesCount: 4,
+      grossRevenue: 1250,
+      itemsSold: 5,
+      returnsCount: 2,
+      refundAmount: 500,
+      activeCustomersCount: 1,
+      outstandingDebt: 150,
+      partiallyPaidCount: 1,
+    });
+    expect(m.paymentMethodsBreakdown.CARD).toEqual({ amount: 100, count: 1 }); // the cancelled card sale is gone
+    expect(m.topProducts).toEqual([{ name: "Basic Tee", qty: 5 }]);
+    const today = await t.query(api.analytics.todaySnapshot, { token: ids.admin.token });
+    expect(today).toMatchObject({ revenue: 1250, salesCount: 4, returnsCount: 2 });
+  });
+
+  test("match a rebuild from the sales, day and month alike", async () => {
+    const { t, ids } = await busyDay();
+    const read = () =>
+      t.run(async (ctx) => {
+        const strip = <T extends { _id: unknown; _creationTime: unknown; updatedAt: unknown }>(rows: T[]) =>
+          rows.map(({ _id, _creationTime, updatedAt, ...rest }) => rest);
+        return {
+          daily: strip(await ctx.db.query("dailyMetrics").collect()),
+          monthly: strip(await ctx.db.query("monthlyMetrics").collect()),
+        };
+      });
+    const live = await read();
+    expect(live.daily).toHaveLength(1);
+    // The month row holds the same totals as its only day.
+    const { dateString, ...dayTotals } = live.daily[0];
+    const { month, ...monthTotals } = live.monthly[0];
+    expect(month).toBe(dateString.slice(0, 7));
+    expect(monthTotals).toEqual(dayTotals);
+
+    for (const phase of ["clearDaily", "clearMonthly", "sales", "returns"] as const) {
+      let cursor: string | null = null;
+      for (;;) {
+        const r: { cursor: string; isDone: boolean } = await t.mutation(internal.metrics.rebuildSalesMetrics, { phase, cursor });
+        if (r.isDone) break;
+        cursor = r.cursor;
+      }
+    }
+    expect(await read()).toEqual(live);
+    void ids;
+  });
+
+  test("a whole month is read from its month row, a branch from its own rows", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    await setStock(10, ids.branch2Id);
+    for (const branchId of [ids.branchId, ids.branch2Id]) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("cashRegisterSessions", {
+          userId: ids.admin.userId,
+          username: "admin",
+          openingAmount: 0,
+          openedAt: Date.now(),
+          status: "OPEN",
+          branchId,
+        });
+      });
+      await t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: branchId === ids.branchId ? 1 : 2 }],
+        payments: [{ method: "CARD", amount: branchId === ids.branchId ? 250 : 500 }],
+      });
+    }
+    // Drop the day rows: a full-month range must still add up, from the month rows.
+    await t.run(async (ctx) => {
+      for (const r of await ctx.db.query("dailyMetrics").collect()) await ctx.db.delete(r._id);
+    });
+    const now = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 2 * 60 * 60 * 1000;
+    const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - 2 * 60 * 60 * 1000 - 1;
+    const all = await t.query(api.analytics.getDashboardMetrics, {
+      token: ids.admin.token,
+      start: monthStart,
+      end: monthEnd,
+    });
+    expect(all).toMatchObject({ grossRevenue: 750, salesCount: 2 });
+    expect(all.branchLeaderboard.map((b) => b.revenue)).toEqual([500, 250]);
+    const second = await t.query(api.analytics.getDashboardMetrics, {
+      token: ids.admin.token,
+      start: monthStart,
+      end: monthEnd,
+      branchId: ids.branch2Id,
+    });
+    expect(second).toMatchObject({ grossRevenue: 500, salesCount: 1, branchLeaderboard: [] });
+  });
+});
+
+describe("stock totals", () => {
+  test("follow stock moves, price changes, deactivation and deletion, and match a rebuild", async () => {
+    const { t, ids, setStock } = await seed();
+    const totals = () =>
+      t.query(api.analytics.inventoryValuation, { token: ids.admin.token, branchId: ids.branchId });
+    await setStock(10); // cost 100, price 250
+    expect(await totals()).toMatchObject({ units: 10, costValue: 1000, retailValue: 2500, lowStockCount: 0 });
+
+    await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 8 }],
+      payments: [{ method: "CARD", amount: 2000 }],
+    });
+    expect(await totals()).toMatchObject({ units: 2, costValue: 200, lowStockCount: 1 });
+    const low = await t.query(api.stock.lowStockSummary, { token: ids.admin.token, branchId: ids.branchId });
+    expect(low).toMatchObject({ lowStockCount: 1, outOfStockCount: 0 });
+    expect(low.items).toHaveLength(1);
+
+    await t.mutation(api.productVariants.update, { token: ids.admin.token, id: ids.variantId, sellingPrice: 300 });
+    expect(await totals()).toMatchObject({ retailValue: 600 });
+
+    const live = await t.run((ctx) => ctx.db.query("stockTotals").collect());
+    for (const phase of ["clear", "rows"] as const) {
+      let cursor: string | null = null;
+      for (;;) {
+        const r: { cursor: string; isDone: boolean } = await t.mutation(internal.metrics.rebuildStockTotals, { phase, cursor });
+        if (r.isDone) break;
+        cursor = r.cursor;
+      }
+    }
+    const rebuilt = await t.run((ctx) => ctx.db.query("stockTotals").collect());
+    const strip = (rows: typeof live) => rows.map(({ _id, _creationTime, updatedAt, ...r }) => r);
+    expect(strip(rebuilt)).toEqual(strip(live));
+
+    await t.mutation(api.productVariants.update, { token: ids.admin.token, id: ids.variantId, active: false });
+    expect(await totals()).toMatchObject({ units: 0, costValue: 0, retailValue: 0, lowStockCount: 0 });
+  });
+});
+
+describe("lost sales by reason", () => {
+  test("are running counts that follow new and lost demands", async () => {
+    const { t, ids } = await seed();
+    const a = await t.mutation(api.demands.create, { token: ids.admin.token, description: "Red dress M", reason: "SIZE" });
+    const b = await t.mutation(api.demands.create, { token: ids.admin.token, description: "Cheaper jeans" });
+    await t.mutation(api.demands.create, { token: ids.admin.token, description: "Blue", reason: "COLOR" });
+    expect(await t.query(api.demands.countByReason, {})).toEqual({ SIZE: 1, COLOR: 1 });
+    await t.mutation(api.demands.setStage, { token: ids.admin.token, id: b, stage: "LOST", reason: "PRICE" });
+    await t.mutation(api.demands.setStage, { token: ids.admin.token, id: a, stage: "LOST", reason: "STOCK" });
+    expect(await t.query(api.demands.countByReason, {})).toEqual({ STOCK: 1, COLOR: 1, PRICE: 1 });
+  });
+});
+
+describe("sales list", () => {
+  test("pages on the server, filters and finds by number or customer", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(50);
+    for (let i = 0; i < 5; i++) {
+      await t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: i % 2 ? ids.namedCustomerId : ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: i === 4 ? [] : [{ method: "CARD", amount: 250 }],
+      });
+    }
+    const range = { start: Date.now() - 3_600_000, end: Date.now() + 3_600_000 };
+    const first = await t.query(api.sales.listPaged, { ...range, paginationOpts: { numItems: 2, cursor: null } });
+    expect(first.page).toHaveLength(2);
+    expect(first.isDone).toBe(false);
+    const unpaid = await t.query(api.sales.listPaged, {
+      ...range,
+      paymentStatus: "UNPAID",
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    expect(unpaid.page).toHaveLength(1);
+    const byName = await t.query(api.sales.listPaged, { ...range, search: "Jane", paginationOpts: { numItems: 10, cursor: null } });
+    expect(byName.page).toHaveLength(2);
+    const year = new Date(Date.now() + 2 * 3_600_000).getUTCFullYear();
+    const byNumber = await t.query(api.sales.listPaged, { ...range, search: "3", paginationOpts: { numItems: 10, cursor: null } });
+    expect(byNumber.page.map((s) => s.saleNumber)).toEqual([`FT ${year}/000003`]);
+    expect(await t.query(api.sales.rangeTotals, range)).toMatchObject({ count: 5, revenue: 1250, outstanding: 250 });
+    expect(await t.query(api.sales.listForExport, range)).toHaveLength(5);
   });
 });

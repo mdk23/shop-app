@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useConvex, useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
 import {
   Card,
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
 import { useToken, useCurrency, useResolvedBranch } from "@/lib/useShop";
-import { useClientPage } from "@/lib/pagination";
+import { usePagedQuery } from "@/lib/pagination";
 import { toast } from "sonner";
 import { Search, Download } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
@@ -71,39 +71,26 @@ export default function SalesPage() {
     return { start: now - Number(range) * 86400000, end: now };
   }, [range, now]);
 
-  const sales = useQuery(api.sales.listByRange, {
+  // Filters run on the server, a page at a time; the cards are the period's totals.
+  const filters = {
     start,
     end,
     branchId: isAll ? undefined : branchId,
-  });
+    status: (statusFilter || undefined) as Doc<"sales">["status"] | undefined,
+    paymentStatus: (paymentFilter || undefined) as Doc<"sales">["paymentStatus"] | undefined,
+  };
+  const page = usePagedQuery(api.sales.listPaged, { ...filters, search: search.trim() || undefined });
+  const totals = useQuery(api.sales.rangeTotals, {
+    start,
+    end,
+    branchId: filters.branchId,
+  }) ?? { count: 0, revenue: 0, collected: 0, outstanding: 0 };
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return (sales ?? []).filter(
-      (s) =>
-        (!statusFilter || s.status === statusFilter) &&
-        (!paymentFilter || s.paymentStatus === paymentFilter) &&
-        (!term ||
-          s.saleNumber.toLowerCase().includes(term) ||
-          (s.customerName ?? "").toLowerCase().includes(term))
-    );
-  }, [sales, statusFilter, paymentFilter, search]);
-
-  const page = useClientPage(filtered);
-
-  const totals = useMemo(() => {
-    const active = filtered.filter((s) => s.status !== "CANCELLED");
-    return {
-      count: active.length,
-      revenue: active.reduce((a, s) => a + s.total, 0),
-      collected: active.reduce((a, s) => a + s.paidAmount, 0),
-      outstanding: active.reduce((a, s) => a + s.balance, 0),
-    };
-  }, [filtered]);
-
-  const exportCsv = () => {
+  const convex = useConvex();
+  const exportCsv = async () => {
+    const rows = await convex.query(api.sales.listForExport, filters);
     const header = "sale,date,customer,status,payment,subtotal,discount,tax,total,paid,balance";
-    const body = filtered
+    const body = rows
       .map((s) =>
         [
           s.saleNumber,
@@ -182,15 +169,15 @@ export default function SalesPage() {
           />
         </div>
         <div className="ml-auto" />
-        <Button variant="secondary" onClick={exportCsv} disabled={filtered.length === 0}>
+        <Button variant="secondary" onClick={exportCsv} disabled={page.rows.length === 0}>
           <Download className="w-3.5 h-3.5" /> {t("CSV")}
         </Button>
       </Toolbar>
 
       <Card>
-        {sales === undefined ? (
+        {page.isLoading ? (
           <Spinner />
-        ) : filtered.length === 0 ? (
+        ) : page.rows.length === 0 ? (
           <EmptyState title={t("No sales in range")} />
         ) : (
           <Table>
@@ -234,7 +221,7 @@ export default function SalesPage() {
             </tbody>
           </Table>
         )}
-        {filtered.length > 0 && (
+        {page.rows.length > 0 && (
           <Pagination
             pageIndex={page.pageIndex}
             rowCount={page.rows.length}
@@ -268,8 +255,10 @@ function SaleDetail({
   const { t } = useTranslation();
   const sale = useQuery(api.sales.get, { id });
   const registerClosed = useRegisterClosed(sale?.branchId);
-  // Cancelling gives back the cash taken, which goes through the register.
-  const cashTaken = (sale?.payments ?? []).some((p) => p.method === "CASH" && p.amount > 0);
+  // Cancelling gives back the money kept for the sale, by the method it came in; all but
+  // store credit goes through the register.
+  const moneyToGiveBack = (sale?.paidAmount ?? 0) > 0 &&
+    (sale?.payments ?? []).some((p) => p.method !== "STORE_CREDIT" && p.amount > 0);
   const addPayment = useMutation(api.payments.add);
   const cancelSale = useMutation(api.sales.cancel);
   const [method, setMethod] = useState<PaymentMethod>("CASH");
@@ -312,8 +301,8 @@ function SaleDetail({
                   <Button
                     variant="danger"
                     onClick={() => setConfirmCancel(true)}
-                    disabled={registerClosed && cashTaken}
-                    title={registerClosed && cashTaken ? t("Open the register before taking payments.") : undefined}
+                    disabled={registerClosed && moneyToGiveBack}
+                    title={registerClosed && moneyToGiveBack ? t("Open the register before taking payments.") : undefined}
                   >
                     {t("Cancel sale")}
                   </Button>

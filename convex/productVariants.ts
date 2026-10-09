@@ -6,7 +6,7 @@ import { describeChanges, writeAudit } from "./audit";
 import { variantLabel } from "./inventory";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
 import { variantNames } from "./lib/variantNames";
-import { syncLowStockForLevelChange } from "./metrics";
+import { deleteStockRowsOf, patchVariant } from "./lib/stockTotals";
 
 // ─────────────────────────────────────────────
 // SKU HELPERS
@@ -295,17 +295,8 @@ export const update = mutation({
     if (args.reorderLevel !== undefined) patch.reorderLevel = args.reorderLevel;
     if (args.active !== undefined) patch.active = args.active;
 
-    await ctx.db.patch(args.id, patch);
-    // The reorder level is the variant's for every branch: keep the low-stock count right.
-    if (args.reorderLevel !== undefined && args.reorderLevel !== existing.reorderLevel) {
-      const stockRows = await ctx.db
-        .query("variantStock")
-        .withIndex("by_variant", (q) => q.eq("productVariantId", args.id))
-        .collect();
-      for (const row of stockRows) {
-        await syncLowStockForLevelChange(ctx, row.quantity, existing.reorderLevel, args.reorderLevel);
-      }
-    }
+    // Prices, reorder level and active flag feed the stock rows' status and the stock totals.
+    await patchVariant(ctx, args.id, patch);
     if (args.sellingPrice !== undefined || args.costPrice !== undefined) {
       await recordVariantPrice(
         ctx,
@@ -365,11 +356,7 @@ export const remove = mutation({
       );
     }
 
-    const stockRows = await ctx.db
-      .query("variantStock")
-      .withIndex("by_variant", (q) => q.eq("productVariantId", args.id))
-      .collect();
-    for (const s of stockRows) await ctx.db.delete(s._id);
+    await deleteStockRowsOf(ctx, existing);
 
     await ctx.db.delete(args.id);
     await writeAudit(ctx, {

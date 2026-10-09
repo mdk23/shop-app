@@ -30,6 +30,7 @@ export const afterSalesTables = {
     createdByUsername: v.string(),
   })
     .index("by_supplier", ["supplierId"])
+    .index("by_supplier_and_treatment", ["supplierId", "treatment"])
     .index("by_source", ["source"]),
 
   qualityIssueItems: defineTable({

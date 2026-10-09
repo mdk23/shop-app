@@ -3,6 +3,7 @@ import { mutation, query, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { patchVariant } from "./lib/stockTotals";
 
 /**
  * When a category is switched off, every product in it (and each product's
@@ -32,7 +33,7 @@ async function cascadeDeactivateProducts(
       .withIndex("by_product", (q) => q.eq("productId", p._id))
       .collect();
     for (const variant of variants) {
-      if (variant.active) await ctx.db.patch(variant._id, { active: false, updatedAt: now });
+      if (variant.active) await patchVariant(ctx, variant._id, { active: false, updatedAt: now });
     }
   }
   return affected;

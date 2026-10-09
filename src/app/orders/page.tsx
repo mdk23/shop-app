@@ -104,7 +104,6 @@ export default function OrdersPage() {
         items: lines.map((l) => ({
           productVariantId: l.variantId,
           quantity: l.quantity,
-          unitPrice: l.sellingPrice,
         })),
         reserve,
         notes: notes.trim() || undefined,

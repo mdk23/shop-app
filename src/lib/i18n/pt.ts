@@ -929,6 +929,8 @@ export const pt: Record<string, string> = {
   "Credit {amount}": "Creditar {amount}",
   "Complete exchange": "Concluir troca",
   "Refund {amount}": "Reembolsar {amount}",
+  "{amount} of the returned goods only clears what the customer still owes on this sale.":
+    "{amount} dos artigos devolvidos apenas abate o que o cliente ainda deve nesta venda.",
   "Sold": "Vendido",
   "Restock": "Repor stock",
   "Replacement items": "Artigos de substituição",

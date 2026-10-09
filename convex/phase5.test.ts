@@ -70,6 +70,7 @@ async function seed() {
       branchId: main,
       productVariantId: variantB,
       quantity: 100,
+      status: "IN_STOCK",
       updatedAt: now,
     });
     const userId = await ctx.db.insert("users", {

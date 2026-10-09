@@ -1,5 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Doc } from "../_generated/dataModel";
+import { getLocalDateString } from "../metrics";
 
 export type DocumentType = Doc<"documentSeries">["documentType"];
 
@@ -24,7 +25,9 @@ export async function nextDocumentNumber(
   documentType: DocumentType,
   now: number = Date.now()
 ): Promise<string> {
-  const fiscalYear = new Date(now).getFullYear();
+  // The year in Maputo, not on the server clock (UTC): a document made just after
+  // midnight on 1 January belongs to the new year.
+  const fiscalYear = Number(getLocalDateString(now).slice(0, 4));
   let series = await ctx.db
     .query("documentSeries")
     .withIndex("by_type_year", (q) =>

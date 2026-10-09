@@ -7,6 +7,7 @@ import { describeChanges, writeAudit } from "./audit";
 import { generateSku } from "./productVariants";
 import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
+import { deleteStockRowsOf, patchVariant } from "./lib/stockTotals";
 
 /**
  * A product's price range, read from its variants (prices live on variants only). Uses the
@@ -365,7 +366,7 @@ export const archive = mutation({
       .withIndex("by_product", (q) => q.eq("productId", args.id))
       .collect();
     for (const variant of variants) {
-      await ctx.db.patch(variant._id, { active: false, updatedAt: Date.now() });
+      await patchVariant(ctx, variant._id, { active: false, updatedAt: Date.now() });
     }
     await writeAudit(ctx, {
       userId: actor._id,
@@ -403,11 +404,7 @@ export const remove = mutation({
     }
 
     for (const variant of variants) {
-      const stockRows = await ctx.db
-        .query("variantStock")
-        .withIndex("by_variant", (q) => q.eq("productVariantId", variant._id))
-        .collect();
-      for (const s of stockRows) await ctx.db.delete(s._id);
+      await deleteStockRowsOf(ctx, variant);
       await ctx.db.delete(variant._id);
     }
     const images = await ctx.db

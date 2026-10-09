@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, MutationCtx, query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
@@ -80,17 +80,60 @@ export const listByCustomer = query({
   },
 });
 
+// Demands per reason are kept as running counts in `counters` ("demand_reason:SIZE"), moved
+// whenever a demand gets or changes its reason.
+const REASON_KEY = "demand_reason:";
+
+async function moveReasonCount(
+  ctx: MutationCtx,
+  from: Doc<"demands">["reason"],
+  to: Doc<"demands">["reason"]
+) {
+  if (from === to) return;
+  for (const [reason, delta] of [
+    [from, -1],
+    [to, 1],
+  ] as const) {
+    if (!reason) continue;
+    const key = REASON_KEY + reason;
+    const row = await ctx.db
+      .query("counters")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .unique();
+    if (row) await ctx.db.patch(row._id, { value: row.value + delta, updatedAt: Date.now() });
+    else await ctx.db.insert("counters", { key, value: delta, updatedAt: Date.now() });
+  }
+}
+
 /** Count of demands per reason, for buying: which causes lose sales most. */
 export const countByReason = query({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query("demands").collect();
+    const rows = await ctx.db
+      .query("counters")
+      .withIndex("by_key", (q) => q.gte("key", REASON_KEY).lt("key", REASON_KEY + "~"))
+      .collect();
     const counts: Record<string, number> = {};
-    for (const row of rows) {
-      if (!row.reason) continue;
-      counts[row.reason] = (counts[row.reason] ?? 0) + 1;
-    }
+    for (const row of rows) if (row.value !== 0) counts[row.key.slice(REASON_KEY.length)] = row.value;
     return counts;
+  },
+});
+
+/** Rebuilds the per-reason counts from the demands, a page at a time ("clear", then "rows"). */
+export const rebuildReasonCounts = internalMutation({
+  args: { phase: v.union(v.literal("clear"), v.literal("rows")), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    if (args.phase === "clear") {
+      const rows = await ctx.db
+        .query("counters")
+        .withIndex("by_key", (q) => q.gte("key", REASON_KEY).lt("key", REASON_KEY + "~"))
+        .collect();
+      for (const row of rows) await ctx.db.delete(row._id);
+      return { cursor: "", isDone: true };
+    }
+    const page = await ctx.db.query("demands").paginate({ numItems: 200, cursor: args.cursor });
+    for (const row of page.page) await moveReasonCount(ctx, undefined, row.reason);
+    return { cursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
@@ -155,6 +198,7 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await moveReasonCount(ctx, undefined, args.reason);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
@@ -189,13 +233,15 @@ export const setStage = mutation({
     if (args.stage === "LOST" && !reason) throw new Error("Say why the sale was lost.");
     const now = Date.now();
     const closing = args.stage === "FULFILLED" || args.stage === "LOST";
+    const newReason = args.stage === "LOST" ? reason : row.reason;
     await ctx.db.patch(args.id, {
       stage: args.stage,
-      reason: args.stage === "LOST" ? reason : row.reason,
+      reason: newReason,
       proceededAt: args.stage === "PROCEEDING" ? now : row.proceededAt,
       closedAt: closing ? now : undefined,
       updatedAt: now,
     });
+    await moveReasonCount(ctx, row.reason, newReason);
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,

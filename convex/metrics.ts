@@ -1,4 +1,7 @@
-import { MutationCtx } from "./_generated/server";
+import { v } from "convex/values";
+import { internalMutation, MutationCtx } from "./_generated/server";
+import { recordReturnMetrics, recordSaleMetrics } from "./lib/salesMetrics";
+import { addStockRow } from "./lib/stockTotals";
 
 
 // ─────────────────────────────────────────────
@@ -11,54 +14,9 @@ export function getLocalDateString(timestamp: number): string {
   return new Date(localTimeMs).toISOString().split("T")[0];
 }
 
-/** Strip accents / non-ASCII so a string is a valid Convex record key. */
-export function sanitizeKey(str: string): string {
-  if (!str) return "Unknown";
-  return str
-    .normalize("NFD")
-    .replace(new RegExp("[\\u0300-\\u036f]", "g"), "")
-    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
-    .trim() || "Unknown";
-}
-
 // ─────────────────────────────────────────────
 // COUNTERS ENGINE
 // ─────────────────────────────────────────────
-
-export async function incrementCounter(
-  ctx: MutationCtx,
-  key: string,
-  amount: number,
-  dateString?: string
-) {
-  const existing = await ctx.db
-    .query("counters")
-    .withIndex("by_key", (q) => q.eq("key", key))
-    .first();
-  const now = Date.now();
-  if (!existing) {
-    await ctx.db.insert("counters", { key, value: amount, dateString, updatedAt: now });
-    return;
-  }
-  if (dateString && existing.dateString !== dateString) {
-    await ctx.db.patch(existing._id, { value: amount, dateString, updatedAt: now });
-  } else {
-    await ctx.db.patch(existing._id, { value: existing.value + amount, updatedAt: now });
-  }
-}
-
-export async function decrementCounter(ctx: MutationCtx, key: string, amount: number) {
-  const existing = await ctx.db
-    .query("counters")
-    .withIndex("by_key", (q) => q.eq("key", key))
-    .first();
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      value: existing.value - amount,
-      updatedAt: Date.now(),
-    });
-  }
-}
 
 /** Atomic O(1) sequence: bump `key` and return the new value. Daily-reset when `dateString` given. */
 export async function nextSequence(
@@ -84,182 +42,62 @@ export async function nextSequence(
   return value;
 }
 
-export async function getCounter(ctx: MutationCtx, key: string): Promise<number> {
-  const row = await ctx.db
-    .query("counters")
-    .withIndex("by_key", (q) => q.eq("key", key))
-    .first();
-  return row?.value ?? 0;
-}
-
 // ─────────────────────────────────────────────
-// STOCK COUNTER HELPERS
+// TOTALS REBUILD (sales and stock)
 // ─────────────────────────────────────────────
-
-export async function syncGlobalStockCounters(
-  ctx: MutationCtx,
-  previousBalance: number,
-  newBalance: number,
-  reorderLevel: number
-) {
-  const prevOut = previousBalance <= 0;
-  const newOut = newBalance <= 0;
-  const prevLow = previousBalance > 0 && previousBalance <= reorderLevel;
-  const newLow = newBalance > 0 && newBalance <= reorderLevel;
-
-  if (prevOut !== newOut) {
-    if (newOut) await incrementCounter(ctx, "out_of_stock_items", 1);
-    else await decrementCounter(ctx, "out_of_stock_items", 1);
-  }
-  if (prevLow !== newLow) {
-    if (newLow) await incrementCounter(ctx, "low_stock_items", 1);
-    else await decrementCounter(ctx, "low_stock_items", 1);
-  }
-}
 
 /**
- * Keeps the low-stock count right when a variant's reorder level changes: the same
- * quantity can move in or out of "low" without any stock moving.
+ * Rebuilds `dailyMetrics` / `monthlyMetrics` from the sales and returns, a page at a time.
+ * Run the phases in order, each until `isDone`, passing back `cursor`:
+ * clearDaily → clearMonthly → sales → returns.
+ *   npx convex run metrics:rebuildSalesMetrics '{"phase":"clearDaily","cursor":null}'
  */
-export async function syncLowStockForLevelChange(
-  ctx: MutationCtx,
-  quantity: number,
-  previousLevel: number,
-  newLevel: number
-) {
-  const wasLow = quantity > 0 && quantity <= previousLevel;
-  const isLow = quantity > 0 && quantity <= newLevel;
-  if (wasLow === isLow) return;
-  if (isLow) await incrementCounter(ctx, "low_stock_items", 1);
-  else await decrementCounter(ctx, "low_stock_items", 1);
-}
+export const rebuildSalesMetrics = internalMutation({
+  args: {
+    phase: v.union(
+      v.literal("clearDaily"),
+      v.literal("clearMonthly"),
+      v.literal("sales"),
+      v.literal("returns")
+    ),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const opts = { numItems: 100, cursor: args.cursor };
+    let page;
+    if (args.phase === "clearDaily") {
+      page = await ctx.db.query("dailyMetrics").paginate(opts);
+      for (const row of page.page) await ctx.db.delete(row._id);
+    } else if (args.phase === "clearMonthly") {
+      page = await ctx.db.query("monthlyMetrics").paginate(opts);
+      for (const row of page.page) await ctx.db.delete(row._id);
+    } else if (args.phase === "sales") {
+      page = await ctx.db.query("sales").paginate(opts);
+      for (const sale of page.page) await recordSaleMetrics(ctx, sale._id);
+    } else {
+      page = await ctx.db.query("salesReturns").paginate(opts);
+      for (const ret of page.page) await recordReturnMetrics(ctx, ret._id);
+    }
+    return { processed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
 
-// ─────────────────────────────────────────────
-// DAILY METRICS ENGINE (retail)
-// ─────────────────────────────────────────────
-
-type NumRecord = Record<string, number>;
-type MethodRecord = Record<string, { amount: number; count: number }>;
-
-export interface SaleMetricDeltas {
-  totalRevenue: number;
-  totalSales: number; // count of sales
-  totalItemsSold: number;
-  totalDiscount: number;
-  totalTax: number;
-  totalProfit: number;
-  totalPending: number;
-  cashCollected: number;
-  outstandingDebt: number;
-  totalReturns: number; // count of return transactions
-  refundAmount: number;
-  fullyPaidCount: number;
-  partiallyPaidCount: number;
-  pendingCount: number;
-  paymentMethods?: MethodRecord;
-  categorySales?: NumRecord;
-  productSales?: NumRecord;
-  sizeSales?: NumRecord;
-  colorSales?: NumRecord;
-}
-
-const ZERO: SaleMetricDeltas = {
-  totalRevenue: 0,
-  totalSales: 0,
-  totalItemsSold: 0,
-  totalDiscount: 0,
-  totalTax: 0,
-  totalProfit: 0,
-  totalPending: 0,
-  cashCollected: 0,
-  outstandingDebt: 0,
-  totalReturns: 0,
-  refundAmount: 0,
-  fullyPaidCount: 0,
-  partiallyPaidCount: 0,
-  pendingCount: 0,
-};
-
-export function zeroDeltas(): SaleMetricDeltas {
-  return { ...ZERO };
-}
-
-async function getOrCreateDailyMetrics(ctx: MutationCtx, dateString: string) {
-  const existing = await ctx.db
-    .query("dailyMetrics")
-    .withIndex("by_date", (q) => q.eq("dateString", dateString))
-    .first();
-  if (existing) return existing;
-  const id = await ctx.db.insert("dailyMetrics", {
-    dateString,
-    totalRevenue: 0,
-    totalSales: 0,
-    totalItemsSold: 0,
-    totalDiscount: 0,
-    totalTax: 0,
-    totalReturns: 0,
-    refundAmount: 0,
-    totalProfit: 0,
-    totalPending: 0,
-    cashCollected: 0,
-    outstandingDebt: 0,
-    paymentMethods: {},
-    categorySales: {},
-    productSales: {},
-    sizeSales: {},
-    colorSales: {},
-  });
-  return (await ctx.db.get(id))!;
-}
-
-function mergeNumRecord(base: NumRecord | undefined, delta: NumRecord | undefined): NumRecord {
-  const out: NumRecord = { ...(base ?? {}) };
-  for (const [k, v] of Object.entries(delta ?? {})) {
-    out[k] = (out[k] ?? 0) + v;
-    if (out[k] === 0) delete out[k];
-  }
-  return out;
-}
-
-function mergeMethodRecord(base: MethodRecord | undefined, delta: MethodRecord | undefined): MethodRecord {
-  const out: MethodRecord = { ...(base ?? {}) };
-  for (const [k, v] of Object.entries(delta ?? {})) {
-    const cur = out[k] ?? { amount: 0, count: 0 };
-    cur.amount += v.amount;
-    cur.count += v.count;
-    if (cur.amount === 0 && cur.count === 0) delete out[k];
-    else out[k] = cur;
-  }
-  return out;
-}
-
-export async function applyDailyMetrics(
-  ctx: MutationCtx,
-  dateString: string,
-  d: SaleMetricDeltas
-) {
-  const m = await getOrCreateDailyMetrics(ctx, dateString);
-  const patch: Record<string, unknown> = {
-    totalRevenue: (m.totalRevenue ?? 0) + d.totalRevenue,
-    totalSales: (m.totalSales ?? 0) + d.totalSales,
-    totalItemsSold: (m.totalItemsSold ?? 0) + d.totalItemsSold,
-    totalDiscount: (m.totalDiscount ?? 0) + d.totalDiscount,
-    totalTax: (m.totalTax ?? 0) + d.totalTax,
-    totalProfit: (m.totalProfit ?? 0) + d.totalProfit,
-    totalPending: (m.totalPending ?? 0) + d.totalPending,
-    cashCollected: (m.cashCollected ?? 0) + d.cashCollected,
-    outstandingDebt: (m.outstandingDebt ?? 0) + d.outstandingDebt,
-    totalReturns: (m.totalReturns ?? 0) + d.totalReturns,
-    refundAmount: (m.refundAmount ?? 0) + d.refundAmount,
-    fullyPaidCount: (m.fullyPaidCount ?? 0) + d.fullyPaidCount,
-    partiallyPaidCount: (m.partiallyPaidCount ?? 0) + d.partiallyPaidCount,
-    pendingCount: (m.pendingCount ?? 0) + d.pendingCount,
-    paymentMethods: mergeMethodRecord(m.paymentMethods, d.paymentMethods),
-    categorySales: mergeNumRecord(m.categorySales, d.categorySales),
-    productSales: mergeNumRecord(m.productSales, d.productSales),
-    sizeSales: mergeNumRecord(m.sizeSales, d.sizeSales),
-    colorSales: mergeNumRecord(m.colorSales, d.colorSales),
-  };
-
-  await ctx.db.patch(m._id, patch);
-}
+/**
+ * Rebuilds `stockTotals` and every stock row's `status` from the stock rows, a page at a
+ * time: phase "clear" then "rows", each until `isDone`.
+ *   npx convex run metrics:rebuildStockTotals '{"phase":"clear","cursor":null}'
+ */
+export const rebuildStockTotals = internalMutation({
+  args: { phase: v.union(v.literal("clear"), v.literal("rows")), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const opts = { numItems: 200, cursor: args.cursor };
+    if (args.phase === "clear") {
+      const page = await ctx.db.query("stockTotals").paginate(opts);
+      for (const row of page.page) await ctx.db.delete(row._id);
+      return { processed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+    }
+    const page = await ctx.db.query("variantStock").paginate(opts);
+    for (const row of page.page) await addStockRow(ctx, row);
+    return { processed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});

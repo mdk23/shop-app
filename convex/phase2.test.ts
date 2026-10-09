@@ -78,6 +78,7 @@ async function seed() {
         branchId,
         productVariantId,
         quantity: 100,
+        status: "IN_STOCK",
         updatedAt: now,
       });
     }

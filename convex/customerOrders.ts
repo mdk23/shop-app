@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { authorize } from "./permissions";
+import { authorize, requirePermission } from "./permissions";
+import { getSetting } from "./settings";
 import { writeAudit } from "./audit";
 import { nextDocumentNumber } from "./lib/numbering";
 import { adjustCustomerCredit } from "./customerCredits";
@@ -140,6 +141,11 @@ export const create = mutation({
     if (args.items.length === 0) throw new Error("An order needs at least one item.");
     if (!(await ctx.db.get(args.branchId))) throw new Error("Branch not found.");
 
+    // Prices are agreed now and kept at collection, so a changed price is checked here,
+    // like a discount at the till.
+    let overriddenLines = 0;
+    let priceCut = 0;
+    let listValue = 0;
     const priced = [];
     for (const item of args.items) {
       if (item.quantity <= 0) throw new Error("Quantities must be positive.");
@@ -147,6 +153,12 @@ export const create = mutation({
       if (!variant || !variant.active) throw new Error("A selected product variant is unavailable.");
       const product = await ctx.db.get(variant.productId);
       const unitPrice = item.unitPrice ?? variant.sellingPrice;
+      if (unitPrice < 0) throw new Error("A price cannot be negative.");
+      listValue += variant.sellingPrice * item.quantity;
+      if (Math.abs(unitPrice - variant.sellingPrice) > 1e-6) {
+        overriddenLines += 1;
+        priceCut += Math.max(0, variant.sellingPrice - unitPrice) * item.quantity;
+      }
       priced.push({
         productVariantId: item.productVariantId,
         productName: product?.name ?? "Unknown product",
@@ -155,6 +167,13 @@ export const create = mutation({
         unitPrice,
         lineTotal: Math.round(unitPrice * item.quantity * 100) / 100,
       });
+    }
+    if (overriddenLines > 0) {
+      const maxWithoutApproval = Number(
+        (await getSetting(ctx, "discountMaxPercentWithoutApproval"))?.value ?? "100"
+      );
+      const cutPct = listValue > 0 ? (priceCut / listValue) * 100 : 0;
+      requirePermission(actor, cutPct > maxWithoutApproval ? "sales.discount_large" : "sales.discount");
     }
 
     if (args.reserve) {
@@ -358,6 +377,7 @@ export const collect = mutation({
       })),
       payments: balancePayments,
       priorPayments: deposits,
+      agreedPrices: true,
       cashRegisterSessionId: args.cashRegisterSessionId,
     });
 

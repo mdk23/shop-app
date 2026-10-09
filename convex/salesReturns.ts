@@ -5,18 +5,14 @@ import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
-import {
-  applyDailyMetrics,
-  getLocalDateString,
-  sanitizeKey,
-  zeroDeltas,
-} from "./metrics";
+import { recordReturnMetrics, trackSale } from "./lib/salesMetrics";
 import { adjustCustomerCredit } from "./customerCredits";
 import { performSale } from "./sales";
 import { refreshCustomerProfile } from "./customerProfile";
 import { nextDocumentNumber } from "./lib/numbering";
 import { requireOpenSession } from "./cashRegister";
 import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
+import { settleSale, splitReturnValue, unitValueOfLine } from "./lib/saleMoney";
 
 /**
  * A return's value and refund, read from where they live: the goods' value is the sum of
@@ -69,7 +65,7 @@ async function getSetting(ctx: MutationCtx, key: string) {
 }
 
 async function alreadyReturnedQty(
-  ctx: MutationCtx,
+  ctx: QueryCtx,
   saleItemId: Id<"saleItems">
 ): Promise<number> {
   const rows = await ctx.db
@@ -79,13 +75,27 @@ async function alreadyReturnedQty(
   return rows.reduce((s, r) => s + r.quantity, 0);
 }
 
+/** Whether every unit sold on the sale has come back. */
+async function isFullyReturned(ctx: MutationCtx, saleId: Id<"sales">): Promise<boolean> {
+  const saleItems = await ctx.db
+    .query("saleItems")
+    .withIndex("by_sale", (q) => q.eq("saleId", saleId))
+    .collect();
+  for (const si of saleItems) {
+    if ((await alreadyReturnedQty(ctx, si._id)) < si.quantity) return false;
+  }
+  return true;
+}
+
 /**
  * Resolve return lines against a sale: validates ownership, caps quantity at
- * (sold − alreadyReturned) and computes the net (discount-adjusted) refund per line.
+ * (sold − alreadyReturned) and values each line at what the customer paid for it
+ * (after discounts, with IVA). Whether that value comes back as money depends on what
+ * was paid — see splitReturnValue.
  */
 async function resolveReturnLines(
-  ctx: MutationCtx,
-  saleId: Id<"sales">,
+  ctx: QueryCtx,
+  sale: Doc<"sales">,
   items: {
     saleItemId: Id<"saleItems">;
     quantity: number;
@@ -94,12 +104,16 @@ async function resolveReturnLines(
     condition?: "SELLABLE" | "USED" | "DAMAGED";
   }[]
 ) {
+  if (sale.status === "CANCELLED") throw new Error("Cannot return items from a cancelled sale.");
+  const saleItems = await ctx.db
+    .query("saleItems")
+    .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+    .collect();
   const resolved = [];
   for (const item of items) {
     if (item.quantity <= 0) throw new Error("Return quantity must be positive.");
-    const saleItem = await ctx.db.get(item.saleItemId);
-    if (!saleItem || saleItem.saleId !== saleId)
-      throw new Error("A return line does not belong to this sale.");
+    const saleItem = saleItems.find((si) => si._id === item.saleItemId);
+    if (!saleItem) throw new Error("A return line does not belong to this sale.");
     const returned = await alreadyReturnedQty(ctx, item.saleItemId);
     const remaining = saleItem.quantity - returned;
     if (item.quantity > remaining) {
@@ -107,7 +121,8 @@ async function resolveReturnLines(
         `Cannot return ${item.quantity} of ${saleItem.productName} (${saleItem.variantLabel}); only ${remaining} remain.`
       );
     }
-    const unitNet = saleItem.total / saleItem.quantity; // discount-adjusted
+    // What a unit cost the customer: after every discount, with its IVA.
+    const unitNet = unitValueOfLine(saleItem, sale, saleItems);
     resolved.push({
       saleItem,
       quantity: item.quantity,
@@ -163,17 +178,22 @@ export const create = mutation({
         throw new Error("This complaint is about a different sale.");
     }
 
-    const lines = await resolveReturnLines(ctx, args.saleId, args.items);
-    const refundAmount =
+    const metricsDone = await trackSale(ctx, args.saleId);
+    const lines = await resolveReturnLines(ctx, sale, args.items);
+    const returnValue =
       Math.round(lines.reduce((s, l) => s + l.refundAmount, 0) * 100) / 100;
+    // The goods first cancel what is still owed on the sale; only the rest, up to what
+    // was paid, is money back.
+    const { debtCleared, refund: refundAmount } = await splitReturnValue(ctx, sale, returnValue);
 
     const now = Date.now();
-    const dateString = getLocalDateString(now);
     const returnNumber = await nextDocumentNumber(ctx, "RETURN", now);
 
     // Money given back goes through the open register; store credit moves no money.
     const session =
-      args.refundMethod === "STORE_CREDIT" ? null : await requireOpenSession(ctx, sale.branchId);
+      args.refundMethod === "STORE_CREDIT" || refundAmount <= 0
+        ? null
+        : await requireOpenSession(ctx, sale.branchId);
 
     const returnId = await ctx.db.insert("salesReturns", {
       returnNumber,
@@ -229,53 +249,42 @@ export const create = mutation({
 
     // Issue the refund. The payment row is the refund's record (and the drawer's when in
     // cash); store credit also adds to the customer's credit balance.
-    if (args.refundMethod === "STORE_CREDIT") {
-      await adjustCustomerCredit(ctx, {
-        customerId: sale.customerId,
-        delta: refundAmount,
-        reason: "RETURN_REFUND",
-        referenceType: "sale_return",
-        referenceId: returnId,
+    if (refundAmount > 0) {
+      if (args.refundMethod === "STORE_CREDIT") {
+        await adjustCustomerCredit(ctx, {
+          customerId: sale.customerId,
+          delta: refundAmount,
+          reason: "RETURN_REFUND",
+          referenceType: "sale_return",
+          referenceId: returnId,
+          userId: actor._id,
+          username: actor.username,
+          notes: `Store credit for ${returnNumber}`,
+        });
+      }
+      await ctx.db.insert("payments", {
+        saleId: args.saleId,
+        method: args.refundMethod,
+        amount: -refundAmount,
+        kind: "refund",
+        returnId,
+        cashRegisterSessionId: session?._id,
         userId: actor._id,
         username: actor.username,
-        notes: `Store credit for ${returnNumber}`,
+        createdAt: now,
       });
     }
-    await ctx.db.insert("payments", {
-      saleId: args.saleId,
-      method: args.refundMethod,
-      amount: -refundAmount,
-      kind: "refund",
-      returnId,
-      cashRegisterSessionId: session?._id,
-      userId: actor._id,
-      username: actor.username,
-      createdAt: now,
-    });
 
-    // Update sale status.
-    const allItems = await ctx.db
-      .query("saleItems")
-      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-      .collect();
-    let soldTotal = 0;
-    let returnedTotal = 0;
-    for (const si of allItems) {
-      soldTotal += si.quantity;
-      returnedTotal += await alreadyReturnedQty(ctx, si._id);
-    }
-    const fullyReturned = returnedTotal >= soldTotal;
-    // Goods back → status RETURNED / PARTIALLY_RETURNED; money back → paymentStatus.
-    // KNOWN GAP: this only patches status/paymentStatus — sale.total/balance/
-    // paidAmount are NOT reduced on refund, so customers.ts's lifetime-spend/
-    // debt aggregates overstate for refunded sales. Not fixed here (see
-    // convex/customerProfile.ts's docstring); refreshCustomerProfile below
-    // works around it locally for its own trailing-12-month tier figure only.
+    // Goods back → status RETURNED / PARTIALLY_RETURNED; the sale's paid amount, balance
+    // and payment status are then re-read from its returns and payments.
     await ctx.db.patch(args.saleId, {
-      status: fullyReturned ? "RETURNED" : "PARTIALLY_RETURNED",
-      paymentStatus: fullyReturned ? "REFUNDED" : "PARTIALLY_REFUNDED",
+      status: (await isFullyReturned(ctx, args.saleId)) ? "RETURNED" : "PARTIALLY_RETURNED",
       updatedAt: now,
     });
+    await settleSale(ctx, args.saleId);
+    // Sales totals: the sale's new share, and the return on its own day.
+    await metricsDone();
+    await recordReturnMetrics(ctx, returnId);
 
     // A return changes size observations (returned units net out) and
     // trailing spend — recompute before metrics/audit.
@@ -284,29 +293,16 @@ export const create = mutation({
       username: actor.username,
     });
 
-    // Metrics: unwind the returned portion.
-    const deltas = {
-      ...zeroDeltas(),
-      totalRevenue: -refundAmount,
-      totalReturns: 1,
-      refundAmount,
-      totalItemsSold: -returnedUnits,
-      totalProfit: -(refundAmount - returnedCost),
-      cashCollected: args.refundMethod === "CASH" ? -refundAmount : 0,
-      paymentMethods:
-        args.refundMethod === "STORE_CREDIT"
-          ? {}
-          : { [sanitizeKey(args.refundMethod)]: { amount: -refundAmount, count: -1 } },
-    };
-    await applyDailyMetrics(ctx, dateString, deltas);
-
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: "return.processed",
       entityType: "salesReturn",
       entityId: returnId,
-      details: `${returnNumber} vs ${sale.saleNumber} — refund ${refundAmount} via ${args.refundMethod}, ${restockedUnits} unit(s) restocked`,
+      details:
+        `${returnNumber} vs ${sale.saleNumber} — goods ${returnValue}, refund ${refundAmount} via ${args.refundMethod}` +
+        (debtCleared > 0 ? `, ${debtCleared} taken off the customer's debt` : "") +
+        `, ${restockedUnits} unit(s) restocked`,
     });
 
     return returnId;
@@ -354,28 +350,18 @@ export const exchange = mutation({
     if (args.returnItems.length === 0 || args.replacementItems.length === 0)
       throw new Error("An exchange needs both returned and replacement items.");
 
-    // 1. Value the returned goods (always restock-eligible per line flag) and credit them.
-    const lines = await resolveReturnLines(ctx, args.saleId, args.returnItems);
+    // 1. Value the returned goods. They first cancel what is still owed on the sale; the
+    // rest is credit the customer can spend on the replacement.
+    const metricsDone = await trackSale(ctx, args.saleId);
+    const lines = await resolveReturnLines(ctx, sale, args.returnItems);
     const returnValue =
       Math.round(lines.reduce((s, l) => s + l.refundAmount, 0) * 100) / 100;
-
-    // 2. Build the replacement sale, applying the return value as a discount.
-    const replacementGross = args.replacementItems.reduce(async (accP, it) => {
-      const acc = await accP;
-      const variant = await ctx.db.get(it.productVariantId);
-      const price = it.unitPrice ?? variant?.sellingPrice ?? 0;
-      return acc + price * it.quantity;
-    }, Promise.resolve(0));
-    const grossNew = await replacementGross;
-    const discountToApply = Math.min(returnValue, grossNew);
+    const { debtCleared, refund: credit } = await splitReturnValue(ctx, sale, returnValue);
 
     const now = Date.now();
-    const dateString = getLocalDateString(now);
 
-    // 3. Record the return itself (store credit for any leftover value).
+    // 2. Record the return itself.
     const returnNumber = await nextDocumentNumber(ctx, "RETURN", now);
-    const leftoverCredit = Math.max(0, returnValue - discountToApply);
-
     const returnId = await ctx.db.insert("salesReturns", {
       returnNumber,
       saleId: args.saleId,
@@ -418,27 +404,73 @@ export const exchange = mutation({
       }
     }
 
-    // Any value left after the replacement goes back by the chosen method: a refund row in
-    // `payments` through the open register, plus the credit balance for store credit.
-    if (leftoverCredit > 0) {
+    // 3. The replacement is a normal sale at its normal prices. Ordering matters: the
+    // `salesReturnItems` rows above are already inserted, so `performSale`'s internal
+    // `refreshCustomerProfile` call sees this exchange's return.
+    const replacementSaleId: Id<"sales"> = await performSale(ctx, actor, {
+      branchId: sale.branchId,
+      customerId: sale.customerId,
+      items: args.replacementItems.map((it) => ({
+        productVariantId: it.productVariantId,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice,
+      })),
+      payments: args.additionalPayments,
+      notes: `Exchange for ${sale.saleNumber}`,
+    });
+    const replacement = (await ctx.db.get(replacementSaleId))!;
+
+    // 4. The credit pays for the replacement: it leaves the original sale as a store-credit
+    // refund and arrives on the replacement as a store-credit payment. What is left over
+    // goes back by the chosen method.
+    const applied = Math.round(Math.min(credit, replacement.balance) * 100) / 100;
+    if (applied > 0) {
+      const replacementDone = await trackSale(ctx, replacementSaleId);
+      await ctx.db.insert("payments", {
+        saleId: args.saleId,
+        method: "STORE_CREDIT",
+        amount: -applied,
+        kind: "refund",
+        returnId,
+        reference: replacement.saleNumber,
+        userId: actor._id,
+        username: actor.username,
+        createdAt: now,
+      });
+      await ctx.db.insert("payments", {
+        saleId: replacementSaleId,
+        method: "STORE_CREDIT",
+        amount: applied,
+        kind: "payment",
+        reference: returnNumber,
+        userId: actor._id,
+        username: actor.username,
+        createdAt: now,
+      });
+      await settleSale(ctx, replacementSaleId);
+      await replacementDone();
+    }
+
+    const leftover = Math.round((credit - applied) * 100) / 100;
+    if (leftover > 0) {
       const leftoverSession =
         args.refundMethod === "STORE_CREDIT" ? null : await requireOpenSession(ctx, sale.branchId);
       if (args.refundMethod === "STORE_CREDIT") {
         await adjustCustomerCredit(ctx, {
-        customerId: sale.customerId,
-        delta: leftoverCredit,
-        reason: "RETURN_REFUND",
-        referenceType: "exchange",
-        referenceId: returnId,
-        userId: actor._id,
-        username: actor.username,
-        notes: `Exchange credit for ${returnNumber}`,
+          customerId: sale.customerId,
+          delta: leftover,
+          reason: "RETURN_REFUND",
+          referenceType: "exchange",
+          referenceId: returnId,
+          userId: actor._id,
+          username: actor.username,
+          notes: `Exchange credit for ${returnNumber}`,
         });
       }
       await ctx.db.insert("payments", {
         saleId: args.saleId,
         method: args.refundMethod,
-        amount: -leftoverCredit,
+        amount: -leftover,
         kind: "refund",
         returnId,
         cashRegisterSessionId: leftoverSession?._id,
@@ -448,34 +480,18 @@ export const exchange = mutation({
       });
     }
 
-    // 4. Create the replacement sale (return value applied as a discount).
-    // Ordering matters: the returned `salesReturnItems` rows above were
-    // already inserted, so `performSale`'s internal `refreshCustomerProfile`
-    // call sees this exchange's return when it recomputes size/tier for the
-    // replacement sale below — no separate hook call needed here. Don't
-    // reorder this block ahead of the `salesReturnItems` inserts.
-    const replacementSaleId: Id<"sales"> = await performSale(ctx, actor, {
-      branchId: sale.branchId,
-      customerId: sale.customerId,
-      items: args.replacementItems.map((it) => ({
-        productVariantId: it.productVariantId,
-        quantity: it.quantity,
-        unitPrice: it.unitPrice,
-      })),
-      discount: discountToApply,
-      payments: args.additionalPayments,
-      notes: `Exchange for ${sale.saleNumber}`,
-    });
-
     await ctx.db.patch(returnId, { exchangeSaleId: replacementSaleId });
-
-    const difference = Math.round((grossNew - returnValue) * 100) / 100;
-
     await ctx.db.patch(args.saleId, {
-      status: "PARTIALLY_RETURNED",
-      paymentStatus: "PARTIALLY_REFUNDED",
+      status: (await isFullyReturned(ctx, args.saleId)) ? "RETURNED" : "PARTIALLY_RETURNED",
       updatedAt: now,
     });
+    await settleSale(ctx, args.saleId);
+    // Sales totals: the sale's new share, and the return on its own day.
+    await metricsDone();
+    await recordReturnMetrics(ctx, returnId);
+
+    // Positive: what the customer paid or still owes on top; negative: given back.
+    const difference = Math.round((replacement.total - credit) * 100) / 100;
 
     await writeAudit(ctx, {
       userId: actor._id,
@@ -483,15 +499,11 @@ export const exchange = mutation({
       action: "return.exchanged",
       entityType: "salesReturn",
       entityId: returnId,
-      details: `${returnNumber}: returned value ${returnValue}, replacement ${grossNew}, difference ${difference}`,
-    });
-
-    // Metrics for the returned side (replacement side handled by performSale).
-    await applyDailyMetrics(ctx, dateString, {
-      ...zeroDeltas(),
-      totalReturns: 1,
-      totalItemsSold: -returnedUnits,
-      totalProfit: -(returnValue - returnedCost),
+      details:
+        `${returnNumber}: returned goods ${returnValue}` +
+        (debtCleared > 0 ? ` (${debtCleared} taken off the customer's debt)` : "") +
+        `, replacement ${replacement.saleNumber} ${replacement.total}, credit applied ${applied}` +
+        (leftover > 0 ? `, ${leftover} back via ${args.refundMethod}` : ""),
     });
 
     return { returnId, replacementSaleId, difference };
@@ -544,5 +556,29 @@ export const get = query({
     if (!ret) return null;
     const sale = await ctx.db.get(ret.saleId);
     return { ...ret, ...(await returnSummary(ctx, ret)), sale };
+  },
+});
+
+/**
+ * What a return of these lines would do, before it is made: the goods' value, how much of
+ * it only clears the customer's debt on the sale, and how much is money back.
+ */
+export const previewReturn = query({
+  args: {
+    token: v.string(),
+    saleId: v.id("sales"),
+    items: v.array(v.object({ saleItemId: v.id("saleItems"), quantity: v.number() })),
+  },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "returns.process");
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale || sale.status === "CANCELLED" || args.items.length === 0) return null;
+    const lines = await resolveReturnLines(
+      ctx,
+      sale,
+      args.items.map((i) => ({ ...i, reason: "OTHER", restock: false }))
+    );
+    const returnValue = Math.round(lines.reduce((s, l) => s + l.refundAmount, 0) * 100) / 100;
+    return { returnValue, ...(await splitReturnValue(ctx, sale, returnValue)) };
   },
 });

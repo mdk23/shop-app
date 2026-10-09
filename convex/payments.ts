@@ -1,54 +1,11 @@
 import { v } from "convex/values";
-import { mutation, query, MutationCtx } from "./_generated/server";
-import { Doc, Id } from "./_generated/dataModel";
+import { mutation, query } from "./_generated/server";
 import { requireOpenSession } from "./cashRegister";
+import { settleSale } from "./lib/saleMoney";
 import { paymentMethodValidator } from "./lib/paymentMethods";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
-import {
-  applyDailyMetrics,
-  getLocalDateString,
-  sanitizeKey,
-  zeroDeltas,
-} from "./metrics";
-
-const isCash = (m: string) => m === "CASH";
-
-function paymentStatusFor(paid: number, total: number): Doc<"sales">["paymentStatus"] {
-  if (paid <= 0) return "UNPAID";
-  if (paid + 1e-6 >= total) return "PAID";
-  return "PARTIALLY_PAID";
-}
-
-/** Recompute a sale's paidAmount/balance/paymentStatus from its payment rows. Returns before/after snapshot. */
-async function recomputeSale(ctx: MutationCtx, saleId: Id<"sales">) {
-  const sale = await ctx.db.get(saleId);
-  if (!sale) throw new Error("Sale not found.");
-  const rows = await ctx.db
-    .query("payments")
-    .withIndex("by_sale", (q) => q.eq("saleId", saleId))
-    .collect();
-  const netPaid = rows.reduce((s, p) => s + p.amount, 0); // refunds are negative
-  const applied = Math.min(Math.max(0, netPaid), sale.total);
-  const balance = Math.max(0, sale.total - applied);
-
-  // A refund (from a return or a cancellation) is final for the payment state.
-  const keepPaymentStatus =
-    sale.paymentStatus === "REFUNDED" ||
-    sale.paymentStatus === "PARTIALLY_REFUNDED" ||
-    sale.status === "CANCELLED";
-  const paymentStatus = keepPaymentStatus
-    ? sale.paymentStatus
-    : paymentStatusFor(applied, sale.total);
-
-  await ctx.db.patch(saleId, {
-    paidAmount: applied,
-    balance,
-    paymentStatus,
-    updatedAt: Date.now(),
-  });
-  return { sale, before: { paidAmount: sale.paidAmount, balance: sale.balance } };
-}
+import { trackSale } from "./lib/salesMetrics";
 
 export const listBySale = query({
   args: { saleId: v.id("sales") },
@@ -75,6 +32,7 @@ export const add = mutation({
     if (sale.status === "CANCELLED")
       throw new Error("Cannot add a payment to a cancelled sale.");
 
+    const metricsDone = await trackSale(ctx, args.saleId);
     const now = Date.now();
     // Every payment goes through the branch's open register.
     const session = await requireOpenSession(ctx, sale.branchId);
@@ -88,16 +46,8 @@ export const add = mutation({
       username: actor.username,
       createdAt: now,
     });
-    await recomputeSale(ctx, args.saleId);
-
-    const dateString = getLocalDateString(sale.createdAt);
-    await applyDailyMetrics(ctx, dateString, {
-      ...zeroDeltas(),
-      cashCollected: isCash(args.method) ? args.amount : 0,
-      outstandingDebt: -args.amount,
-      totalPending: -args.amount,
-      paymentMethods: { [sanitizeKey(args.method)]: { amount: args.amount, count: 1 } },
-    });
+    await settleSale(ctx, args.saleId);
+    await metricsDone();
 
     await writeAudit(ctx, {
       userId: actor._id,
@@ -119,19 +69,10 @@ export const remove = mutation({
     const sale = await ctx.db.get(payment.saleId);
     if (!sale) throw new Error("Sale not found.");
 
+    const metricsDone = await trackSale(ctx, payment.saleId);
     await ctx.db.delete(args.paymentId);
-    await recomputeSale(ctx, payment.saleId);
-
-    const dateString = getLocalDateString(sale.createdAt);
-    await applyDailyMetrics(ctx, dateString, {
-      ...zeroDeltas(),
-      cashCollected: isCash(payment.method) ? -payment.amount : 0,
-      outstandingDebt: payment.amount,
-      totalPending: payment.amount,
-      paymentMethods: {
-        [sanitizeKey(payment.method)]: { amount: -payment.amount, count: -1 },
-      },
-    });
+    await settleSale(ctx, payment.saleId);
+    await metricsDone();
 
     await writeAudit(ctx, {
       userId: actor._id,

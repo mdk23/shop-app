@@ -29,12 +29,8 @@ const MAX_PROFILE_SALES = 60;
  * observations). A no-op for missing/generic customers — anonymous sales
  * never get a profile.
  *
- * KNOWN GAP: `salesReturns.create` doesn't reduce `sale.total`/`balance` on
- * refund (see the comment at that patch site), so this function's own
- * trailing-12-month spend figure nets out returns locally for the tier
- * calculation, but does not attempt to fix `customers.ts`'s lifetime-spend
- * aggregate, which intentionally stays consistent with what `getById`
- * already shows everywhere else in the app.
+ * The trailing-12-month spend for the tier is the sales in the window less the goods
+ * returned in it.
  */
 export async function refreshCustomerProfile(
   ctx: MutationCtx,

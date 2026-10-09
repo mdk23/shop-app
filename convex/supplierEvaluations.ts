@@ -18,22 +18,32 @@ export const listBySupplier = query({
   },
 });
 
-/** Average quality and punctuality per supplier, plus how many of its quality issues are still open. */
+/**
+ * Per active supplier: average quality and punctuality over its latest 50 evaluations,
+ * and how many of its quality issues are still open (untreated).
+ */
 export const scorecard = query({
   args: {},
   handler: async (ctx) => {
-    const suppliers = await ctx.db.query("suppliers").collect();
+    const suppliers = await ctx.db
+      .query("suppliers")
+      .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
+      .take(500);
     return await Promise.all(
       suppliers.map(async (s) => {
         const evals = await ctx.db
           .query("supplierEvaluations")
           .withIndex("by_supplier", (q) => q.eq("supplierId", s._id))
-          .collect();
-        const issues = await ctx.db
-          .query("qualityIssues")
-          .withIndex("by_supplier", (q) => q.eq("supplierId", s._id))
-          .collect();
-        const openIssues = issues.filter((issue) => issue.treatment === undefined).length;
+          .order("desc")
+          .take(50);
+        const openIssues = (
+          await ctx.db
+            .query("qualityIssues")
+            .withIndex("by_supplier_and_treatment", (q) =>
+              q.eq("supplierId", s._id).eq("treatment", undefined)
+            )
+            .take(500)
+        ).length;
         const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
         return {
           supplierId: s._id,
@@ -41,7 +51,6 @@ export const scorecard = query({
           evaluations: evals.length,
           avgQuality: avg(evals.map((e) => e.qualityScore)),
           avgPunctuality: avg(evals.map((e) => e.punctualityPercent)),
-          qualityIssues: issues.length,
           openQualityIssues: openIssues,
         };
       })

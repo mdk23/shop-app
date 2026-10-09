@@ -30,7 +30,8 @@ export async function customerSalesSummary(ctx: QueryCtx, customerId: Id<"custom
     .order("desc")
     .collect();
   const active = sales.filter((s) => s.status !== "CANCELLED");
-  const totalPurchases = active.reduce((s, o) => s + o.total, 0);
+  // What was bought and kept: returned goods come off (paidAmount + balance = total − returns).
+  const totalPurchases = active.reduce((s, o) => s + o.paidAmount + o.balance, 0);
   const totalPaid = active.reduce((s, o) => s + o.paidAmount, 0);
   const outstandingDebt = active.reduce((s, o) => s + o.balance, 0);
   const purchaseCount = active.length;
@@ -88,22 +89,46 @@ function computeInitials(name: string): string {
 // QUERIES
 // ─────────────────────────────────────────────
 
-export const list = query({
-  args: {},
-  handler: async (ctx) => await ctx.db.query("customers").order("desc").collect(),
-});
-
+/**
+ * Customers newest first, a page at a time. Archived ones are left out unless asked for:
+ * each wanted status is read through `by_status` (newest first within it) and the
+ * streams are merged, so every page is full while more customers exist. The cursor is
+ * the creation time of the last customer shown.
+ */
 export const listPaginated = query({
   args: {
     paginationOpts: paginationOptsValidator,
     showArchived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    let q = ctx.db.query("customers").order("desc");
-    if (!args.showArchived) {
-      q = q.filter((qq) => qq.neq(qq.field("status"), "ARCHIVED"));
-    }
-    return await q.paginate(args.paginationOpts);
+    const n = args.paginationOpts.numItems;
+    const before = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : null;
+    const statuses: Doc<"customers">["status"][] = args.showArchived
+      ? ["ACTIVE", "DISABLED", "ARCHIVED"]
+      : ["ACTIVE", "DISABLED"];
+    const candidates = (
+      await Promise.all(
+        statuses.map((status) =>
+          ctx.db
+            .query("customers")
+            .withIndex("by_status", (q) =>
+              before === null
+                ? q.eq("status", status)
+                : q.eq("status", status).lt("_creationTime", before)
+            )
+            .order("desc")
+            .take(n + 1)
+        )
+      )
+    )
+      .flat()
+      .sort((a, b) => b._creationTime - a._creationTime);
+    const page = candidates.slice(0, n);
+    return {
+      page,
+      isDone: candidates.length <= n,
+      continueCursor: page.length > 0 ? String(page[page.length - 1]._creationTime) : "",
+    };
   },
 });
 

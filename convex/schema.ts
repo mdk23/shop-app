@@ -62,6 +62,33 @@ export const adjustmentReasonValidator = v.union(
   ...ADJUSTMENT_REASONS.map((reason) => v.literal(reason))
 );
 
+const metricsAgg = v.object({ qty: v.number(), revenue: v.number(), profit: v.number() });
+const salesMetricsFields = {
+  branchId: v.id("branches"),
+  revenue: v.number(),
+  salesCount: v.number(),
+  itemsSold: v.number(),
+  discount: v.number(),
+  tax: v.number(),
+  profit: v.number(),
+  collected: v.number(),
+  outstanding: v.number(),
+  paidCount: v.number(),
+  partlyPaidCount: v.number(),
+  unpaidCount: v.number(),
+  returnsCount: v.number(),
+  returnValue: v.number(),
+  returnedItems: v.number(),
+  paymentMethods: v.record(v.string(), v.object({ amount: v.number(), count: v.number() })),
+  categories: v.record(v.string(), metricsAgg),
+  products: v.record(v.string(), metricsAgg),
+  sizes: v.record(v.string(), metricsAgg),
+  colors: v.record(v.string(), metricsAgg),
+  customers: v.record(v.string(), v.number()),
+  hours: v.record(v.string(), v.object({ revenue: v.number(), sales: v.number() })),
+  updatedAt: v.number(),
+};
+
 export default defineSchema({
   // ─────────────────────────────────────────────
   // CATALOG
@@ -221,11 +248,28 @@ export default defineSchema({
     branchId: v.id("branches"),
     productVariantId: v.id("productVariants"),
     quantity: v.number(),
+    // The quantity against the variant's reorder level, kept with the quantity
+    // (lib/stockTotals.ts) so low and out-of-stock rows are read through an index.
+    status: v.union(v.literal("IN_STOCK"), v.literal("LOW_STOCK"), v.literal("OUT_OF_STOCK")),
     updatedAt: v.number(),
   })
     .index("by_branch_and_variant", ["branchId", "productVariantId"])
     .index("by_variant", ["productVariantId"])
-    .index("by_branch", ["branchId"]),
+    .index("by_branch", ["branchId"])
+    .index("by_status", ["status"])
+    .index("by_branch_and_status", ["branchId", "status"]),
+
+  // Stock totals per branch: the sum of its variantStock rows (active variants only),
+  // kept by lib/stockTotals.ts.
+  stockTotals: defineTable({
+    branchId: v.id("branches"),
+    units: v.number(),
+    costValue: v.number(),
+    retailValue: v.number(),
+    lowCount: v.number(),
+    outCount: v.number(),
+    updatedAt: v.number(),
+  }).index("by_branch", ["branchId"]),
 
   // ─────────────────────────────────────────────
   // FISCAL (Mozambique)
@@ -284,6 +328,8 @@ export default defineSchema({
     discount: v.number(),
     tax: v.number(),
     total: v.number(),
+    // Cache of lib/saleMoney.ts (settleSale): money kept for the sale, and what is still
+    // owed after returns. paidAmount + balance is what the customer bought and kept.
     paidAmount: v.number(),
     balance: v.number(),
     // The money: paid, owed (UNPAID / PARTIALLY_PAID) or given back.
@@ -306,12 +352,16 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_status", ["status"])
-    .index("by_payment_status", ["paymentStatus"])
+    .index("by_status", ["status", "createdAt"])
+    .index("by_payment_status", ["paymentStatus", "createdAt"])
     .index("by_customer", ["customerId"])
-    .index("by_branch", ["branchId"])
+    .index("by_branch", ["branchId", "createdAt"])
     .index("by_created_at", ["createdAt"])
     .index("by_sale_number", ["saleNumber"])
+    .searchIndex("search_customer", {
+      searchField: "customerName",
+      filterFields: ["branchId", "status", "paymentStatus"],
+    })
     .index("by_delivery_fee", ["deliveryFeeId"]),
 
   saleItems: defineTable({
@@ -325,6 +375,9 @@ export default defineSchema({
     discount: v.number(),
     total: v.number(),
     costPriceAtSale: v.number(),
+    // The line after its share of the sale-level discount, before IVA (what IVA was
+    // charged on). With taxAmount it is what the customer paid for the line.
+    netAmount: v.optional(v.number()),
     // Per-line IVA, snapshotted at sale time so later rate changes never rewrite history.
     taxRateId: v.optional(v.id("taxRates")),
     taxRatePercent: v.optional(v.number()),
@@ -553,6 +606,7 @@ export default defineSchema({
     topColorName: v.optional(v.string()),
   })
     .index("by_phone1", ["phone1"])
+    .index("by_status", ["status"])
     .index("by_isGeneric", ["isGeneric"])
     .index("by_customer_code", ["customerCode"])
     .searchIndex("search_name", { searchField: "name" }),
@@ -955,8 +1009,9 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
-  // The low-stock / out-of-stock item counts and the customer code sequence. Daily sales
-  // totals are `dailyMetrics`; document numbers come from `documentSeries`.
+  // Running sequences (stock counts, customer code) and demands per lost-sale reason
+  // ("demand_reason:SIZE", demands.ts). Low/out-of-stock counts are
+  // `stockTotals`; sales totals are `dailyMetrics` / `monthlyMetrics`; document numbers come from `documentSeries`.
   counters: defineTable({
     key: v.string(),
     value: v.number(),
@@ -964,37 +1019,17 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
-  // Pre-aggregated analytics. Optimization layer only — transactional tables are
-  // the source of truth. Fields are permissive during the analytics reshape.
-  dailyMetrics: defineTable({
-    dateString: v.string(),
-    branchId: v.optional(v.id("branches")),
+  // Sales totals per branch: per local day and per month (lib/salesMetrics.ts). The sales
+  // are the source of truth; each sale's share is recomputed from it whenever it changes.
+  // Map keys are ids (product, category, size, colour, customer), payment methods and
+  // the local hour ("09").
+  dailyMetrics: defineTable({ dateString: v.string(), ...salesMetricsFields })
+    .index("by_date", ["dateString"])
+    .index("by_branch_and_date", ["branchId", "dateString"]),
 
-    totalRevenue: v.optional(v.number()),
-    totalSales: v.optional(v.number()),
-    totalItemsSold: v.optional(v.number()),
-    totalDiscount: v.optional(v.number()),
-    totalTax: v.optional(v.number()),
-    totalReturns: v.optional(v.number()),
-    refundAmount: v.optional(v.number()),
-    totalProfit: v.optional(v.number()),
-    totalPending: v.optional(v.number()),
-    cashCollected: v.optional(v.number()),
-    outstandingDebt: v.optional(v.number()),
-
-    paymentMethods: v.optional(
-      v.record(v.string(), v.object({ amount: v.number(), count: v.number() }))
-    ),
-    categorySales: v.optional(v.record(v.string(), v.number())),
-    productSales: v.optional(v.record(v.string(), v.number())),
-    sizeSales: v.optional(v.record(v.string(), v.number())),
-    colorSales: v.optional(v.record(v.string(), v.number())),
-
-    fullyPaidCount: v.optional(v.number()),
-    partiallyPaidCount: v.optional(v.number()),
-    pendingCount: v.optional(v.number()),
-  }).index("by_date", ["dateString"])
-    .index("by_date_and_branch", ["dateString", "branchId"]),
+  monthlyMetrics: defineTable({ month: v.string(), ...salesMetricsFields }) // "2026-10"
+    .index("by_month", ["month"])
+    .index("by_branch_and_month", ["branchId", "month"]),
 
   ...governanceTables,
   ...catalogTables,

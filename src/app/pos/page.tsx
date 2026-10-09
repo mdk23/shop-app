@@ -314,7 +314,6 @@ export default function PosPage() {
         items: cart.map((l) => ({
           productVariantId: l.variantId,
           quantity: l.quantity,
-          unitPrice: l.unitPrice,
           discount: l.lineDiscount || undefined,
         })),
         discount: saleDiscount || undefined,

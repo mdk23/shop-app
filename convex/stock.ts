@@ -5,13 +5,8 @@ import { Doc, Id } from "./_generated/dataModel";
 import { variantLabel } from "./inventory";
 import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 
-export type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK";
-
-export function stockStatus(quantity: number, reorderLevel: number): StockStatus {
-  if (quantity <= 0) return "OUT_OF_STOCK";
-  if (quantity <= reorderLevel) return "LOW_STOCK";
-  return "IN_STOCK";
-}
+import { stockStatus, type StockStatus } from "./lib/stockTotals";
+export { stockStatus, type StockStatus };
 
 async function stockRowsForBranch(
   ctx: QueryCtx,
@@ -144,15 +139,30 @@ export const lowStockSummary = query({
     token: v.string(), branchId: v.optional(v.id("branches")) },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "inventory.view");
-    const stockRows = args.branchId
-      ? await ctx.db
-          .query("variantStock")
-          .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
-          .collect()
-      : await ctx.db.query("variantStock").collect();
+    // Only the low and out-of-stock rows are read, through the status index; the counts
+    // are the running stock totals.
+    const statusRows = (status: StockStatus) =>
+      args.branchId
+        ? ctx.db
+            .query("variantStock")
+            .withIndex("by_branch_and_status", (q) =>
+              q.eq("branchId", args.branchId!).eq("status", status)
+            )
+            .take(200)
+        : ctx.db
+            .query("variantStock")
+            .withIndex("by_status", (q) => q.eq("status", status))
+            .take(200);
+    const stockRows = [...(await statusRows("OUT_OF_STOCK")), ...(await statusRows("LOW_STOCK"))];
+    const totals = (
+      args.branchId
+        ? await ctx.db
+            .query("stockTotals")
+            .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
+            .collect()
+        : await ctx.db.query("stockTotals").collect()
+    ).reduce((s, r) => ({ low: s.low + r.lowCount, out: s.out + r.outCount }), { low: 0, out: 0 });
 
-    let low = 0;
-    let out = 0;
     const items: {
       productVariantId: Id<"productVariants">;
       label: string;
@@ -166,8 +176,6 @@ export const lowStockSummary = query({
       const reorderLevel = variant.reorderLevel;
       const status = stockStatus(row.quantity, reorderLevel);
       if (status === "IN_STOCK") continue;
-      if (status === "LOW_STOCK") low += 1;
-      else out += 1;
       const product = await ctx.db.get(variant.productId);
       items.push({
         productVariantId: row.productVariantId,
@@ -178,6 +186,6 @@ export const lowStockSummary = query({
       });
     }
     items.sort((a, b) => a.quantity - b.quantity);
-    return { lowStockCount: low, outOfStockCount: out, items: items.slice(0, 50) };
+    return { lowStockCount: totals.low, outOfStockCount: totals.out, items: items.slice(0, 50) };
   },
 });
