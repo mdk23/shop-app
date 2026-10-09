@@ -139,7 +139,7 @@ describe("IVA per line", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 2 }],
-      payments: [{ method: "CARD", amount: 1000 }],
+      payments: [{ method: "CASH", amount: 1000 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -169,7 +169,7 @@ describe("IVA per line", () => {
         { productVariantId: ids.variantM, quantity: 2 },
         { productVariantId: ids.variantSocks, quantity: 1 },
       ],
-      payments: [{ method: "CARD", amount: 1000 }],
+      payments: [{ method: "CASH", amount: 1000 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -191,7 +191,7 @@ describe("IVA per line", () => {
         { productVariantId: ids.variantL, quantity: 1 },
       ],
       discount: 100,
-      payments: [{ method: "CARD", amount: 1000 }],
+      payments: [{ method: "CASH", amount: 1000 }],
     });
 
     const sale = await t.run((ctx) => ctx.db.get(saleId));
@@ -212,7 +212,7 @@ describe("IVA per line", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantM, quantity: 1 }],
-        payments: [{ method: "CARD", amount: 1000 }],
+        payments: [{ method: "CASH", amount: 1000 }],
       })
     ).rejects.toThrow(/inactive/);
   });
@@ -233,7 +233,7 @@ describe("fiscal numbering", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantM, quantity: 1 }],
-        payments: [{ method: "CARD", amount: 1000 }],
+        payments: [{ method: "CASH", amount: 1000 }],
       });
       const sale = await t.run((ctx) => ctx.db.get(saleId));
       numbers.push(sale!.saleNumber);
@@ -250,7 +250,7 @@ describe("fiscal numbering", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 1 }],
-      payments: [{ method: "CARD", amount: 1000 }],
+      payments: [{ method: "CASH", amount: 1000 }],
     });
     await expect(
       t.mutation(api.sales.create, {
@@ -258,7 +258,7 @@ describe("fiscal numbering", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantM, quantity: 999 }],
-        payments: [{ method: "CARD", amount: 1000 }],
+        payments: [{ method: "CASH", amount: 1000 }],
       })
     ).rejects.toThrow(/Insufficient stock/);
     const next = await t.mutation(api.sales.create, {
@@ -266,7 +266,7 @@ describe("fiscal numbering", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 1 }],
-      payments: [{ method: "CARD", amount: 1000 }],
+      payments: [{ method: "CASH", amount: 1000 }],
     });
 
     const a = await t.run((ctx) => ctx.db.get(first));
@@ -292,7 +292,7 @@ describe("fiscal numbering", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantM, quantity: 1 }],
-      payments: [{ method: "CARD", amount: 1000 }],
+      payments: [{ method: "CASH", amount: 1000 }],
     });
     const sale = await t.run((ctx) => ctx.db.get(saleId as Id<"sales">));
     expect(sale?.customerNuit).toBe("400123456");

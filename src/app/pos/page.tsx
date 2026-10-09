@@ -279,7 +279,8 @@ export default function PosPage() {
   const total = taxable + tax;
 
   const completeSale = async (
-    payments: { method: PaymentMethod; amount: number }[]
+    payments: { method: PaymentMethod; amount: number }[],
+    { keepChangeAsCredit }: { keepChangeAsCredit: boolean }
   ): Promise<void> => {
     if (!branchId) {
       toast.error(t("No branch selected."));
@@ -318,6 +319,7 @@ export default function PosPage() {
         })),
         discount: saleDiscount || undefined,
         payments,
+        keepChangeAsCredit: keepChangeAsCredit || undefined,
       });
       toast.success(t("Sale completed"));
       setPayOpen(false);
@@ -705,6 +707,7 @@ export default function PosPage() {
           fmt={fmt}
           onClose={() => setPayOpen(false)}
           onComplete={completeSale}
+          allowCredit={!!customerId}
           extraFields={
             !customerId ? (
               <AnonymousCustomerCapture

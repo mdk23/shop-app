@@ -749,7 +749,8 @@ describe("money on returns, cancellations and prices", () => {
       branchId: ids.branchId,
       customerId: ids.namedCustomerId,
       items: [{ productVariantId: ids.variantId, quantity: 1 }],
-      payments: [{ method: "CASH", amount: 300 }], // 50 over → store credit
+      payments: [{ method: "CASH", amount: 300 }], // 50 over, kept as store credit
+      keepChangeAsCredit: true,
     })) as Id<"sales">;
     await t.mutation(api.sales.cancel, { token: ids.admin.token, saleId, reason: "test" });
     expect((await refundRows(t, saleId)).map((r) => r.amount)).toEqual([-250]);
@@ -1628,5 +1629,113 @@ describe("sales list", () => {
     expect(byNumber.page.map((s) => s.saleNumber)).toEqual([`FT ${year}/000003`]);
     expect(await t.query(api.sales.rangeTotals, range)).toMatchObject({ count: 5, revenue: 1250, outstanding: 250 });
     expect(await t.query(api.sales.listForExport, range)).toHaveLength(5);
+  });
+});
+
+describe("change at the till", () => {
+  const cashIn = (t: Awaited<ReturnType<typeof seed>>["t"], saleId: Id<"sales">) =>
+    t.run(async (ctx) =>
+      (await ctx.db.query("payments").withIndex("by_sale", (q) => q.eq("saleId", saleId)).collect()).map(
+        (p) => [p.method, p.amount]
+      )
+    );
+  const credits = (t: Awaited<ReturnType<typeof seed>>["t"], customerId: Id<"customers">) =>
+    t.run(async (ctx) =>
+      (await ctx.db.query("customerCredits").withIndex("by_customer", (q) => q.eq("customerId", customerId)).collect())
+        .reduce((s, c) => s + c.delta, 0)
+    );
+
+  test("cash over the amount due is change: only the amount due is recorded", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    for (const customerId of [ids.customerId, ids.namedCustomerId]) {
+      const saleId = (await t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "CASH", amount: 300 }],
+      })) as Id<"sales">;
+      expect(await cashIn(t, saleId)).toEqual([["CASH", 250]]);
+      const sale = await t.run((ctx) => ctx.db.get(saleId));
+      expect(sale).toMatchObject({ paidAmount: 250, balance: 0, paymentStatus: "PAID" });
+    }
+    expect(await credits(t, ids.namedCustomerId)).toBe(0);
+  });
+
+  test("a split payment takes the change off the cash part", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      payments: [
+        { method: "CARD", amount: 300 },
+        { method: "CASH", amount: 500 },
+      ],
+    })) as Id<"sales">;
+    expect(await cashIn(t, saleId)).toEqual([
+      ["CARD", 300],
+      ["CASH", 200],
+    ]);
+  });
+
+  test("card and mobile payments cannot go over the amount due", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    await expect(
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "MPESA", amount: 300 }],
+      })
+    ).rejects.toThrow(/only cash can give change/);
+  });
+
+  test("change kept on purpose becomes store credit, for named customers only", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const sell = (customerId: Id<"customers">) =>
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "CASH", amount: 300 }],
+        keepChangeAsCredit: true,
+      }) as Promise<Id<"sales">>;
+    const saleId = await sell(ids.namedCustomerId);
+    expect(await cashIn(t, saleId)).toEqual([["CASH", 300]]);
+    expect(await credits(t, ids.namedCustomerId)).toBe(50);
+    await expect(sell(ids.customerId)).rejects.toThrow(/named customer/);
+  });
+
+  test("a later payment takes only what is owed and reports the change", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.namedCustomerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+      payments: [{ method: "CASH", amount: 100 }],
+    })) as Id<"sales">;
+    const res = await t.mutation(api.payments.add, { token: ids.admin.token, saleId, method: "CASH", amount: 200 });
+    expect(res).toEqual({ recorded: 150, change: 50 });
+    await expect(
+      t.mutation(api.payments.add, { token: ids.admin.token, saleId, method: "CARD", amount: 10 })
+    ).rejects.toThrow(/Nothing is owed/);
+    // The drawer holds what was kept: 100 + 150.
+    const [session] = await t.run((ctx) => ctx.db.query("cashRegisterSessions").collect());
+    const closed = await t.mutation(api.cashRegister.closeSession, {
+      token: ids.admin.token,
+      sessionId: session._id,
+      actualCash: 250,
+    });
+    expect(closed.difference).toBe(0);
   });
 });

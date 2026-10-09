@@ -134,7 +134,7 @@ describe("customer orders: reservations", () => {
         branchId: ids.branchId,
         customerId: ids.customerId,
         items: [{ productVariantId: ids.variantId, quantity: 7 }],
-        payments: [{ method: "CARD", amount: 5000 }],
+        payments: [{ method: "CASH", amount: 5000 }],
       })
     ).rejects.toThrow(/held for customer orders/);
 
@@ -143,7 +143,7 @@ describe("customer orders: reservations", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 6 }],
-      payments: [{ method: "CARD", amount: 5000 }],
+      payments: [{ method: "CASH", amount: 5000 }],
     });
     expect(await stockOf(t, ids.branchId, ids.variantId)).toBe(4);
   });
@@ -187,7 +187,7 @@ describe("customer orders: reservations", () => {
       branchId: ids.branchId,
       customerId: ids.customerId,
       items: [{ productVariantId: ids.variantId, quantity: 10 }],
-      payments: [{ method: "CARD", amount: 5000 }],
+      payments: [{ method: "CASH", amount: 5000 }],
     });
   });
 });

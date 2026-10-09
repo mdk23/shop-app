@@ -52,6 +52,42 @@ async function resolveOpenSession(
   return open.find((s) => s.branchId === branchId) ?? open.find((s) => !s.branchId) ?? null;
 }
 
+/**
+ * What is handed over at the till against what is due. Cash beyond the amount due is
+ * change: it goes back to the customer, so the cash payment recorded is only what stays
+ * in the drawer — unless the customer keeps it as store credit (named customers only).
+ * Card, M-Pesa, e-Mola and transfers cannot give change, so they cannot exceed what is due.
+ */
+export function settleTendered(
+  tendered: { method: PaymentMethod; amount: number }[],
+  due: number,
+  keepChangeAsCredit: boolean,
+  isGenericCustomer: boolean
+): { payments: { method: PaymentMethod; amount: number }[]; change: number; keptAsCredit: number } {
+  const over = round2(tendered.reduce((s, p) => s + p.amount, 0) - due);
+  if (over <= 0) return { payments: tendered, change: 0, keptAsCredit: 0 };
+  if (keepChangeAsCredit) {
+    if (isGenericCustomer) throw new Error("Store credit needs a named customer.");
+    return { payments: tendered, change: 0, keptAsCredit: over };
+  }
+  const cash = tendered.filter((p) => isCash(p.method)).reduce((s, p) => s + p.amount, 0);
+  if (over > cash + 1e-6) {
+    throw new Error(
+      `The payments are ${over.toFixed(2)} more than the amount due, and only cash can give change. Lower the card or mobile payment.`
+    );
+  }
+  // Take the change off the cash rows, last first.
+  let left = over;
+  const payments = [...tendered];
+  for (let i = payments.length - 1; i >= 0 && left > 0; i--) {
+    if (!isCash(payments[i].method)) continue;
+    const cut = Math.min(left, payments[i].amount);
+    payments[i] = { ...payments[i], amount: round2(payments[i].amount - cut) };
+    left = round2(left - cut);
+  }
+  return { payments: payments.filter((p) => p.amount > 0), change: over, keptAsCredit: 0 };
+}
+
 // ─────────────────────────────────────────────
 // CREATE SALE (POS checkout) — atomic
 // ─────────────────────────────────────────────
@@ -73,6 +109,8 @@ const saleInputValidator = {
   taxRate: v.optional(v.number()), // percent; falls back to settings
   payments: v.optional(v.array(v.object({ method: paymentMethodValidator, amount: v.number() }))),
   cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
+  // Keep cash handed over beyond the amount due as store credit instead of giving change.
+  keepChangeAsCredit: v.optional(v.boolean()),
   isDelivery: v.optional(v.boolean()),
   deliveryFeeId: v.optional(v.id("deliveryFees")),
   notes: v.optional(v.string()),
@@ -98,6 +136,8 @@ type SaleInput = {
    * override and needs discount authority.
    */
   agreedPrices?: boolean;
+  /** Cash handed over beyond the amount due becomes store credit instead of change. */
+  keepChangeAsCredit?: boolean;
   cashRegisterSessionId?: Id<"cashRegisterSessions">;
   isDelivery?: boolean;
   deliveryFeeId?: Id<"deliveryFees">;
@@ -294,8 +334,14 @@ export async function performSale(
     }
 
     // 4. Payments: new money taken now, plus any already received (deposits).
-    const newPayments = (args.payments ?? []).filter((p) => p.amount > 0);
     const priorPayments = args.priorPayments ?? [];
+    const priorPaid = priorPayments.reduce((s, p) => s + p.amount, 0);
+    const { payments: newPayments, change, keptAsCredit } = settleTendered(
+      (args.payments ?? []).filter((p) => p.amount > 0),
+      round2(Math.max(0, total - priorPaid)),
+      !!args.keepChangeAsCredit,
+      !!customer.isGeneric
+    );
     const payments = [
       ...priorPayments.map((p) => ({ method: p.method, amount: p.amount })),
       ...newPayments,
@@ -392,7 +438,8 @@ export async function performSale(
       });
     }
 
-    // 11. Overpayment → store credit.
+    // 11. Overpayment → store credit: money already received beyond the total (deposits),
+    // or change the customer chose to leave as credit.
     if (overpayment > 0 && !customer.isGeneric) {
       await adjustCustomerCredit(ctx, {
         customerId: args.customerId,
@@ -428,7 +475,9 @@ export async function performSale(
         `${saleNumber} — total ${total.toFixed(2)}, paid ${appliedToSale.toFixed(2)}, ${lines.length} line(s)` +
         (overriddenLines > 0
           ? `, price changed on ${overriddenLines} line(s) (${priceCut.toFixed(2)} below list)`
-          : ""),
+          : "") +
+        (change > 0 ? `, change ${change.toFixed(2)}` : "") +
+        (keptAsCredit > 0 ? `, ${keptAsCredit.toFixed(2)} kept as store credit` : ""),
     });
 
     return saleId;

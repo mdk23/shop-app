@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireOpenSession } from "./cashRegister";
-import { settleSale } from "./lib/saleMoney";
+import { saleMoney, settleSale } from "./lib/saleMoney";
+import { settleTendered } from "./sales";
 import { paymentMethodValidator } from "./lib/paymentMethods";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
@@ -31,6 +32,16 @@ export const add = mutation({
     if (!sale) throw new Error("Sale not found.");
     if (sale.status === "CANCELLED")
       throw new Error("Cannot add a payment to a cancelled sale.");
+    // Only what is owed is taken; cash over it is change handed back.
+    const owed = (await saleMoney(ctx, sale)).balance;
+    if (owed <= 0) throw new Error("Nothing is owed on this sale.");
+    const { payments: kept, change } = settleTendered(
+      [{ method: args.method, amount: args.amount }],
+      owed,
+      false,
+      true
+    );
+    const amount = kept[0].amount;
 
     const metricsDone = await trackSale(ctx, args.saleId);
     const now = Date.now();
@@ -39,7 +50,7 @@ export const add = mutation({
     await ctx.db.insert("payments", {
       saleId: args.saleId,
       method: args.method,
-      amount: args.amount,
+      amount,
       kind: "payment",
       cashRegisterSessionId: session._id,
       userId: actor._id,
@@ -55,8 +66,9 @@ export const add = mutation({
       action: "payment.added",
       entityType: "sale",
       entityId: args.saleId,
-      details: `${args.method} ${args.amount} on ${sale.saleNumber}`,
+      details: `${args.method} ${amount} on ${sale.saleNumber}${change > 0 ? ` (change ${change.toFixed(2)})` : ""}`,
     });
+    return { recorded: amount, change };
   },
 });
 

@@ -112,7 +112,7 @@ async function saleWith(
     branchId: ids.branchId,
     customerId: ids.customerId,
     items: [{ productVariantId: ids.variantId, quantity }],
-    payments: [{ method: "CARD", amount: 5000 }],
+    payments: [{ method: "CASH", amount: 5000 }],
   });
   const lines = await t.run((ctx) =>
     ctx.db

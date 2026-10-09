@@ -18,11 +18,17 @@ export function PaymentModal({
   onComplete,
   title,
   extraFields,
+  allowCredit,
 }: {
   total: number;
   fmt: (n: number) => string;
   onClose: () => void;
-  onComplete: (payments: { method: PaymentMethod; amount: number }[]) => void | Promise<void>;
+  onComplete: (
+    payments: { method: PaymentMethod; amount: number }[],
+    options: { keepChangeAsCredit: boolean }
+  ) => void | Promise<void>;
+  /** A named customer can leave the change as store credit. */
+  allowCredit?: boolean;
   title?: string;
   /** Rendered below the payment rows, above the paid/change summary — e.g. the
    *  anonymous-sale phone capture field. Keeps this modal about payments. */
@@ -33,14 +39,18 @@ export function PaymentModal({
     { method: "CASH", amount: total.toFixed(2) },
   ]);
   const [busy, setBusy] = useState(false);
+  const [keepAsCredit, setKeepAsCredit] = useState(false);
 
   const paid = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const change = paid - total;
+  // Only cash can give change: card and mobile payments may not go over what is due.
+  const cash = rows.filter((r) => r.method === "CASH").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const nonCashOver = change > 0.005 && change > cash + 0.005 && !(allowCredit && keepAsCredit);
 
   const submit = async (rowsToSend: { method: PaymentMethod; amount: number }[]) => {
     setBusy(true);
     try {
-      await onComplete(rowsToSend);
+      await onComplete(rowsToSend, { keepChangeAsCredit: !!allowCredit && keepAsCredit && change > 0 });
     } finally {
       setBusy(false);
     }
@@ -62,6 +72,7 @@ export function PaymentModal({
             {t("Save as pending")}
           </Button>
           <Button
+            disabled={nonCashOver}
             onClick={() =>
               submit(
                 rows
@@ -129,10 +140,22 @@ export function PaymentModal({
 
       {extraFields}
 
+      {change > 0.005 && allowCredit && (
+        <label className="mt-3 flex items-center gap-2 text-xs font-bold">
+          <input type="checkbox" checked={keepAsCredit} onChange={(e) => setKeepAsCredit(e.target.checked)} />
+          {t("Keep the change as store credit")}
+        </label>
+      )}
+      {nonCashOver && (
+        <p className="mt-3 text-xs font-bold text-error">
+          {t("Only cash can give change. Lower the card or mobile payment.")}
+        </p>
+      )}
+
       <div className="mt-4 pt-3 border-t border-outline/40 space-y-1.5 text-sm">
         <Line label={t("Paid")} value={fmt(paid)} />
         <Line
-          label={change >= 0 ? t("Change") : t("Balance due")}
+          label={change < 0 ? t("Balance due") : allowCredit && keepAsCredit ? t("Store credit") : t("Change")}
           value={fmt(Math.abs(change))}
           className={cn(change < 0 ? "text-error" : "text-success", "font-bold")}
         />

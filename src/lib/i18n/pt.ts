@@ -526,6 +526,10 @@ export const pt: Record<string, string> = {
   "Split payment": "Dividir pagamento",
   "Paid": "Pago",
   "Change": "Troco",
+  "Keep the change as store credit": "Deixar o troco como crédito na loja",
+  "Only cash can give change. Lower the card or mobile payment.":
+    "Só o numerário pode dar troco. Reduza o pagamento por cartão ou móvel.",
+  "Give {amount} change": "Dar {amount} de troco",
   "Balance due": "Saldo devedor",
   "Sale Completed": "Venda Concluída",
   "New Sale": "Nova Venda",

@@ -271,8 +271,12 @@ function SaleDetail({
     if (!amount || Number(amount) <= 0) return toast.error(t("Enter an amount."));
     setBusy(true);
     try {
-      await addPayment({ token, saleId: id, method, amount: Number(amount) });
-      toast.success(t("Payment recorded"));
+      const res = await addPayment({ token, saleId: id, method, amount: Number(amount) });
+      toast.success(
+        res.change > 0
+          ? `${t("Payment recorded")} · ${t("Give {amount} change", { amount: fmt(res.change) })}`
+          : t("Payment recorded")
+      );
       setAmount("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("Failed"));
