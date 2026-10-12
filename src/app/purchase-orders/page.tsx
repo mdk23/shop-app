@@ -28,6 +28,11 @@ import { usePagedQuery } from "@/lib/pagination";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
+  type PaymentMethod,
+} from "../../../convex/lib/paymentMethods";
 
 const STATUS_TONE: Record<string, "neutral" | "info" | "warning" | "success" | "error"> = {
   DRAFT: "neutral",
@@ -117,6 +122,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <PageLayout title={t("Purchase Orders")} subtitle={t("Purchasing · restock from suppliers")}>
+      <PayablesCard token={token} fmt={fmt} />
       <Toolbar>
         <Select
           value={statusFilter}
@@ -341,7 +347,6 @@ function PODetail({
   const po = useQuery(api.purchaseOrders.get, { id });
   const updateStatus = useMutation(api.purchaseOrders.updateStatus);
   const receiveItems = useMutation(api.purchaseOrders.receiveItems);
-  const updatePayment = useMutation(api.purchaseOrders.updatePaymentStatus);
   const removePo = useMutation(api.purchaseOrders.remove);
   const [receiving, setReceiving] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -411,20 +416,6 @@ function PODetail({
                 {t("Receive entered qty")}
               </Button>
             )}
-            {po.paymentStatus !== "PAID" && po.status !== "CANCELLED" && (
-              <Button
-                variant="secondary"
-                loading={busy}
-                onClick={() =>
-                  run(
-                    () => updatePayment({ token, id, paymentStatus: "PAID" }),
-                    t("Marked paid")
-                  )
-                }
-              >
-                {t("Mark paid")}
-              </Button>
-            )}
           </div>
         )
       }
@@ -479,6 +470,158 @@ function PODetail({
           </tbody>
         </Table>
       )}
+      {po && po.status !== "DRAFT" && <SupplierPaymentsPanel token={token} po={po} fmt={fmt} />}
     </Modal>
+  );
+}
+
+/** Payments made to the supplier on this order: what is paid, what is owed, and a form to pay. */
+function SupplierPaymentsPanel({
+  token,
+  po,
+  fmt,
+}: {
+  token: string;
+  po: { _id: Id<"purchaseOrders">; status: string; totalAmount: number };
+  fmt: (n: number) => string;
+}) {
+  const { t } = useTranslation();
+  const data = useQuery(api.supplierPayments.listByPurchaseOrder, { token, purchaseOrderId: po._id });
+  const add = useMutation(api.supplierPayments.add);
+  const remove = useMutation(api.supplierPayments.remove);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<PaymentMethod>("BANK_TRANSFER");
+  const [reference, setReference] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!data) return <Spinner />;
+  const canPay = po.status !== "CANCELLED" && data.outstanding > 0;
+
+  const pay = async () => {
+    const value = Number(amount || data.outstanding);
+    setBusy(true);
+    try {
+      await add({ token, purchaseOrderId: po._id, amount: value, method, reference: reference || undefined });
+      toast.success(t("Payment recorded"));
+      setAmount("");
+      setReference("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 pt-3 border-t border-outline/40 space-y-3">
+      <div className="flex flex-wrap gap-4 text-sm">
+        <span>
+          {t("Total")}: <b>{fmt(po.totalAmount)}</b>
+        </span>
+        <span>
+          {t("Paid")}: <b>{fmt(data.paid)}</b>
+        </span>
+        <span className={data.outstanding > 0 ? "text-error font-bold" : "text-success font-bold"}>
+          {t("Owed")}: {fmt(data.outstanding)}
+        </span>
+      </div>
+      {data.payments.length > 0 && (
+        <Table>
+          <thead>
+            <tr>
+              <Th>{t("Date")}</Th>
+              <Th>{t("Method")}</Th>
+              <Th>{t("Reference")}</Th>
+              <Th className="text-right">{t("Amount")}</Th>
+              <Th />
+            </tr>
+          </thead>
+          <tbody>
+            {data.payments.map((p) => (
+              <tr key={p._id}>
+                <Td className="text-xs">{new Date(p.paidAt).toLocaleString()}</Td>
+                <Td className="text-xs">{t(PAYMENT_METHOD_LABEL[p.method])}</Td>
+                <Td className="text-xs">{p.reference ?? "—"}</Td>
+                <Td className="text-right font-bold">{fmt(p.amount)}</Td>
+                <Td className="text-right">
+                  <button
+                    className="text-on-surface-variant hover:text-error"
+                    aria-label={t("Delete")}
+                    onClick={async () => {
+                      try {
+                        await remove({ token, paymentId: p._id });
+                        toast.success(t("Deleted"));
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : t("Failed"));
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {canPay && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label={t("Amount")}>
+            <input
+              type="number"
+              value={amount}
+              placeholder={data.outstanding.toFixed(2)}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-32 px-3 py-2 bg-surface-container-low border border-outline rounded-xl text-sm text-right"
+            />
+          </Field>
+          <Field label={t("Method")}>
+            <Select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {t(PAYMENT_METHOD_LABEL[m])}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label={t("Reference")}>
+            <input
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              className="w-40 px-3 py-2 bg-surface-container-low border border-outline rounded-xl text-sm"
+            />
+          </Field>
+          <Button onClick={pay} loading={busy}>
+            {t("Record payment")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What is owed to each supplier on orders sent or received and not fully paid. */
+function PayablesCard({ token, fmt }: { token: string; fmt: (n: number) => string }) {
+  const { t } = useTranslation();
+  const rows = useQuery(api.supplierPayments.payables, { token });
+  if (!rows || rows.length === 0) return null;
+  const total = rows.reduce((s, r) => s + r.owed, 0);
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-black uppercase tracking-wider">{t("Owed to suppliers")}</h3>
+        <span className="text-sm font-bold text-error">{fmt(total)}</span>
+      </div>
+      <div className="space-y-1">
+        {rows.map((r) => (
+          <div key={r.supplierId} className="flex justify-between text-sm">
+            <span>
+              {r.name} <span className="text-xs text-on-surface-variant">· {t("{n} order(s)", { n: r.orders })}</span>
+            </span>
+            <b>{fmt(r.owed)}</b>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

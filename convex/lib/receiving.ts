@@ -3,6 +3,10 @@ import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { writeAudit } from "../audit";
 import { nextDocumentNumber } from "./numbering";
+import { round2 } from "./fiscal";
+import { recordVariantPrice } from "./catalog";
+import { patchVariant } from "./stockTotals";
+import { choiceSetting } from "../settings";
 import { assertWholeQuantity } from "./pricing";
 
 export type ReceiptLine = {
@@ -97,6 +101,7 @@ export async function receiveIntoStock(
     createdAt: now,
   });
 
+  const costMethod = await choiceSetting(ctx, "costMethod");
   for (const p of plan) {
     await ctx.db.insert("purchaseReceiptItems", {
       receiptId,
@@ -110,6 +115,10 @@ export async function receiveIntoStock(
       await ctx.db.patch(p.line._id, {
         quantityReceived: p.line.quantityReceived + p.rx.quantityReceived,
       });
+    }
+    // Before the goods go in: a weighted average needs the stock on hand without them.
+    if (p.unitCost !== undefined) {
+      await applyPurchaseCost(ctx, actor, p.rx.productVariantId, p.rx.quantityReceived, p.unitCost, costMethod, receiptNumber);
     }
     await ctx.runMutation(internal.inventory.mutateStock, {
       productVariantId: p.rx.productVariantId,
@@ -159,4 +168,49 @@ export async function receiptSupplierId(
     return (await ctx.db.get(receipt.purchaseOrderId))?.supplierId;
   }
   return receipt.supplierId;
+}
+
+/**
+ * Updates a variant's cost price from a purchase, by the costMethod setting:
+ *  - WEIGHTED_AVERAGE: (stock on hand × current cost + received × unit cost) ÷ total units,
+ *    with stock on hand counted across all branches (the cost is the variant's, not a
+ *    branch's); with nothing on hand the purchase cost is taken as is;
+ *  - LATEST: the purchase's unit cost;
+ *  - MANUAL: unchanged.
+ * The change goes into the price history and the audit log, and revalues the stock totals.
+ */
+async function applyPurchaseCost(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  variantId: Id<"productVariants">,
+  quantity: number,
+  unitCost: number,
+  method: string,
+  receiptNumber: string
+) {
+  if (method === "MANUAL") return;
+  const variant = await ctx.db.get(variantId);
+  if (!variant) return;
+  let newCost = unitCost;
+  if (method === "WEIGHTED_AVERAGE") {
+    const rows = await ctx.db
+      .query("variantStock")
+      .withIndex("by_variant", (q) => q.eq("productVariantId", variantId))
+      .collect();
+    const onHand = rows.reduce((s, r) => s + Math.max(0, r.quantity), 0);
+    if (onHand > 0) newCost = (onHand * variant.costPrice + quantity * unitCost) / (onHand + quantity);
+  }
+  newCost = round2(newCost);
+  if (newCost === variant.costPrice) return;
+  const now = Date.now();
+  await patchVariant(ctx, variantId, { costPrice: newCost, updatedAt: now });
+  await recordVariantPrice(ctx, variantId, { sellingPrice: variant.sellingPrice, costPrice: newCost }, now);
+  await writeAudit(ctx, {
+    userId: actor._id,
+    username: actor.username,
+    action: "variant.cost_updated",
+    entityType: "productVariant",
+    entityId: variantId,
+    details: `${variant.sku}: costPrice ${variant.costPrice} → ${newCost} (${method === "LATEST" ? "latest purchase" : "weighted average"}, ${receiptNumber})`,
+  });
 }

@@ -2272,3 +2272,96 @@ describe("large catalogues", () => {
     expect(count?.lines[0].name).toContain("Basic Tee");
   });
 });
+
+describe("purchase costs and supplier payments", () => {
+  async function sentOrder(s: Awaited<ReturnType<typeof seed>>, quantityOrdered: number, unitCost: number) {
+    const supplierId = await s.t.run((ctx) =>
+      ctx.db.insert("suppliers", { name: "Supplier Co", status: "ACTIVE", createdAt: Date.now() })
+    );
+    const poId = await s.t.mutation(api.purchaseOrders.create, {
+      token: s.ids.admin.token,
+      supplierId,
+      branchId: s.ids.branchId,
+      orderDate: Date.now(),
+      items: [{ productVariantId: s.ids.variantId, quantityOrdered, unitCost }],
+    });
+    await s.t.mutation(api.purchaseOrders.updateStatus, { token: s.ids.admin.token, id: poId, status: "SENT" });
+    return { poId, supplierId };
+  }
+  const receive = (s: Awaited<ReturnType<typeof seed>>, poId: Id<"purchaseOrders">, quantityReceived: number) =>
+    s.t.mutation(api.purchaseOrders.receiveItems, {
+      token: s.ids.admin.token,
+      id: poId,
+      items: [{ productVariantId: s.ids.variantId, quantityReceived }],
+    });
+  const cost = (s: Awaited<ReturnType<typeof seed>>) => s.t.run(async (ctx) => (await ctx.db.get(s.ids.variantId))!.costPrice);
+
+  test("weighted average (the default): stock on hand and new goods averaged", async () => {
+    const s = await seed();
+    await s.setStock(10); // 10 on hand at cost 100
+    const { poId } = await sentOrder(s, 10, 160);
+    await receive(s, poId, 10);
+    expect(await cost(s)).toBe(130); // (10×100 + 10×160) / 20
+    const value = await s.t.query(api.analytics.inventoryValuation, { token: s.ids.admin.token, branchId: s.ids.branchId });
+    expect(value).toMatchObject({ units: 20, costValue: 2600 });
+  });
+
+  test("latest cost, or left alone when set by hand", async () => {
+    const s = await seed();
+    await s.setStock(10);
+    await s.t.mutation(api.settings.upsert, { token: s.ids.admin.token, key: "costMethod", isActive: true, value: "LATEST" });
+    const { poId } = await sentOrder(s, 10, 160);
+    await receive(s, poId, 5);
+    expect(await cost(s)).toBe(160);
+    await s.t.mutation(api.settings.upsert, { token: s.ids.admin.token, key: "costMethod", isActive: true, value: "MANUAL" });
+    const second = await sentOrder(s, 5, 90);
+    await receive(s, second.poId, 5);
+    expect(await cost(s)).toBe(160);
+    await expect(
+      s.t.mutation(api.settings.upsert, { token: s.ids.admin.token, key: "costMethod", isActive: true, value: "FIFO" })
+    ).rejects.toThrow(/must be one of/);
+  });
+
+  test("supplier payments set the order's paid status and what is owed", async () => {
+    const s = await seed();
+    const { poId, supplierId } = await sentOrder(s, 10, 100); // 1000
+    const pay = (amount: number, method: "BANK_TRANSFER" | "CASH") =>
+      s.t.mutation(api.supplierPayments.add, { token: s.ids.admin.token, purchaseOrderId: poId, amount, method });
+
+    expect(await s.t.query(api.supplierPayments.payables, { token: s.ids.admin.token })).toEqual([
+      { supplierId, name: "Supplier Co", owed: 1000, orders: 1 },
+    ]);
+    await pay(400, "BANK_TRANSFER");
+    expect((await s.t.run((ctx) => ctx.db.get(poId)))?.paymentStatus).toBe("PARTIALLY_PAID");
+    await expect(pay(700, "BANK_TRANSFER")).rejects.toThrow(/Only 600.00 is still owed/);
+    // Cash comes out of the drawer, and only what is in it.
+    await expect(pay(600, "CASH")).rejects.toThrow(/in the drawer/);
+    await expect(
+      s.t.mutation(api.purchaseOrders.updateStatus, { token: s.ids.admin.token, id: poId, status: "CANCELLED" })
+    ).rejects.toThrow(/Payments were made/);
+    await pay(600, "BANK_TRANSFER");
+    expect((await s.t.run((ctx) => ctx.db.get(poId)))?.paymentStatus).toBe("PAID");
+    expect(await s.t.query(api.supplierPayments.payables, { token: s.ids.admin.token })).toEqual([]);
+  });
+
+  test("a cash supplier payment is a cash-out in the drawer", async () => {
+    const s = await seed();
+    await s.setStock(10);
+    await s.t.mutation(api.sales.create, {
+      token: s.ids.admin.token,
+      branchId: s.ids.branchId,
+      customerId: s.ids.customerId,
+      items: [{ productVariantId: s.ids.variantId, quantity: 2 }],
+      payments: [{ method: "CASH", amount: 500 }],
+    });
+    const { poId } = await sentOrder(s, 1, 300);
+    await s.t.mutation(api.supplierPayments.add, { token: s.ids.admin.token, purchaseOrderId: poId, amount: 300, method: "CASH" });
+    const [session] = await s.t.run((ctx) => ctx.db.query("cashRegisterSessions").collect());
+    const closed = await s.t.mutation(api.cashRegister.closeSession, {
+      token: s.ids.admin.token,
+      sessionId: session._id,
+      actualCash: 200,
+    });
+    expect(closed).toMatchObject({ expectedCash: 200, difference: 0 });
+  });
+});

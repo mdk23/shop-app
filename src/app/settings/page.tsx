@@ -11,6 +11,7 @@ import {
   Button,
   Field,
   TextInput,
+  Select,
   Modal,
   Table,
   Th,
@@ -186,6 +187,26 @@ export default function SettingsPage() {
                   </Field>
                 );
               })}
+              <Field label={t("Purchase cost method")}>
+                <Select
+                  value={get("costMethod")?.value ?? "WEIGHTED_AVERAGE"}
+                  onChange={async (e) => {
+                    try {
+                      await upsert({ token, key: "costMethod", isActive: true, value: e.target.value, label: "Purchase cost method" });
+                      toast.success(t("Saved"));
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : t("Failed"));
+                    }
+                  }}
+                >
+                  <option value="WEIGHTED_AVERAGE">{t("Weighted average")}</option>
+                  <option value="LATEST">{t("Latest purchase cost")}</option>
+                  <option value="MANUAL">{t("Set by hand (receiving does not change it)")}</option>
+                </Select>
+                <p className="mt-1 text-[11px] text-on-surface-variant">
+                  {t("How receiving goods updates each product's cost price.")}
+                </p>
+              </Field>
             </div>
           </Card>
 

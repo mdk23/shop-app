@@ -65,6 +65,12 @@ export const DEFAULT_SETTINGS: {
     label: "Desconto automático REGULAR (%)",
   },
   {
+    key: "costMethod",
+    isActive: true,
+    value: "WEIGHTED_AVERAGE",
+    label: "Purchase cost method",
+  },
+  {
     key: "reservationDays",
     isActive: true,
     value: "14",
@@ -119,6 +125,22 @@ function parseNumberSetting(key: string, value: string | undefined): number | nu
   return Number.isFinite(n) && n >= rule.min && n <= rule.max ? n : null;
 }
 
+/**
+ * Settings that hold one of a fixed set of values; the first is the default.
+ * costMethod — how receiving goods updates a variant's cost price: WEIGHTED_AVERAGE (the
+ * stock on hand and the new goods averaged by quantity), LATEST (the last purchase cost)
+ * or MANUAL (receiving never changes it).
+ */
+export const CHOICE_SETTINGS: Record<string, readonly string[]> = {
+  costMethod: ["WEIGHTED_AVERAGE", "LATEST", "MANUAL"],
+};
+
+export async function choiceSetting(ctx: QueryCtx | MutationCtx, key: string): Promise<string> {
+  const choices = CHOICE_SETTINGS[key];
+  const value = (await getSetting(ctx, key))?.value;
+  return value && choices.includes(value) ? value : choices[0];
+}
+
 /** A number setting's value, or its fallback when missing or not a valid number. */
 export async function numberSetting(ctx: QueryCtx | MutationCtx, key: string): Promise<number> {
   const row = await getSetting(ctx, key);
@@ -161,6 +183,10 @@ export const upsert = mutation({
       .query("settings")
       .withIndex("by_key", (q) => q.eq("key", args.key))
       .unique();
+    const choices = CHOICE_SETTINGS[args.key];
+    if (choices && args.value !== undefined && !choices.includes(args.value)) {
+      throw new Error(`${args.key} must be one of: ${choices.join(", ")}.`);
+    }
     const rule = NUMBER_SETTINGS[args.key];
     if (rule && args.value !== undefined && parseNumberSetting(args.key, args.value) === null) {
       throw new Error(`${args.label ?? existing?.label ?? args.key} must be a number from ${rule.min} to ${rule.max}.`);
