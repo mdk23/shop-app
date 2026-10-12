@@ -83,6 +83,7 @@ import type * as stockCounts from "../stockCounts.js";
 import type * as stockHolds from "../stockHolds.js";
 import type * as stockTransfers from "../stockTransfers.js";
 import type * as supplierEvaluations from "../supplierEvaluations.js";
+import type * as supplierPayments from "../supplierPayments.js";
 import type * as suppliers from "../suppliers.js";
 import type * as supplyRelations from "../supplyRelations.js";
 import type * as taxRates from "../taxRates.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   stockHolds: typeof stockHolds;
   stockTransfers: typeof stockTransfers;
   supplierEvaluations: typeof supplierEvaluations;
+  supplierPayments: typeof supplierPayments;
   suppliers: typeof suppliers;
   supplyRelations: typeof supplyRelations;
   taxRates: typeof taxRates;

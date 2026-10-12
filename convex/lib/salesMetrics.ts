@@ -142,7 +142,6 @@ async function saleShare(ctx: QueryCtx, sale: Doc<"sales">): Promise<Totals> {
   t.salesCount = 1;
   t.discount = sale.discount;
   t.tax = sale.tax;
-  t.collected = sale.paidAmount;
   t.outstanding = sale.balance;
   if (sale.paymentStatus === "PAID") t.paidCount = 1;
   else if (sale.paymentStatus === "PARTIALLY_PAID") t.partlyPaidCount = 1;
@@ -177,6 +176,12 @@ async function saleShare(ctx: QueryCtx, sale: Doc<"sales">): Promise<Totals> {
     cur.count += 1;
     t.paymentMethods[p.method] = cur;
   }
+  // Money collected: what the sale kept, less what was paid with store credit (that is
+  // credit spent, not money coming in). The breakdown above still lists store credit.
+  const creditKept = payments
+    .filter((p) => p.method === "STORE_CREDIT")
+    .reduce((s, p) => s + p.amount, 0);
+  t.collected = Math.max(0, sale.paidAmount - Math.max(0, creditKept));
 
   const customer = await ctx.db.get(sale.customerId);
   if (customer && !customer.isGeneric) t.customers[sale.customerId] = 1;

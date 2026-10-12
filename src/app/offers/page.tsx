@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
+import { ProductSearchSelect } from "@/components/ProductSearchSelect";
 import { Button, Card, Field, TextInput, Select, Modal, Badge, EmptyState, Spinner, Toolbar } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
 import { formatDate } from "@/lib/utils";
@@ -19,7 +20,6 @@ export default function OffersPage() {
   const token = useToken();
   const offers = useQuery(api.offers.list, { token });
   const assortments = useQuery(api.offers.listAssortments, { token });
-  const products = useQuery(api.products.list, {});
   const createOffer = useMutation(api.offers.createOffer);
   const createAssortment = useMutation(api.offers.createAssortment);
   const addItem = useMutation(api.offers.addAssortmentItem);
@@ -199,14 +199,10 @@ export default function OffersPage() {
           )}
           {dialog === "item" && (
             <Field label={t("Product")} required>
-              <Select value={productId} onChange={(e) => setProductId(e.target.value)}>
-                <option value="">{t("Choose")}</option>
-                {(products ?? []).map((p) => (
-                  <option key={p._id} value={p._id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
+              <ProductSearchSelect
+                value={productId as Id<"products"> | ""}
+                onChange={(id) => setProductId(id)}
+              />
             </Field>
           )}
           {dialog === "include" && (

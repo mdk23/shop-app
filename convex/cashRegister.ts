@@ -77,6 +77,14 @@ export type DrawerEntry = {
  * the session (`openingAmount`), cash in/out and closing from `cashRegisterMovements`, and
  * the cash taken or given back on sales and orders from `payments`. Nothing is copied.
  */
+/** Cash that should be in the drawer now. */
+export async function drawerCash(
+  ctx: QueryCtx | MutationCtx,
+  sessionId: Id<"cashRegisterSessions">
+): Promise<number> {
+  return calcExpectedCash(await drawerEntries(ctx, sessionId));
+}
+
 async function drawerEntries(
   ctx: QueryCtx | MutationCtx,
   sessionId: Id<"cashRegisterSessions">
@@ -101,6 +109,22 @@ async function drawerEntries(
     username: m.username,
     createdAt: m.createdAt,
   }));
+  // Cash paid to suppliers out of this drawer.
+  const supplierCash = await ctx.db
+    .query("supplierPayments")
+    .withIndex("by_session", (q) => q.eq("cashRegisterSessionId", sessionId))
+    .collect();
+  for (const sp of supplierCash) {
+    const po = await ctx.db.get(sp.purchaseOrderId);
+    entries.push({
+      _id: sp._id,
+      type: "cash_out",
+      amount: sp.amount,
+      description: `Supplier payment — ${po?.orderCode ?? ""}`,
+      username: sp.username,
+      createdAt: sp.paidAt,
+    });
+  }
   if (session) {
     entries.push({
       _id: `${session._id}:opening`,

@@ -502,6 +502,8 @@ export const pt: Record<string, string> = {
   "Filters:": "Filtros:",
   "Clear all": "Limpar tudo",
   "No products found": "Nenhum produto encontrado",
+  "Searching…": "A procurar…",
+  "Clear": "Limpar",
   "{count} in stock": "{count} em stock",
   "out of stock": "esgotado",
   "1 variant": "1 variante",

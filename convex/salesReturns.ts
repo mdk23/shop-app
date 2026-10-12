@@ -12,7 +12,12 @@ import { refreshCustomerProfile } from "./customerProfile";
 import { nextDocumentNumber } from "./lib/numbering";
 import { requireOpenSession } from "./cashRegister";
 import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
-import { settleSale, splitReturnValue, unitValueOfLine } from "./lib/saleMoney";
+import {
+  assertRefundMethod,
+  settleSale,
+  splitReturnValue,
+  unitValueOfLine,
+} from "./lib/saleMoney";
 import { assertWholeQuantity } from "./lib/pricing";
 
 /**
@@ -186,6 +191,8 @@ export const create = mutation({
     // The goods first cancel what is still owed on the sale; only the rest, up to what
     // was paid, is money back.
     const { debtCleared, refund: refundAmount } = await splitReturnValue(ctx, sale, returnValue);
+    // Money goes back the way it came in (a manager can choose otherwise).
+    await assertRefundMethod(ctx, actor, sale, args.refundMethod, refundAmount);
 
     const now = Date.now();
     const returnNumber = await nextDocumentNumber(ctx, "RETURN", now);
@@ -454,6 +461,7 @@ export const exchange = mutation({
 
     const leftover = Math.round((credit - applied) * 100) / 100;
     if (leftover > 0) {
+      await assertRefundMethod(ctx, actor, sale, args.refundMethod, leftover);
       const leftoverSession =
         args.refundMethod === "STORE_CREDIT" ? null : await requireOpenSession(ctx, sale.branchId);
       if (args.refundMethod === "STORE_CREDIT") {

@@ -18,8 +18,10 @@ import {
   StatCard,
   inputClass,
   Button,
+  Pagination,
 } from "@/components/ui";
 import { useCurrency, useResolvedBranch, useToken } from "@/lib/useShop";
+import { usePagedQuery } from "@/lib/pagination";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { Search } from "lucide-react";
 import Link from "next/link";
@@ -47,7 +49,8 @@ export default function InventoryPage() {
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
 
-  const rows = useQuery(
+  // Paged on the server: every item is reachable however large the catalogue.
+  const inventory = usePagedQuery(
     api.stock.listInventory,
     effectiveBranch
       ? {
@@ -61,10 +64,11 @@ export default function InventoryPage() {
             | "LOW_STOCK"
             | "OUT_OF_STOCK"
             | undefined,
-          search: search || undefined,
+          search: search.trim() || undefined,
         }
       : "skip"
   );
+  const rows = inventory.isLoading ? undefined : inventory.rows;
   const held = useQuery(
     api.stockHolds.activeByBranch,
     effectiveBranch ? { token, branchId: effectiveBranch } : "skip"
@@ -200,6 +204,17 @@ export default function InventoryPage() {
               ))}
             </tbody>
           </Table>
+        )}
+        {rows && (inventory.hasPrev || inventory.hasNext) && (
+          <Pagination
+            pageIndex={inventory.pageIndex}
+            rowCount={rows.length}
+            pageSize={inventory.pageSize}
+            hasPrev={inventory.hasPrev}
+            hasNext={inventory.hasNext}
+            onPrev={inventory.goPrev}
+            onNext={inventory.goNext}
+          />
         )}
       </Card>
     </PageLayout>

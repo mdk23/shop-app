@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { refundMethodValidator } from "./lib/paymentMethods";
+import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
 import { governanceTables } from "./schemaTables/governance";
 import { catalogTables } from "./schemaTables/catalog";
 import { relationTables } from "./schemaTables/relations";
@@ -834,6 +834,7 @@ export default defineSchema({
       v.literal("COMPLETED"),
       v.literal("CANCELLED")
     ),
+    // Cache of the order's `supplierPayments` against `totalAmount` (supplierPayments.ts).
     paymentStatus: v.union(v.literal("UNPAID"), v.literal("PARTIALLY_PAID"), v.literal("PAID")),
     totalAmount: v.number(),
     notes: v.optional(v.string()),
@@ -842,7 +843,27 @@ export default defineSchema({
     .index("by_supplier", ["supplierId"])
     .index("by_supply_relation", ["supplyRelationId"])
     .index("by_status", ["status"])
-    .index("by_branch", ["branchId"]),
+    .index("by_branch", ["branchId"])
+    .index("by_payment_status", ["paymentStatus"]),
+
+  // Money paid to a supplier against a purchase order. A cash payment comes out of the
+  // branch's open register (it is a cash-out in the drawer); other methods move no cash.
+  supplierPayments: defineTable({
+    purchaseOrderId: v.id("purchaseOrders"),
+    supplierId: v.id("suppliers"),
+    amount: v.number(),
+    method: paymentMethodValidator,
+    reference: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    paidAt: v.number(),
+    cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
+    userId: v.id("users"),
+    username: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_purchase_order", ["purchaseOrderId"])
+    .index("by_supplier", ["supplierId"])
+    .index("by_session", ["cashRegisterSessionId"]),
 
   purchaseOrderItems: defineTable({
     purchaseOrderId: v.id("purchaseOrders"),

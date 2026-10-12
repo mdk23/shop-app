@@ -4,6 +4,7 @@ import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 
 export const get = query({
   args: { id: v.id("stockCounts") },
@@ -14,7 +15,21 @@ export const get = query({
       .query("stockCountLines")
       .withIndex("by_count", (q) => q.eq("countId", args.id))
       .collect();
-    return { ...count, lines };
+    // Each line with its item's name and SKU, so the count screen needs no other list.
+    const namesOf = await loadVariantNames(ctx);
+    const productName = new Map<string, string>();
+    const named = await Promise.all(
+      lines.map(async (line) => {
+        const variant = await ctx.db.get(line.productVariantId);
+        if (!variant) return { ...line, name: "—", sku: "—" };
+        if (!productName.has(variant.productId)) {
+          productName.set(variant.productId, (await ctx.db.get(variant.productId))?.name ?? "—");
+        }
+        const label = formatVariantLabel(namesOf(variant), variant.sku);
+        return { ...line, name: `${productName.get(variant.productId)} ${label}`, sku: variant.sku };
+      })
+    );
+    return { ...count, lines: named };
   },
 });
 

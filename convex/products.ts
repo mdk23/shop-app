@@ -51,7 +51,14 @@ export const list = query({
         .withIndex("by_category", (q) => q.eq("categoryId", args.categoryId!))
         .collect();
     } else {
-      products = await ctx.db.query("products").order("desc").take(200);
+      // Without a search or category: the newest 200 (pickers search by name instead).
+      products = args.includeInactive
+        ? await ctx.db.query("products").order("desc").take(200)
+        : await ctx.db
+            .query("products")
+            .withIndex("by_active", (q) => q.eq("active", true))
+            .order("desc")
+            .take(200);
     }
 
     if (!args.includeInactive) products = products.filter((p) => p.active);

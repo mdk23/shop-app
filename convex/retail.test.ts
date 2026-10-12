@@ -2149,3 +2149,126 @@ describe("till total, store credit, order IVA, whole quantities and reservations
     expect(audit?.entityId).toBe(orderId);
   });
 });
+
+describe("refunds go back the way the money came in", () => {
+  async function paidSale(s: Awaited<ReturnType<typeof seed>>, customerId: Id<"customers">, payments: { method: "CASH" | "CARD" | "STORE_CREDIT"; amount: number }[]) {
+    const saleId = (await s.t.mutation(api.sales.create, {
+      token: s.ids.admin.token,
+      branchId: s.ids.branchId,
+      customerId,
+      items: [{ productVariantId: s.ids.variantId, quantity: 1 }],
+      payments,
+    })) as Id<"sales">;
+    const saleItemId = await s.t.run(async (ctx) =>
+      (await ctx.db.query("saleItems").withIndex("by_sale", (q) => q.eq("saleId", saleId)).first())!._id
+    );
+    return { saleId, saleItemId };
+  }
+  const returnAs = (s: Awaited<ReturnType<typeof seed>>, token: string, saleId: Id<"sales">, saleItemId: Id<"saleItems">, refundMethod: "CASH" | "CARD" | "STORE_CREDIT") =>
+    s.t.mutation(api.salesReturns.create, {
+      token,
+      saleId,
+      items: [{ saleItemId, quantity: 1, reason: "WRONG_SIZE", restock: true }],
+      refundMethod,
+    });
+
+  test("goods bought with store credit go back as store credit, not cash", async () => {
+    const s = await seed();
+    await s.setStock(10);
+    await s.t.mutation(api.customerCredits.grant, { token: s.ids.admin.token, customerId: s.ids.namedCustomerId, amount: 250, notes: "goodwill" });
+    const { saleId, saleItemId } = await paidSale(s, s.ids.namedCustomerId, [{ method: "STORE_CREDIT", amount: 250 }]);
+    await expect(returnAs(s, s.ids.seller.token, saleId, saleItemId, "CASH")).rejects.toThrow(/needs a manager/);
+    await returnAs(s, s.ids.seller.token, saleId, saleItemId, "STORE_CREDIT");
+    expect(await s.t.query(api.customerCredits.getBalance, { customerId: s.ids.namedCustomerId })).toBe(250);
+  });
+
+  test("a card sale is not paid out in cash, unless a manager says so", async () => {
+    const s = await seed();
+    await s.setStock(10);
+    const one = await paidSale(s, s.ids.customerId, [{ method: "CARD", amount: 250 }]);
+    await expect(returnAs(s, s.ids.seller.token, one.saleId, one.saleItemId, "CASH")).rejects.toThrow(/paid with CARD 250.00/);
+    await returnAs(s, s.ids.seller.token, one.saleId, one.saleItemId, "CARD");
+    const two = await paidSale(s, s.ids.customerId, [{ method: "CARD", amount: 250 }]);
+    await expect(returnAs(s, s.ids.admin.token, two.saleId, two.saleItemId, "CASH")).resolves.toBeDefined();
+  });
+
+  test("the walk-in customer cannot be refunded in store credit", async () => {
+    const s = await seed();
+    await s.setStock(10);
+    const { saleId, saleItemId } = await paidSale(s, s.ids.customerId, [{ method: "CASH", amount: 250 }]);
+    await expect(returnAs(s, s.ids.admin.token, saleId, saleItemId, "STORE_CREDIT")).rejects.toThrow(/walk-in customer cannot be given store credit/);
+  });
+
+  test("store credit spent is not counted as money collected", async () => {
+    const s = await seed();
+    await s.setStock(10);
+    await s.t.mutation(api.customerCredits.grant, { token: s.ids.admin.token, customerId: s.ids.namedCustomerId, amount: 100, notes: "goodwill" });
+    await paidSale(s, s.ids.namedCustomerId, [
+      { method: "STORE_CREDIT", amount: 100 },
+      { method: "CARD", amount: 150 },
+    ]);
+    const now = Date.now();
+    const m = await s.t.query(api.analytics.getDashboardMetrics, { token: s.ids.admin.token, start: now - 3_600_000, end: now + 3_600_000 });
+    expect(m).toMatchObject({ grossRevenue: 250, cashCollected: 150 });
+    expect(m.paymentMethodsBreakdown.STORE_CREDIT).toEqual({ amount: 100, count: 1 });
+  });
+});
+
+describe("large catalogues", () => {
+  test("the stock list reaches every item, by page, search and status", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10); // the seeded tee: in stock
+    // 40 more products, one variant each, created after the seeded one.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 40; i++) {
+        const productId = await ctx.db.insert("products", {
+          name: `Item ${i}`,
+          categoryId: ids.categoryId,
+          active: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        await ctx.db.insert("productVariants", {
+          productId,
+          sku: `SKU-${i}`,
+          costPrice: 10,
+          sellingPrice: 20,
+          reorderLevel: 1,
+          active: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+    });
+    const base = { token: ids.admin.token, branchId: ids.branchId };
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    for (;;) {
+      const res: { page: { sku: string }[]; isDone: boolean; continueCursor: string } = await t.query(
+        api.stock.listInventory,
+        { ...base, paginationOpts: { numItems: 15, cursor } }
+      );
+      res.page.forEach((r) => seen.add(r.sku));
+      if (res.isDone) break;
+      cursor = res.continueCursor;
+    }
+    expect(seen.size).toBe(41);
+    expect(seen.has("BASIC-BLK-M")).toBe(true); // the oldest is not cut off
+
+    const bySku = await t.query(api.stock.listInventory, { ...base, search: "SKU-39", paginationOpts: { numItems: 15, cursor: null } });
+    expect(bySku.page.map((r) => r.sku)).toEqual(["SKU-39"]);
+    const byName = await t.query(api.stock.listInventory, { ...base, search: "Basic", paginationOpts: { numItems: 15, cursor: null } });
+    expect(byName.page.map((r) => r.sku)).toEqual(["BASIC-BLK-M"]);
+    const inStock = await t.query(api.stock.listInventory, { ...base, status: "IN_STOCK", paginationOpts: { numItems: 15, cursor: null } });
+    expect(inStock.page.map((r) => r.sku)).toEqual(["BASIC-BLK-M"]);
+  });
+
+  test("a stock count names its own lines", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(5);
+    const countId = await t.mutation(api.stockCounts.start, { token: ids.admin.token, branchId: ids.branchId });
+    const count = await t.query(api.stockCounts.get, { id: countId });
+    expect(count?.lines[0]).toMatchObject({ sku: "BASIC-BLK-M" });
+    expect(count?.lines[0].name).toContain("Basic Tee");
+  });
+});

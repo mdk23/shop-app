@@ -24,7 +24,7 @@ import { activeHeldQuantity } from "./stockHolds";
 import { refreshCustomerProfile } from "./customerProfile";
 import { currentNuit, round2 } from "./lib/fiscal";
 import { nextDocumentNumber } from "./lib/numbering";
-import { paymentStatusFor, saleMoney, settleSale } from "./lib/saleMoney";
+import { keptByMethod, paymentStatusFor, saleMoney, settleSale } from "./lib/saleMoney";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -443,17 +443,14 @@ export const cancel = mutation({
     // the total (already turned into store credit) is not handed back twice.
     const now = Date.now();
     const money = await saleMoney(ctx, sale);
-    const keptByMethod = new Map<Doc<"payments">["method"], number>();
-    for (const p of money.rows) {
-      keptByMethod.set(p.method, (keptByMethod.get(p.method) ?? 0) + p.amount);
-    }
-    const methods = [...keptByMethod.keys()].sort(
+    const kept = keptByMethod(money.rows);
+    const methods = [...kept.keys()].sort(
       (a, b) => Number(isCash(a)) - Number(isCash(b))
     );
     let toRefund = money.paid;
     const refunds: { method: Doc<"payments">["method"]; amount: number }[] = [];
     for (const method of methods) {
-      const amount = round2(Math.min(toRefund, keptByMethod.get(method) ?? 0));
+      const amount = round2(Math.min(toRefund, kept.get(method) ?? 0));
       if (amount <= 0) continue;
       refunds.push({ method, amount });
       toRefund = round2(toRefund - amount);

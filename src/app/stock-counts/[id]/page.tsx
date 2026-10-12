@@ -19,17 +19,13 @@ export default function StockCountPage() {
   const params = useParams<{ id: string }>();
   const countId = params.id as Id<"stockCounts">;
   const count = useQuery(api.stockCounts.get, { id: countId });
-  const inventory = useQuery(
-    api.stock.listInventory,
-    count ? { token, branchId: count.branchId } : "skip"
-  );
   const record = useMutation(api.stockCounts.recordCounts);
   const close = useMutation(api.stockCounts.close);
 
   const [entered, setEntered] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
-  if (count === undefined || inventory === undefined) {
+  if (count === undefined) {
     return (
       <PageLayout title={t("Stock count")} subtitle="">
         <Spinner />
@@ -44,15 +40,8 @@ export default function StockCountPage() {
     );
   }
 
-  const labels = new Map(inventory.map((r) => [r.productVariantId, r]));
-  const lines = count.lines.map((line) => {
-    const info = labels.get(line.productVariantId);
-    return {
-      ...line,
-      name: info ? `${info.productName} ${info.label}` : "—",
-      sku: info?.sku ?? "—",
-    };
-  });
+  // The count carries each line's item name and SKU.
+  const lines = count.lines;
   const isOpen = count.status === "OPEN";
 
   const value = (line: (typeof lines)[number]) =>

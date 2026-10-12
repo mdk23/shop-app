@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
+import { ProductSearchSelect } from "@/components/ProductSearchSelect";
 import {
   Button,
   Card,
@@ -39,7 +40,6 @@ export default function PromotionsPage() {
   const { t } = useTranslation();
   const token = useToken();
   const promotions = useQuery(api.promotions.list, {});
-  const products = useQuery(api.products.list, {});
   const categories = useQuery(api.categories.list, {});
   const collections = useQuery(api.collections.list, {});
   const create = useMutation(api.promotions.create);
@@ -56,9 +56,7 @@ export default function PromotionsPage() {
   const [busy, setBusy] = useState(false);
 
   const targetOptions =
-    targetKind === "PRODUCT"
-      ? (products ?? []).map((p) => ({ id: p._id as string, label: p.name }))
-      : targetKind === "CATEGORY"
+    targetKind === "CATEGORY"
         ? (categories ?? []).map((c) => ({ id: c._id as string, label: c.name }))
         : (collections ?? []).map((c) => ({ id: c._id as string, label: c.name }));
 
@@ -227,14 +225,21 @@ export default function PromotionsPage() {
               </Select>
             </Field>
             <Field label={t("Choose")} required>
-              <Select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-                <option value="">{t("Choose")}</option>
-                {targetOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
+              {targetKind === "PRODUCT" ? (
+                <ProductSearchSelect
+                  value={targetId as Id<"products"> | ""}
+                  onChange={(id) => setTargetId(id)}
+                />
+              ) : (
+                <Select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+                  <option value="">{t("Choose")}</option>
+                  {targetOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </Field>
           </div>
         </div>

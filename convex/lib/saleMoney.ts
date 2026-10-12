@@ -1,6 +1,7 @@
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { round2 } from "./fiscal";
+import { userHasPermission } from "../permissions";
 
 /**
  * A sale's money, in one place. The sources are the sale's `total`, its returned goods
@@ -110,4 +111,49 @@ export function unitValueOfLine(
     net = grossSum > 0 ? (item.total * taxableBase) / grossSum : 0;
   }
   return (net + (item.taxAmount ?? 0)) / item.quantity;
+}
+
+/** Money still held on a sale per method: what came in by it, less what went back by it. */
+export function keptByMethod(rows: Doc<"payments">[]): Map<Doc<"payments">["method"], number> {
+  const kept = new Map<Doc<"payments">["method"], number>();
+  for (const p of rows) kept.set(p.method, round2((kept.get(p.method) ?? 0) + p.amount));
+  return kept;
+}
+
+/**
+ * Money goes back the way it came in: a refund by a method needs that method to still hold
+ * the amount on the sale (goods bought with store credit go back as store credit, a card
+ * sale is not paid out from the drawer). Store credit is always allowed for a named
+ * customer — it moves no money — and never for the walk-in customer, who cannot spend it.
+ * Any other method needs `returns.approve`.
+ */
+export async function assertRefundMethod(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  sale: Doc<"sales">,
+  method: Doc<"payments">["method"],
+  amount: number
+) {
+  if (amount <= 0) return;
+  const customer = await ctx.db.get(sale.customerId);
+  if (method === "STORE_CREDIT") {
+    if (!customer || customer.isGeneric) {
+      throw new Error("The walk-in customer cannot be given store credit. Refund another way.");
+    }
+    return;
+  }
+  const rows = await ctx.db
+    .query("payments")
+    .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+    .collect();
+  const held = keptByMethod(rows).get(method) ?? 0;
+  if (held + 0.005 >= amount) return;
+  if (userHasPermission(actor, "returns.approve")) return;
+  const paidWith = [...keptByMethod(rows).entries()]
+    .filter(([, v]) => v > 0.005)
+    .map(([m, v]) => `${m} ${v.toFixed(2)}`)
+    .join(", ");
+  throw new Error(
+    `This sale was paid with ${paidWith || "nothing"}: a refund of ${amount.toFixed(2)} by ${method} needs a manager (returns.approve).`
+  );
 }

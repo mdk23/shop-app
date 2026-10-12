@@ -6,6 +6,7 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { nextDocumentNumber } from "./lib/numbering";
 import { receiveIntoStock } from "./lib/receiving";
+import { purchaseOrderMoney } from "./supplierPayments";
 import { openRelationFor } from "./supplyRelations";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
@@ -133,6 +134,7 @@ export const get = query({
       supplierName: supplier?.name ?? "Unknown supplier",
       branchName: branch?.name ?? null,
       items: itemsWithDetails,
+      ...(await purchaseOrderMoney(ctx, po)),
     };
   },
 });
@@ -277,6 +279,9 @@ export const updateStatus = mutation({
       (po.status === "COMPLETED" || po.status === "PARTIALLY_RECEIVED")
     )
       throw new Error("Cannot cancel a purchase order that has received stock.");
+    if (args.status === "CANCELLED" && (await purchaseOrderMoney(ctx, po)).paid > 0) {
+      throw new Error("Payments were made on this order. Remove them before cancelling it.");
+    }
     await ctx.db.patch(args.id, { status: args.status });
     await writeAudit(ctx, {
       userId: actor._id,
@@ -350,29 +355,3 @@ export const receiveItems = mutation({
   },
 });
 
-export const updatePaymentStatus = mutation({
-  args: {
-    token: v.string(),
-    id: v.id("purchaseOrders"),
-    paymentStatus: v.union(
-      v.literal("UNPAID"),
-      v.literal("PARTIALLY_PAID"),
-      v.literal("PAID")
-    ),
-  },
-  handler: async (ctx, args) => {
-    const actor = await authorize(ctx, args.token, "purchasing.manage");
-    const po = await ctx.db.get(args.id);
-    if (!po) throw new Error("Purchase order not found.");
-    await ctx.db.patch(args.id, { paymentStatus: args.paymentStatus });
-    await writeAudit(ctx, {
-      userId: actor._id,
-      username: actor.username,
-      action: "purchase_order.payment_status",
-      entityType: "purchaseOrder",
-      entityId: args.id,
-      details: `${po.orderCode} → ${args.paymentStatus}`,
-    });
-    return args.id;
-  },
-});

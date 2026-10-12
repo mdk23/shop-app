@@ -1,5 +1,6 @@
 import { authorize } from "./permissions";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { variantLabel } from "./inventory";
@@ -47,8 +48,13 @@ export const getForVariant = query({
 });
 
 /**
- * Inventory screen feed: every active variant with this branch's stock level,
- * product/category context and computed status.
+ * The stock list for a branch, a page at a time, so no item is ever left out however big
+ * the catalogue. Which rows a page reads depends on the filter:
+ *  - a search: product names (search index) plus an exact SKU or barcode — one page;
+ *  - a stock status: that branch's stock rows with that status (index), a page of rows;
+ *  - otherwise: products (in a category, or all active ones), a page of products with
+ *    their variants.
+ * Size and colour narrow the rows of the page, so a page can come out short — never wrong.
  */
 export const listInventory = query({
   args: {
@@ -65,54 +71,34 @@ export const listInventory = query({
       )
     ),
     search: v.optional(v.string()),
-    limit: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "inventory.view");
-    const limit = args.limit ?? 500;
-    const variants = await ctx.db
-      .query("productVariants")
-      .withIndex("by_active", (q) => q.eq("active", true))
-      .take(limit * 4);
+    const namesOf = await loadVariantNames(ctx);
+    const categoryName = new Map<string, string>();
+    for (const c of await ctx.db.query("categories").collect()) categoryName.set(c._id, c.name);
 
     const productCache = new Map<Id<"products">, Doc<"products"> | null>();
-    const categoryName = new Map<string, string>();
-    for (const c of await ctx.db.query("categories").collect())
-      categoryName.set(c._id, c.name);
+    const productOf = async (id: Id<"products">) => {
+      if (!productCache.has(id)) productCache.set(id, await ctx.db.get(id));
+      return productCache.get(id)!;
+    };
 
-    const namesOf = await loadVariantNames(ctx);
-    const rows = [];
-    const search = args.search?.trim().toLowerCase();
-    for (const variant of variants) {
+    /** One row, or null when the variant is filtered out. */
+    const rowFor = async (variant: Doc<"productVariants">, stockRow?: Doc<"variantStock"> | null) => {
+      if (!variant.active) return null;
+      const product = await productOf(variant.productId);
+      if (!product || !product.active) return null;
+      if (args.categoryId && product.categoryId !== args.categoryId) return null;
       const names = namesOf(variant);
-      if (args.size && names.size !== args.size) continue;
-      if (args.color && names.color !== args.color) continue;
-
-      let product = productCache.get(variant.productId);
-      if (product === undefined) {
-        product = await ctx.db.get(variant.productId);
-        productCache.set(variant.productId, product);
-      }
-      if (!product || !product.active) continue;
-      if (args.categoryId && product.categoryId !== args.categoryId) continue;
-
-      const stock = await stockRowsForBranch(ctx, args.branchId, variant._id);
+      if (args.size && names.size !== args.size) return null;
+      if (args.color && names.color !== args.color) return null;
+      const stock = stockRow === undefined ? await stockRowsForBranch(ctx, args.branchId, variant._id) : stockRow;
       const quantity = stock?.quantity ?? 0;
-      const reorderLevel = variant.reorderLevel;
-      const status = stockStatus(quantity, reorderLevel);
-      if (args.status && status !== args.status) continue;
-
-      const label = formatVariantLabel(names, variant.sku);
-      if (
-        search &&
-        !product.name.toLowerCase().includes(search) &&
-        !variant.sku.toLowerCase().includes(search) &&
-        !(variant.barcode ?? "").toLowerCase().includes(search) &&
-        !label.toLowerCase().includes(search)
-      )
-        continue;
-
-      rows.push({
+      const status = stockStatus(quantity, variant.reorderLevel);
+      if (args.status && status !== args.status) return null;
+      return {
         productId: product._id,
         productName: product.name,
         categoryName: categoryName.get(product.categoryId) ?? "—",
@@ -121,16 +107,62 @@ export const listInventory = query({
         barcode: variant.barcode ?? null,
         size: names.size ?? null,
         color: names.color ?? null,
-        label,
+        label: formatVariantLabel(names, variant.sku),
         costPrice: variant.costPrice,
         sellingPrice: variant.sellingPrice,
         quantity,
-        reorderLevel,
+        reorderLevel: variant.reorderLevel,
         status,
-      });
-      if (rows.length >= limit) break;
+      };
+    };
+    type Row = NonNullable<Awaited<ReturnType<typeof rowFor>>>;
+    const keep = (rows: (Row | null)[]) => rows.filter((r): r is Row => r !== null);
+    const variantsOf = (productId: Id<"products">) =>
+      ctx.db
+        .query("productVariants")
+        .withIndex("by_product", (q) => q.eq("productId", productId))
+        .collect();
+
+    const search = args.search?.trim();
+    if (search) {
+      const exact = [
+        ...(await ctx.db.query("productVariants").withIndex("by_sku", (q) => q.eq("sku", search)).take(5)),
+        ...(await ctx.db.query("productVariants").withIndex("by_barcode", (q) => q.eq("barcode", search)).take(5)),
+      ];
+      const named = await ctx.db
+        .query("products")
+        .withSearchIndex("search_name", (q) => q.search("name", search))
+        .take(30);
+      const variants = [...exact, ...(await Promise.all(named.map((p) => variantsOf(p._id)))).flat()];
+      const seen = new Set<string>();
+      const unique = variants.filter((v) => !seen.has(v._id) && !!seen.add(v._id));
+      return { page: keep(await Promise.all(unique.map((v) => rowFor(v)))), isDone: true, continueCursor: "" };
     }
-    return rows;
+
+    if (args.status) {
+      const result = await ctx.db
+        .query("variantStock")
+        .withIndex("by_branch_and_status", (q) => q.eq("branchId", args.branchId).eq("status", args.status!))
+        .paginate(args.paginationOpts);
+      const rows = await Promise.all(
+        result.page.map(async (s) => {
+          const variant = await ctx.db.get(s.productVariantId);
+          return variant ? rowFor(variant, s) : null;
+        })
+      );
+      return { ...result, page: keep(rows) };
+    }
+
+    const products = args.categoryId
+      ? ctx.db.query("products").withIndex("by_category", (q) => q.eq("categoryId", args.categoryId!))
+      : ctx.db.query("products").withIndex("by_active", (q) => q.eq("active", true));
+    const result = await products.order("desc").paginate(args.paginationOpts);
+    const rows: (Row | null)[] = [];
+    for (const product of result.page) {
+      productCache.set(product._id, product);
+      for (const variant of await variantsOf(product._id)) rows.push(await rowFor(variant));
+    }
+    return { ...result, page: keep(rows) };
   },
 });
 

@@ -216,6 +216,8 @@ function ReturnModal({
     branchId: Id<"branches">;
     customerId: Id<"customers">;
     saleNumber: string;
+    customer?: { isGeneric?: boolean } | null;
+    payments?: { method: RefundMethod; amount: number }[];
     customerName?: string;
     items: {
       _id: Id<"saleItems">;
@@ -237,8 +239,13 @@ function ReturnModal({
   const [rows, setRows] = useState<
     Record<string, { qty: number; reason: (typeof REASONS)[number]; restock: boolean; condition: Condition }>
   >({});
-  const [refundMethod, setRefundMethod] =
-    useState<RefundMethod>("CASH");
+  // Money goes back the way it came in: start on the method that paid most of the sale.
+  const keptByMethod = new Map<RefundMethod, number>();
+  for (const p of sale.payments ?? []) keptByMethod.set(p.method, (keptByMethod.get(p.method) ?? 0) + p.amount);
+  const paidWith = [...keptByMethod.entries()].filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
+  const isWalkIn = !!sale.customer?.isGeneric;
+  const refundChoices = REFUND_METHODS.filter((m) => !(isWalkIn && m === "STORE_CREDIT"));
+  const [refundMethod, setRefundMethod] = useState<RefundMethod>(paidWith[0]?.[0] ?? "CASH");
   const [resolution, setResolution] = useState<Resolution | "">("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -590,7 +597,7 @@ function ReturnModal({
                 setRefundMethod(e.target.value as RefundMethod)
               }
             >
-              {REFUND_METHODS.map((m) => (
+              {refundChoices.map((m) => (
                 <option key={m} value={m}>
                   {t(PAYMENT_METHOD_LABEL[m])}
                 </option>
