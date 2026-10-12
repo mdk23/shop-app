@@ -1110,16 +1110,6 @@ export const pt: Record<string, string> = {
   "Handling": "Manuseamento",
   "Clearing agent": "Despachante",
 
-  // Size equivalences
-  "Size equivalences": "Equivalências de tamanho",
-  "Which sizes match across scales, so a customer's size can be offered in another system": "Que tamanhos correspondem entre escalas, para oferecer o tamanho de um cliente noutro sistema",
-  "New equivalence": "Nova equivalência",
-  "No equivalences yet": "Ainda não há equivalências",
-  "Link a size to the equivalent size on another scale, and say how sure the match is.": "Ligue um tamanho ao equivalente noutra escala e indique o grau de certeza.",
-  "Certainty": "Certeza",
-  "e.g. exact, approximate": "ex.: exata, aproximada",
-  "Equivalence saved": "Equivalência guardada",
-
   // Requests: responses
   "Respond": "Responder",
   "Respond to request": "Responder à procura",

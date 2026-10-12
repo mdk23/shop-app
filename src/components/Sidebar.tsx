@@ -41,7 +41,6 @@ import {
   Layers,
   Calculator,
   Coins,
-  Scale,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -97,7 +96,6 @@ const menuGroups: MenuGroup[] = [
       { name: "Categories", href: "/products/categories", icon: Tags, allowedRoles: MANAGER },
       { name: "Promotions", href: "/promotions", icon: Percent, allowedRoles: MANAGER },
       { name: "Offers", href: "/offers", icon: Layers, allowedRoles: MANAGER },
-      { name: "Size equivalences", href: "/settings/size-equivalences", icon: Scale, allowedRoles: MANAGER },
       { name: "Sizes", href: "/settings/sizes", icon: Ruler, allowedRoles: MANAGER },
       { name: "Colors", href: "/settings/colors", icon: Palette, allowedRoles: MANAGER },
     ],

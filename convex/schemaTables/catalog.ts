@@ -6,14 +6,6 @@ import { v } from "convex/values";
 // Brands are not modelled: the shop sells one brand, and customers.preferredBrands is
 // free text.
 export const catalogTables = {
-  sizeEquivalences: defineTable({
-    fromSizeId: v.id("sizes"),
-    toSizeId: v.id("sizes"),
-    certainty: v.string(),
-  })
-    .index("by_from", ["fromSizeId"])
-    .index("by_to", ["toSizeId"]),
-
   // The one place a tax number (NUIT) is kept, with history, for a customer, a supplier
   // or a branch. Sales keep a snapshot (`sales.customerNuit`) of the number at sale time.
   fiscalIdentities: defineTable({

@@ -13,55 +13,6 @@ const RESOLUTION = v.union(
   v.literal("RECUSA")
 );
 
-/* ---------- Size equivalences (e.g. EU 42 ≈ UK 8) ---------- */
-
-export const listSizeEquivalences = query({
-  args: { token: v.string() },
-  handler: async (ctx, args) => {
-    await authorize(ctx, args.token, "products.view");
-    const rows = await ctx.db.query("sizeEquivalences").collect();
-    return await Promise.all(
-      rows.map(async (row) => ({
-        ...row,
-        fromName: (await ctx.db.get(row.fromSizeId))?.name ?? "—",
-        toName: (await ctx.db.get(row.toSizeId))?.name ?? "—",
-      }))
-    );
-  },
-});
-
-export const createSizeEquivalence = mutation({
-  args: {
-    token: v.string(),
-    fromSizeId: v.id("sizes"),
-    toSizeId: v.id("sizes"),
-    certainty: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const actor = await authorize(ctx, args.token, "products.manage");
-    if (args.fromSizeId === args.toSizeId) throw new Error("Pick two different sizes.");
-    const certainty = args.certainty.trim();
-    if (!certainty) throw new Error("Say how certain the equivalence is.");
-    if (!(await ctx.db.get(args.fromSizeId)) || !(await ctx.db.get(args.toSizeId))) {
-      throw new Error("Size not found.");
-    }
-    const id = await ctx.db.insert("sizeEquivalences", {
-      fromSizeId: args.fromSizeId,
-      toSizeId: args.toSizeId,
-      certainty,
-    });
-    await writeAudit(ctx, {
-      userId: actor._id,
-      username: actor.username,
-      action: "size_equivalence.created",
-      entityType: "size",
-      entityId: args.fromSizeId,
-      details: certainty,
-    });
-    return id;
-  },
-});
-
 /* ---------- Follow-up commitments (promises made after a complaint or return) ---------- */
 
 export const listFollowUps = query({

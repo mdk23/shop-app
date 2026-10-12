@@ -54,29 +54,6 @@ async function seed() {
   return { t, token, ids };
 }
 
-describe("size equivalences", () => {
-  test("two different sizes can be linked, the same size cannot", async () => {
-    const { t, token, ids } = await seed();
-    await t.mutation(api.followUps.createSizeEquivalence, {
-      token,
-      fromSizeId: ids.sizeA,
-      toSizeId: ids.sizeB,
-      certainty: "approximate",
-    });
-    await expect(
-      t.mutation(api.followUps.createSizeEquivalence, {
-        token,
-        fromSizeId: ids.sizeA,
-        toSizeId: ids.sizeA,
-        certainty: "exact",
-      })
-    ).rejects.toThrow(/different sizes/);
-    const rows = await t.query(api.followUps.listSizeEquivalences, { token });
-    expect(rows[0].fromName).toBe("M");
-    expect(rows[0].toName).toBe("L");
-  });
-});
-
 describe("follow-ups and resolution succession", () => {
   test("a promise is tied to a relation and recorded as satisfied", async () => {
     const { t, token, ids } = await seed();
