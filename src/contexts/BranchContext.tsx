@@ -34,7 +34,8 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
   const selectedBranchId = useSyncExternalStore(subscribe, readSelection, serverSelection);
 
   const activeBranches = useQuery(api.branches.listActive);
-  const isMultiBranchEnabled = true;
+  const multiBranchSetting = useQuery(api.settings.getByKey, { key: "multiBranchEnabled" });
+  const isMultiBranchEnabled = multiBranchSetting?.isActive ?? true;
 
   const setSelectedBranchId = (branchId: string) => {
     localStorage.setItem(STORAGE_KEY, branchId);

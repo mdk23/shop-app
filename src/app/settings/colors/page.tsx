@@ -22,6 +22,7 @@ import {
   ConfirmDialog,
 } from "@/components/ui";
 import { useToken } from "@/lib/useShop";
+import { ColorPicker, PresetSwatches, normalizeHex, textOn } from "@/components/ColorPicker";
 import { useClientPage } from "@/lib/pagination";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
@@ -47,7 +48,10 @@ export default function ColorsPage() {
   const [editing, setEditing] = useState<Row | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [hex, setHex] = useState("#000000");
+  // What is typed in the HEX field; the saved colour is its normalised form.
+  const [hexText, setHexText] = useState("#111111");
+  const shownHex = normalizeHex(hexText) ?? "#000000";
+  const hexValid = normalizeHex(hexText) !== null;
   const [sortOrder, setSortOrder] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Row | null>(null);
@@ -55,20 +59,22 @@ export default function ColorsPage() {
   const openNew = () => {
     setEditing(null);
     setName("");
-    setHex("#000000");
+    setHexText("#111111");
     setSortOrder("");
     setOpen(true);
   };
   const openEdit = (r: Row) => {
     setEditing(r);
     setName(r.name);
-    setHex(r.hex ?? "#000000");
+    setHexText(r.hex ?? "#111111");
     setSortOrder(r.sortOrder?.toString() ?? "");
     setOpen(true);
   };
 
   const save = async () => {
     if (!name.trim()) return toast.error(t("Color name is required."));
+    const hex = normalizeHex(hexText);
+    if (!hex) return toast.error(t("Use a color code like #1F2A44."));
     setBusy(true);
     try {
       if (editing) {
@@ -184,39 +190,94 @@ export default function ColorsPage() {
         open={open}
         onClose={() => setOpen(false)}
         title={editing ? t("Edit Color") : t("New Color")}
-        size="sm"
+        size="md"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>
               {t("Cancel")}
             </Button>
-            <Button onClick={save} loading={busy}>
+            <Button onClick={save} loading={busy} disabled={!name.trim() || !hexValid}>
               {t("Save")}
             </Button>
           </>
         }
       >
-        <Field label={t("Name")} required>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder={t("e.g. Black")} />
-        </Field>
-        <Field label={t("Swatch")}>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={hex}
-              onChange={(e) => setHex(e.target.value)}
-              className="w-10 h-10 rounded-lg border border-outline cursor-pointer bg-transparent"
+        <div className="space-y-5">
+          {/* Live preview: how the colour will look wherever it is offered. */}
+          <div
+            className="flex items-center gap-3 rounded-2xl border border-outline p-3"
+            style={{ background: hexValid ? `${shownHex}14` : undefined }}
+          >
+            <span
+              className="h-12 w-12 shrink-0 rounded-full border border-outline shadow-inner"
+              style={{ background: hexValid ? shownHex : "transparent" }}
             />
-            <TextInput value={hex} onChange={(e) => setHex(e.target.value)} className="flex-1" />
+            <div className="min-w-0">
+              <p className="truncate text-base font-black">{name.trim() || t("Color name")}</p>
+              <p className="font-mono text-xs uppercase text-on-surface-variant">
+                {hexValid ? shownHex : t("Invalid code")}
+              </p>
+            </div>
+            {hexValid && (
+              <span
+                className="ml-auto rounded-full px-3 py-1 text-[11px] font-bold"
+                style={{ background: shownHex, color: textOn(shownHex) }}
+              >
+                {name.trim() || t("Preview")}
+              </span>
+            )}
           </div>
-        </Field>
-        <Field label={t("Sort order")} hint={t("Lower numbers show first")}>
-          <TextInput
-            type="number"
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
-          />
-        </Field>
+
+          <Field label={t("Name")} required>
+            <TextInput
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("e.g. Black")}
+            />
+          </Field>
+
+          <Field label={t("Color")} hint={t("Pick a common color, or drag in the square and on the bar")}>
+            <div className="space-y-4">
+              <PresetSwatches
+                value={hexText}
+                onPick={(p) => {
+                  setHexText(p.hex);
+                  if (!name.trim()) setName(t(p.name));
+                }}
+              />
+              <ColorPicker value={hexValid ? shownHex : "#000000"} onChange={setHexText} />
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">HEX</span>
+                <TextInput
+                  value={hexText}
+                  onChange={(e) => setHexText(e.target.value)}
+                  onBlur={() => {
+                    const n = normalizeHex(hexText);
+                    if (n) setHexText(n);
+                  }}
+                  className={`flex-1 font-mono uppercase ${hexValid ? "" : "border-error"}`}
+                  aria-invalid={!hexValid}
+                  placeholder="#000000"
+                />
+              </div>
+              {!hexValid && (
+                <p className="text-xs font-bold text-error">{t("Use a color code like #1F2A44.")}</p>
+              )}
+            </div>
+          </Field>
+
+          <Field label={t("Sort order")} hint={t("Optional · lower numbers show first in lists")}>
+            <TextInput
+              type="number"
+              min={0}
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="w-32"
+              placeholder="—"
+            />
+          </Field>
+        </div>
       </Modal>
 
       <ConfirmDialog

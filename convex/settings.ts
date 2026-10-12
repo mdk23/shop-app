@@ -16,7 +16,6 @@ export const DEFAULT_SETTINGS: {
   { key: "currency", isActive: true, value: "MZN", label: "Currency code" },
   { key: "currencySymbol", isActive: true, value: "MT", label: "Currency symbol" },
   { key: "taxRatePercent", isActive: false, value: "0", label: "Sales tax rate (%)" },
-  { key: "allowNegativeStock", isActive: false, label: "Allow overselling (negative stock)" },
   { key: "customerCreditEnabled", isActive: true, label: "Enable customer credit / debt" },
   { key: "returnsEnabled", isActive: true, label: "Enable returns & exchanges" },
   { key: "multiBranchEnabled", isActive: true, label: "Multi-branch mode" },

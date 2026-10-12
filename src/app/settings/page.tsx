@@ -34,7 +34,6 @@ const LANGUAGE_OPTIONS: { code: "pt" | "en"; name: string }[] = [
 ];
 
 const TOGGLE_KEYS = [
-  "allowNegativeStock",
   "customerCreditEnabled",
   "returnsEnabled",
   "multiBranchEnabled",
@@ -62,6 +61,10 @@ export default function SettingsPage() {
   const [savingLanguage, setSavingLanguage] = useState(false);
 
   const get = (key: string) => settings?.find((s) => s.key === key);
+  // With multi-branch mode off the shop runs a single active branch.
+  const canAddBranch =
+    (get("multiBranchEnabled")?.isActive ?? true) ||
+    !(branches ?? []).some((b) => b.status === "ACTIVE");
 
   const setLanguage = async (code: "pt" | "en") => {
     setSavingLanguage(true);
@@ -236,6 +239,8 @@ export default function SettingsPage() {
               <h3 className="text-sm font-black uppercase tracking-wider">{t("Branches")}</h3>
               <Button
                 size="sm"
+                disabled={!canAddBranch}
+                title={canAddBranch ? undefined : t("Turn on multi-branch mode to add another branch.")}
                 onClick={() =>
                   setBranchModal({
                     name: "",

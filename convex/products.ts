@@ -417,6 +417,14 @@ export const remove = mutation({
           "This product has sales history and cannot be deleted. Archive it instead."
         );
       }
+      // Stock that came in or went out is history too: the ledger must never point at nothing.
+      const moved = await ctx.db
+        .query("inventoryMovements")
+        .withIndex("by_variant", (q) => q.eq("productVariantId", variant._id))
+        .first();
+      if (moved) {
+        throw new Error("This product has stock history and cannot be deleted. Archive it instead.");
+      }
     }
 
     for (const variant of variants) {

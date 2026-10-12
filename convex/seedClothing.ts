@@ -124,13 +124,28 @@ export const seed = mutation({
     await ensureDefaultSettings(ctx);
 
     if (args.wipe) {
+      // Only an empty shop can be wiped: once there are sales, orders, purchases or transfers,
+      // the catalogue is part of their history.
+      for (const table of ["sales", "customerOrders", "purchaseOrders", "purchaseReceipts", "stockTransfers"] as const) {
+        if (await ctx.db.query(table).first()) {
+          throw new Error("The catalogue has business history (sales, orders, purchases or transfers) and cannot be wiped.");
+        }
+      }
+      // The catalogue and everything about its stock, so nothing is left pointing at a
+      // deleted product.
       for (const table of [
+        "inventoryMovements",
+        "variantStock",
+        "stockTotals",
+        "variantPrices",
+        "stockHolds",
         "productImages",
         "productVariants",
         "products",
         "categories",
       ] as const) {
         for (const row of await ctx.db.query(table).collect()) {
+          if (table === "productImages") await ctx.storage.delete((row as { storageId: Id<"_storage"> }).storageId);
           await ctx.db.delete(row._id);
         }
       }

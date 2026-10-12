@@ -355,6 +355,13 @@ export const remove = mutation({
         "This variant has sales history and cannot be deleted. Deactivate it instead."
       );
     }
+    const moved = await ctx.db
+      .query("inventoryMovements")
+      .withIndex("by_variant", (q) => q.eq("productVariantId", args.id))
+      .first();
+    if (moved) {
+      throw new Error("This variant has stock history and cannot be deleted. Deactivate it instead.");
+    }
 
     await deleteStockRowsOf(ctx, existing);
 

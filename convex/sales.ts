@@ -32,13 +32,6 @@ import { keptByMethod, paymentStatusFor, saleMoney, settleSale } from "./lib/sal
 
 const isCash = (method: string) => method === "CASH";
 
-async function getSetting(ctx: MutationCtx, key: string) {
-  return await ctx.db
-    .query("settings")
-    .withIndex("by_key", (q) => q.eq("key", key))
-    .unique();
-}
-
 async function resolveOpenSession(
   ctx: MutationCtx,
   branchId: Id<"branches">,
@@ -176,7 +169,6 @@ export async function performSale(
     const promotionsUsed = new Set(lines.flatMap((l) => (l.promotionName ? [l.promotionName] : [])));
 
     // 2. Stock: what is on hand less what is held for customer orders.
-    const allowNegSetting = (await getSetting(ctx, "allowNegativeStock"))?.isActive ?? false;
     for (const l of lines) {
       const stock = await ctx.db
         .query("variantStock")
@@ -186,7 +178,7 @@ export async function performSale(
         .unique();
       const reserved = await activeHeldQuantity(ctx, args.branchId, l.productVariantId);
       const available = (stock?.quantity ?? 0) - reserved;
-      if (available < l.quantity && !allowNegSetting) {
+      if (available < l.quantity) {
         const reservedNote = reserved > 0 ? ` (${reserved} held for customer orders)` : "";
         throw new Error(
           `Insufficient stock for ${l.productName} (${l.label}). Available: ${available}${reservedNote}, requested: ${l.quantity}.`
@@ -294,7 +286,6 @@ export async function performSale(
         notes: `Sale ${saleNumber}`,
         userId: actor._id,
         username: actor.username,
-        allowNegative: allowNegSetting,
       });
     }
 

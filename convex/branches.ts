@@ -1,7 +1,9 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
+import { getSetting } from "./settings";
 
 // List all branches (Admin view)
 export const listAll = query({
@@ -23,6 +25,19 @@ export const listActive = query({
   },
 });
 
+// With multi-branch mode off the shop runs a single active branch.
+async function assertCanAddActiveBranch(ctx: MutationCtx, exceptId?: Id<"branches">) {
+  const multiBranch = (await getSetting(ctx, "multiBranchEnabled"))?.isActive ?? true;
+  if (multiBranch) return;
+  const active = await ctx.db
+    .query("branches")
+    .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
+    .collect();
+  if (active.some((b) => b._id !== exceptId)) {
+    throw new Error("Multi-branch mode is off. Turn it on in Settings to add another branch.");
+  }
+}
+
 // Create a new store branch
 export const create = mutation({
   args: {
@@ -35,6 +50,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "settings.manage");
+    await assertCanAddActiveBranch(ctx);
     const existingCode = await ctx.db
       .query("branches")
       .withIndex("by_code", (q) => q.eq("code", args.code.toUpperCase()))
@@ -93,6 +109,9 @@ export const update = mutation({
     const branch = await ctx.db.get(args.id);
     if (!branch) {
       throw new Error("Branch not found.");
+    }
+    if (args.status === "ACTIVE" && branch.status !== "ACTIVE") {
+      await assertCanAddActiveBranch(ctx, args.id);
     }
 
     if (args.isDefault) {

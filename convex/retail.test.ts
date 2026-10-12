@@ -164,9 +164,11 @@ describe("sales", () => {
     expect(await stockAt()).toBe(7);
   });
 
-  test("blocks oversell unless allowNegativeStock is on", async () => {
-    const { t, ids, setStock, setSetting } = await seed();
+  test("always blocks oversell, even with a leftover allowNegativeStock setting", async () => {
+    const { t, ids, setStock, setSetting, stockAt } = await seed();
     await setStock(2);
+    // The setting was removed; an old row in the database must not re-enable overselling.
+    await setSetting("allowNegativeStock", true);
 
     await expect(
       t.mutation(api.sales.create, {
@@ -177,17 +179,7 @@ describe("sales", () => {
         payments: [{ method: "CARD", amount: 1250 }],
       })
     ).rejects.toThrow(/[Ii]nsufficient stock/);
-
-    await setSetting("allowNegativeStock", true);
-    await expect(
-      t.mutation(api.sales.create, {
-        token: ids.admin.token,
-        branchId: ids.branchId,
-        customerId: ids.customerId,
-        items: [{ productVariantId: ids.variantId, quantity: 5 }],
-        payments: [{ method: "CARD", amount: 1250 }],
-      })
-    ).resolves.toBeDefined();
+    expect(await stockAt()).toBe(2);
   });
 
   test("freezes costPriceAtSale even when the variant cost later changes", async () => {
@@ -2371,5 +2363,40 @@ describe("purchase costs and supplier payments", () => {
       actualCash: 200,
     });
     expect(closed).toMatchObject({ expectedCash: 200, difference: 0 });
+  });
+});
+
+describe("stock history is never left pointing at nothing", () => {
+  test("a product or variant with stock movements cannot be deleted, only archived", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(5);
+    await expect(t.mutation(api.products.remove, { token: ids.admin.token, id: ids.productId })).rejects.toThrow(
+      /stock history/
+    );
+    await expect(
+      t.mutation(api.productVariants.remove, { token: ids.admin.token, id: ids.variantId })
+    ).rejects.toThrow(/stock history/);
+  });
+
+  test("the sample wipe clears stock records with the catalogue, and refuses once there are sales", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(5);
+    await t.mutation(api.seedClothing.seed, { token: ids.admin.token, wipe: true });
+    const left = await t.run(async (ctx) => {
+      const variantIds = new Set((await ctx.db.query("productVariants").collect()).map((v) => v._id));
+      return (await ctx.db.query("inventoryMovements").collect()).filter((m) => !m.productVariantId || !variantIds.has(m.productVariantId)).length;
+    });
+    expect(left).toBe(0);
+
+    const [variant] = await t.run((ctx) => ctx.db.query("productVariants").take(1));
+    await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: variant._id, quantity: 1 }],
+    });
+    await expect(t.mutation(api.seedClothing.seed, { token: ids.admin.token, wipe: true })).rejects.toThrow(
+      /business history/
+    );
   });
 });

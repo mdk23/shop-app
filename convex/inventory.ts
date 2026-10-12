@@ -67,14 +67,6 @@ async function getOrCreateVariantStock(
   return (await ctx.db.get(id))!;
 }
 
-async function negativeStockAllowed(ctx: MutationCtx): Promise<boolean> {
-  const setting = await ctx.db
-    .query("settings")
-    .withIndex("by_key", (q) => q.eq("key", "allowNegativeStock"))
-    .unique();
-  return setting?.isActive ?? false;
-}
-
 async function resolveActor(
   ctx: MutationCtx,
   userId?: Id<"users">,
@@ -136,8 +128,8 @@ export const mutateStock = internalMutation({
     const previousBalance = stock.quantity;
     const newBalance = previousBalance + args.quantity;
 
-    const allowNeg = args.allowNegative || (await negativeStockAllowed(ctx));
-    if (newBalance < 0 && !allowNeg) {
+    // Overselling is never allowed; only stock corrections may go below zero.
+    if (newBalance < 0 && !args.allowNegative) {
       throw new Error(
         `Insufficient stock for ${productName} (${label}). Available: ${previousBalance}, requested change: ${args.quantity}.`
       );
