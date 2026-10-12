@@ -62,6 +62,7 @@ export const create = mutation({
       args.adjustmentQuantity !== undefined
         ? args.adjustmentQuantity
         : (args.newQuantity as number) - previousQuantity;
+    if (!Number.isInteger(delta)) throw new Error("Stock is adjusted in whole units.");
     if (delta === 0) throw new Error("Adjustment resolves to no change.");
     const newQuantity = previousQuantity + delta;
 

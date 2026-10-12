@@ -2,7 +2,9 @@ import { v } from "convex/values";
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize, requirePermission } from "./permissions";
-import { getSetting } from "./settings";
+import { numberSetting } from "./settings";
+import { priceSale } from "./lib/pricing";
+import { activeHeldQuantity } from "./stockHolds";
 import { writeAudit } from "./audit";
 import { nextDocumentNumber } from "./lib/numbering";
 import { adjustCustomerCredit } from "./customerCredits";
@@ -20,20 +22,6 @@ async function orderDeposits(ctx: QueryCtx, orderId: Id<"customerOrders">) {
     .query("payments")
     .withIndex("by_customer_order", (q) => q.eq("customerOrderId", orderId))
     .collect();
-}
-
-async function activeHoldQty(
-  ctx: MutationCtx,
-  branchId: Id<"branches">,
-  productVariantId: Id<"productVariants">
-): Promise<number> {
-  const holds = await ctx.db
-    .query("stockHolds")
-    .withIndex("by_branch_variant_status", (q) =>
-      q.eq("branchId", branchId).eq("productVariantId", productVariantId).eq("status", "ACTIVE")
-    )
-    .collect();
-  return holds.reduce((s, h) => s + h.quantity, 0);
 }
 
 async function releaseHolds(ctx: MutationCtx, orderId: Id<"customerOrders">): Promise<void> {
@@ -141,40 +129,24 @@ export const create = mutation({
     if (args.items.length === 0) throw new Error("An order needs at least one item.");
     if (!(await ctx.db.get(args.branchId))) throw new Error("Branch not found.");
 
-    // Prices are agreed now and kept at collection, so a changed price is checked here,
-    // like a discount at the till.
-    let overriddenLines = 0;
-    let priceCut = 0;
-    let listValue = 0;
-    const priced = [];
-    for (const item of args.items) {
-      if (item.quantity <= 0) throw new Error("Quantities must be positive.");
-      const variant = await ctx.db.get(item.productVariantId);
-      if (!variant || !variant.active) throw new Error("A selected product variant is unavailable.");
-      const product = await ctx.db.get(variant.productId);
-      const unitPrice = item.unitPrice ?? variant.sellingPrice;
-      if (unitPrice < 0) throw new Error("A price cannot be negative.");
-      listValue += variant.sellingPrice * item.quantity;
-      if (Math.abs(unitPrice - variant.sellingPrice) > 1e-6) {
-        overriddenLines += 1;
-        priceCut += Math.max(0, variant.sellingPrice - unitPrice) * item.quantity;
-      }
-      priced.push({
-        productVariantId: item.productVariantId,
-        productName: product?.name ?? "Unknown product",
-        variantLabel: await variantLabel(ctx, variant),
-        quantity: item.quantity,
-        unitPrice,
-        lineTotal: Math.round(unitPrice * item.quantity * 100) / 100,
-      });
-    }
-    if (overriddenLines > 0) {
-      const maxWithoutApproval = Number(
-        (await getSetting(ctx, "discountMaxPercentWithoutApproval"))?.value ?? "100"
-      );
-      const cutPct = listValue > 0 ? (priceCut / listValue) * 100 : 0;
+    // Priced like a sale (till prices, tier discount, IVA), so the order total is what the
+    // customer will pay. Prices are agreed now and kept at collection, so a changed price is
+    // checked here, like a discount at the till.
+    const quote = await priceSale(ctx, { customerId: args.customerId, items: args.items });
+    if (quote.overriddenLines > 0) {
+      const maxWithoutApproval = await numberSetting(ctx, "discountMaxPercentWithoutApproval");
+      const listValue = quote.subtotal + quote.priceCut;
+      const cutPct = listValue > 0 ? (quote.priceCut / listValue) * 100 : 0;
       requirePermission(actor, cutPct > maxWithoutApproval ? "sales.discount_large" : "sales.discount");
     }
+    const priced = quote.lines.map((l) => ({
+      productVariantId: l.productVariantId,
+      productName: l.productName,
+      variantLabel: l.label,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      lineTotal: Math.round(l.unitPrice * l.quantity * 100) / 100,
+    }));
 
     if (args.reserve) {
       for (const line of priced) {
@@ -184,7 +156,8 @@ export const create = mutation({
             q.eq("branchId", args.branchId).eq("productVariantId", line.productVariantId)
           )
           .unique();
-        const available = (stock?.quantity ?? 0) - (await activeHoldQty(ctx, args.branchId, line.productVariantId));
+        const available =
+          (stock?.quantity ?? 0) - (await activeHeldQuantity(ctx, args.branchId, line.productVariantId));
         if (line.quantity > available) {
           throw new Error(
             `Only ${Math.max(0, available)} of ${line.productName} available to reserve; requested ${line.quantity}.`
@@ -195,7 +168,8 @@ export const create = mutation({
 
     const now = Date.now();
     const orderNumber = await nextDocumentNumber(ctx, "CUSTOMER_ORDER", now);
-    const totalAmount = Math.round(priced.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
+    const totalAmount = quote.total;
+    const expiresAt = now + (await numberSetting(ctx, "reservationDays")) * 24 * 60 * 60 * 1000;
     const orderId = await ctx.db.insert("customerOrders", {
       orderNumber,
       customerId: args.customerId,
@@ -219,6 +193,7 @@ export const create = mutation({
           quantity: line.quantity,
           status: "ACTIVE",
           createdAt: now,
+          expiresAt,
         });
       }
     }
@@ -380,6 +355,12 @@ export const collect = mutation({
       agreedPrices: true,
       cashRegisterSessionId: args.cashRegisterSessionId,
     });
+    // The sale is priced now (IVA and the tier discount as they stand today): if that comes
+    // to more than was paid, collecting is refused and nothing is saved.
+    const sale = await ctx.db.get(saleId);
+    if (sale && sale.balance > EPSILON) {
+      throw new Error(`Pay the balance before collecting: ${sale.balance.toFixed(2)} still due.`);
+    }
 
     const now = Date.now();
     await ctx.db.patch(args.orderId, { status: "COLLECTED", saleId, closedAt: now, updatedAt: now });

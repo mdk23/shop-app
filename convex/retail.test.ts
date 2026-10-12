@@ -1739,3 +1739,413 @@ describe("change at the till", () => {
     expect(closed.difference).toBe(0);
   });
 });
+
+describe("stock counts, transfers and closed registers", () => {
+  test("a sale after a shelf is counted survives the count closing", async () => {
+    const { t, ids, setStock, stockAt } = await seed();
+    await setStock(10);
+    const countId = await t.mutation(api.stockCounts.start, { token: ids.admin.token, branchId: ids.branchId });
+    // Counted 9 (one missing) while the system said 10 …
+    await t.mutation(api.stockCounts.recordCounts, {
+      token: ids.admin.token,
+      countId,
+      counts: [{ productVariantId: ids.variantId, countedQuantity: 9 }],
+    });
+    // … then two sold before closing.
+    await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      payments: [{ method: "CARD", amount: 500 }],
+    });
+    await t.mutation(api.stockCounts.close, { token: ids.admin.token, countId });
+    expect(await stockAt()).toBe(7); // 9 counted − 2 sold, not 9
+  });
+
+  test("sent goods leave the source at once; cancelling brings them back", async () => {
+    const { t, ids, setStock, stockAt } = await seed();
+    await setStock(10);
+    const make = () =>
+      t.mutation(api.stockTransfers.create, {
+        token: ids.admin.token,
+        sourceBranchId: ids.branchId,
+        destinationBranchId: ids.branch2Id,
+        items: [{ productVariantId: ids.variantId, quantity: 4 }],
+        submit: true,
+      });
+    const sent = await make();
+    await t.mutation(api.stockTransfers.setStatus, { token: ids.admin.token, transferId: sent, status: "IN_TRANSIT" });
+    expect(await stockAt()).toBe(6);
+    await expect(
+      t.mutation(api.stockTransfers.setStatus, { token: ids.admin.token, transferId: sent, status: "PENDING" })
+    ).rejects.toThrow(/Cancel it/);
+    await t.mutation(api.stockTransfers.receive, { token: ids.admin.token, transferId: sent });
+    expect(await stockAt()).toBe(6); // not taken out twice
+    expect(await stockAt(ids.branch2Id)).toBe(4);
+
+    const cancelled = await make();
+    await t.mutation(api.stockTransfers.setStatus, { token: ids.admin.token, transferId: cancelled, status: "IN_TRANSIT" });
+    expect(await stockAt()).toBe(2);
+    await t.mutation(api.stockTransfers.setStatus, { token: ids.admin.token, transferId: cancelled, status: "CANCELLED" });
+    expect(await stockAt()).toBe(6);
+  });
+
+  test("goods in transit cannot be sold at the source", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(5);
+    const transferId = await t.mutation(api.stockTransfers.create, {
+      token: ids.admin.token,
+      sourceBranchId: ids.branchId,
+      destinationBranchId: ids.branch2Id,
+      items: [{ productVariantId: ids.variantId, quantity: 5 }],
+      submit: true,
+    });
+    await t.mutation(api.stockTransfers.setStatus, { token: ids.admin.token, transferId, status: "IN_TRANSIT" });
+    await expect(
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "CARD", amount: 250 }],
+      })
+    ).rejects.toThrow(/Insufficient stock/);
+  });
+
+  test("a payment can be removed only while its register is open", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const sell = () =>
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: ids.namedCustomerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "CARD", amount: 250 }],
+      }) as Promise<Id<"sales">>;
+    const paymentOf = (saleId: Id<"sales">) =>
+      t.run(async (ctx) => (await ctx.db.query("payments").withIndex("by_sale", (q) => q.eq("saleId", saleId)).first())!._id);
+
+    const open = await sell();
+    await t.mutation(api.payments.remove, { token: ids.admin.token, paymentId: await paymentOf(open) });
+    expect(await t.run((ctx) => ctx.db.get(open))).toMatchObject({ paidAmount: 0, balance: 250 });
+
+    const later = await sell();
+    const [session] = await t.run((ctx) => ctx.db.query("cashRegisterSessions").collect());
+    await t.mutation(api.cashRegister.closeSession, { token: ids.admin.token, sessionId: session._id, actualCash: 0 });
+    await expect(
+      t.mutation(api.payments.remove, { token: ids.admin.token, paymentId: await paymentOf(later) })
+    ).rejects.toThrow(/closed register/);
+  });
+});
+
+describe("IVA, number settings and promotions", () => {
+  const lineOf = (t: Awaited<ReturnType<typeof seed>>["t"], saleId: Id<"sales">) =>
+    t.run(async (ctx) => (await ctx.db.query("saleItems").withIndex("by_sale", (q) => q.eq("saleId", saleId)).first())!);
+
+  test("the IVA rate comes from settings only, never from the caller", async () => {
+    const { t, ids, setStock, setSetting } = await seed();
+    await setStock(10);
+    await setSetting("taxRatePercent", true, "16");
+    await expect(
+      t.mutation(api.sales.create, {
+        token: ids.seller.token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        // @ts-expect-error — no longer an argument
+        taxRate: 0,
+      })
+    ).rejects.toThrow();
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.seller.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+    })) as Id<"sales">;
+    expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ tax: 40, total: 290 });
+  });
+
+  test("a number setting refuses text and a bad stored value falls back safely", async () => {
+    const { t, ids, setStock, setSetting } = await seed();
+    await setStock(10);
+    await expect(
+      t.mutation(api.settings.upsert, { token: ids.admin.token, key: "taxRatePercent", isActive: true, value: "16%" })
+    ).rejects.toThrow(/must be a number/);
+    await t.mutation(api.settings.upsert, { token: ids.admin.token, key: "taxRatePercent", isActive: true, value: " 16,0 " });
+    expect((await t.query(api.settings.getByKey, { key: "taxRatePercent" }))?.value).toBe("16");
+
+    // A bad value already stored (e.g. from before this check): never NaN, and the discount
+    // limit falls back to the strictest rule.
+    await t.run(async (ctx) => {
+      for (const key of ["taxRatePercent"]) {
+        const row = await ctx.db.query("settings").withIndex("by_key", (q) => q.eq("key", key)).unique();
+        await ctx.db.patch(row!._id, { value: "abc" });
+      }
+    });
+    await setSetting("discountMaxPercentWithoutApproval", true, "lots");
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+    })) as Id<"sales">;
+    expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ tax: 0, total: 250 });
+    await expect(
+      t.mutation(api.sales.create, {
+        token: ids.seller.token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        discount: 10,
+      })
+    ).rejects.toThrow(/discount_large|[Aa]ccess denied/);
+  });
+
+  test("a running promotion sets the till price; the best one wins; expired ones don't count", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    const now = Date.now();
+    const promo = (name: string, kind: "PERCENT_OFF" | "AMOUNT_OFF" | "FIXED_PRICE", value: number, target: object, validFrom = now - 1000, validTo?: number) =>
+      t.mutation(api.promotions.create, { token: ids.admin.token, name, kind, value, validFrom, validTo, targets: [target] });
+    await promo("Tees 20%", "PERCENT_OFF", 20, { categoryId: ids.categoryId }); // 200
+    await promo("Basic −30", "AMOUNT_OFF", 30, { productId: ids.productId }); // 220
+    await promo("Old deal", "FIXED_PRICE", 50, { productVariantId: ids.variantId }, now - 10_000, now - 5_000); // expired
+
+    const pos = await t.query(api.products.listForPos, { branchId: ids.branchId });
+    expect(pos[0]).toMatchObject({ minPrice: 200, promotionName: "Tees 20%" });
+
+    // A seller sells at the promotion price without any discount permission.
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.seller.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+      payments: [{ method: "CARD", amount: 200 }],
+    })) as Id<"sales">;
+    const line = await lineOf(t, saleId);
+    expect(line).toMatchObject({ unitPrice: 200, discount: 0 });
+    expect(line.promotionId).toBeDefined();
+    expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ total: 200, paymentStatus: "PAID" });
+
+    // A customer order made during the promotion keeps the promotion price.
+    const orderId = await t.mutation(api.customerOrders.create, {
+      token: ids.admin.token,
+      customerId: ids.namedCustomerId,
+      branchId: ids.branchId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+    });
+    expect((await t.run((ctx) => ctx.db.get(orderId)))?.totalAmount).toBe(200);
+  });
+});
+
+describe("purchase order lines and customer records", () => {
+  test("purchase order lines are checked, and the same item twice becomes one line", async () => {
+    const { t, ids } = await seed();
+    const supplierId = await t.run((ctx) =>
+      ctx.db.insert("suppliers", { name: "Supplier Co", status: "ACTIVE", createdAt: Date.now() })
+    );
+    const create = (items: { productVariantId: Id<"productVariants">; quantityOrdered: number; unitCost: number }[]) =>
+      t.mutation(api.purchaseOrders.create, {
+        token: ids.admin.token,
+        supplierId,
+        branchId: ids.branchId,
+        orderDate: Date.now(),
+        items,
+      });
+    const v = ids.variantId;
+    await expect(create([{ productVariantId: v, quantityOrdered: 0, unitCost: 100 }])).rejects.toThrow(/whole quantity/);
+    await expect(create([{ productVariantId: v, quantityOrdered: 1.5, unitCost: 100 }])).rejects.toThrow(/whole quantity/);
+    await expect(create([{ productVariantId: v, quantityOrdered: 2, unitCost: -1 }])).rejects.toThrow(/negative/);
+    await expect(
+      create([
+        { productVariantId: v, quantityOrdered: 2, unitCost: 100 },
+        { productVariantId: v, quantityOrdered: 3, unitCost: 90 },
+      ])
+    ).rejects.toThrow(/different costs/);
+
+    const poId = await create([
+      { productVariantId: v, quantityOrdered: 2, unitCost: 100 },
+      { productVariantId: v, quantityOrdered: 3, unitCost: 100 },
+    ]);
+    const po = await t.query(api.purchaseOrders.get, { id: poId });
+    expect(po?.items).toHaveLength(1);
+    expect(po?.items[0]).toMatchObject({ quantityOrdered: 5 });
+    expect(po?.totalAmount).toBe(500);
+
+    await t.mutation(api.purchaseOrders.updateStatus, { token: ids.admin.token, id: poId, status: "SENT" });
+    await t.mutation(api.purchaseOrders.receiveItems, {
+      token: ids.admin.token,
+      id: poId,
+      items: [{ productVariantId: v, quantityReceived: 5 }],
+    });
+    expect((await t.run((ctx) => ctx.db.get(poId)))?.status).toBe("COMPLETED");
+  });
+
+  test("customers: one phone form, no duplicates, a name required, edits audited, walk-in locked", async () => {
+    const { t, ids } = await seed();
+    const id = await t.mutation(api.customers.create, {
+      token: ids.admin.token,
+      name: "  Ana Silva ",
+      phone1: "+258 84 999 8877",
+    });
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ name: "Ana Silva", phone1: "849998877" });
+
+    await expect(
+      t.mutation(api.customers.create, { token: ids.admin.token, name: "Other", phone1: "84 999 8877" })
+    ).rejects.toThrow(/Ana Silva already has/);
+    await expect(
+      t.mutation(api.customers.createMinimal, { token: ids.admin.token, phone1: "849998877" })
+    ).rejects.toThrow(/already has/);
+    await expect(
+      t.mutation(api.customers.create, { token: ids.admin.token, name: "   ", phone1: "841111111" })
+    ).rejects.toThrow(/needs a name/);
+    await expect(
+      t.mutation(api.customers.create, { token: ids.admin.token, name: "Short", phone1: "123" })
+    ).rejects.toThrow(/at least 7 digits/);
+
+    await t.mutation(api.customers.update, { token: ids.admin.token, id, name: "Ana S. Silva", phone1: "849998877" });
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).find((a) => a.action === "customer.updated")
+    );
+    expect(audit?.details).toContain('name "Ana Silva" → "Ana S. Silva"');
+
+    await expect(
+      t.mutation(api.customers.update, { token: ids.admin.token, id: ids.customerId, name: "Renamed", phone1: "841234567" })
+    ).rejects.toThrow(/walk-in customer cannot be edited/);
+  });
+});
+
+describe("till total, store credit, order IVA, whole quantities and reservations", () => {
+  test("the till's quote is exactly what the sale saves, with the product's own IVA rate", async () => {
+    const { t, ids, setStock, setSetting } = await seed();
+    await setStock(10);
+    await setSetting("taxRatePercent", true, "0");
+    await t.run(async (ctx) => {
+      const rateId = await ctx.db.insert("taxRates", {
+        name: "IVA 16%",
+        percentage: 16,
+        active: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(ids.productId, { taxRateId: rateId });
+    });
+    const items = [{ productVariantId: ids.variantId, quantity: 2 }];
+    const quote = await t.query(api.sales.quote, { token: ids.seller.token, items, discount: 50 });
+    expect(quote).toMatchObject({ subtotal: 500, tax: 72, total: 522 });
+    const saleId = (await t.mutation(api.sales.create, {
+      token: ids.admin.token,
+      branchId: ids.branchId,
+      customerId: ids.customerId,
+      items,
+      discount: 50,
+      payments: [{ method: "CARD", amount: quote!.total! }],
+    })) as Id<"sales">;
+    expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ total: 522, balance: 0, paymentStatus: "PAID" });
+  });
+
+  test("store credit pays at the till, from the balance, without the register", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    await t.mutation(api.customerCredits.grant, {
+      token: ids.admin.token,
+      customerId: ids.namedCustomerId,
+      amount: 300,
+      notes: "goodwill",
+    });
+    await t.run(async (ctx) => {
+      for (const s of await ctx.db.query("cashRegisterSessions").collect()) await ctx.db.patch(s._id, { status: "CLOSED" });
+    });
+    const sell = (customerId: Id<"customers">, amount: number) =>
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "STORE_CREDIT", amount }],
+      }) as Promise<Id<"sales">>;
+    const saleId = await sell(ids.namedCustomerId, 250);
+    expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ paidAmount: 250, paymentStatus: "PAID" });
+    expect(await t.query(api.customerCredits.getBalance, { customerId: ids.namedCustomerId })).toBe(50);
+    await expect(sell(ids.namedCustomerId, 250)).rejects.toThrow(/cannot go negative/);
+    await expect(sell(ids.customerId, 250)).rejects.toThrow(/named customer/);
+  });
+
+  test("a customer order's total includes IVA, and collecting needs it paid", async () => {
+    const { t, ids, setStock, setSetting } = await seed();
+    await setStock(10);
+    await setSetting("taxRatePercent", true, "16");
+    const orderId = await t.mutation(api.customerOrders.create, {
+      token: ids.admin.token,
+      customerId: ids.namedCustomerId,
+      branchId: ids.branchId,
+      items: [{ productVariantId: ids.variantId, quantity: 1 }],
+    });
+    expect((await t.run((ctx) => ctx.db.get(orderId)))?.totalAmount).toBe(290);
+    await expect(
+      t.mutation(api.customerOrders.collect, { token: ids.admin.token, orderId, payments: [{ method: "CARD", amount: 250 }] })
+    ).rejects.toThrow(/still due/);
+    const saleId = await t.mutation(api.customerOrders.collect, {
+      token: ids.admin.token,
+      orderId,
+      payments: [{ method: "CARD", amount: 290 }],
+    });
+    expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ total: 290, balance: 0 });
+  });
+
+  test("half quantities are refused", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(10);
+    await expect(
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 0.5 }],
+      })
+    ).rejects.toThrow(/whole numbers/);
+    await expect(
+      t.mutation(api.stockTransfers.create, {
+        token: ids.admin.token,
+        sourceBranchId: ids.branchId,
+        destinationBranchId: ids.branch2Id,
+        items: [{ productVariantId: ids.variantId, quantity: 1.5 }],
+      })
+    ).rejects.toThrow(/whole numbers/);
+  });
+
+  test("an expired reservation stops holding stock and is marked expired", async () => {
+    const { t, ids, setStock } = await seed();
+    await setStock(2);
+    const orderId = await t.mutation(api.customerOrders.create, {
+      token: ids.admin.token,
+      customerId: ids.namedCustomerId,
+      branchId: ids.branchId,
+      items: [{ productVariantId: ids.variantId, quantity: 2 }],
+      reserve: true,
+    });
+    const sellOne = () =>
+      t.mutation(api.sales.create, {
+        token: ids.admin.token,
+        branchId: ids.branchId,
+        customerId: ids.customerId,
+        items: [{ productVariantId: ids.variantId, quantity: 1 }],
+        payments: [{ method: "CARD", amount: 250 }],
+      });
+    await expect(sellOne()).rejects.toThrow(/held for customer orders/);
+
+    // Default reservation: 14 days.
+    const [hold] = await t.run((ctx) => ctx.db.query("stockHolds").collect());
+    expect(Math.round((hold.expiresAt - hold.createdAt) / 86_400_000)).toBe(14);
+    await t.run((ctx) => ctx.db.patch(hold._id, { expiresAt: Date.now() - 1 }));
+    await expect(sellOne()).resolves.toBeDefined(); // no longer held
+    expect(await t.mutation(internal.stockHolds.expireHolds, {})).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(hold._id)))?.status).toBe("EXPIRED");
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).find((a) => a.action === "customer_order.reservation_expired")
+    );
+    expect(audit?.entityId).toBe(orderId);
+  });
+});

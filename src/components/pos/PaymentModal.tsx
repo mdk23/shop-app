@@ -8,7 +8,7 @@ import { useTranslation } from "@/contexts/LanguageContext";
 import {
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
-  type PaymentMethod,
+  type SalePaymentMethod as PaymentMethod,
 } from "../../../convex/lib/paymentMethods";
 
 export function PaymentModal({
@@ -19,6 +19,7 @@ export function PaymentModal({
   title,
   extraFields,
   allowCredit,
+  storeCredit = 0,
 }: {
   total: number;
   fmt: (n: number) => string;
@@ -29,6 +30,8 @@ export function PaymentModal({
   ) => void | Promise<void>;
   /** A named customer can leave the change as store credit. */
   allowCredit?: boolean;
+  /** The customer's store credit: when above 0 it can be used to pay. */
+  storeCredit?: number;
   title?: string;
   /** Rendered below the payment rows, above the paid/change summary — e.g. the
    *  anonymous-sale phone capture field. Keeps this modal about payments. */
@@ -46,6 +49,9 @@ export function PaymentModal({
   // Only cash can give change: card and mobile payments may not go over what is due.
   const cash = rows.filter((r) => r.method === "CASH").reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const nonCashOver = change > 0.005 && change > cash + 0.005 && !(allowCredit && keepAsCredit);
+  const creditUsed = rows.filter((r) => r.method === "STORE_CREDIT").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const overCredit = creditUsed > storeCredit + 0.005;
+  const methods: PaymentMethod[] = storeCredit > 0 ? [...PAYMENT_METHODS, "STORE_CREDIT"] : [...PAYMENT_METHODS];
 
   const submit = async (rowsToSend: { method: PaymentMethod; amount: number }[]) => {
     setBusy(true);
@@ -72,7 +78,7 @@ export function PaymentModal({
             {t("Save as pending")}
           </Button>
           <Button
-            disabled={nonCashOver}
+            disabled={nonCashOver || overCredit}
             onClick={() =>
               submit(
                 rows
@@ -99,7 +105,7 @@ export function PaymentModal({
               }
               className="w-40"
             >
-              {PAYMENT_METHODS.map((m) => (
+              {methods.map((m) => (
                 <option key={m} value={m}>
                   {t(PAYMENT_METHOD_LABEL[m])}
                 </option>
@@ -145,6 +151,14 @@ export function PaymentModal({
           <input type="checkbox" checked={keepAsCredit} onChange={(e) => setKeepAsCredit(e.target.checked)} />
           {t("Keep the change as store credit")}
         </label>
+      )}
+      {storeCredit > 0 && (
+        <p className="mt-3 text-xs font-bold text-success">
+          {t("Store credit available: {amount}", { amount: fmt(storeCredit) })}
+        </p>
+      )}
+      {overCredit && (
+        <p className="mt-3 text-xs font-bold text-error">{t("More store credit than the customer has.")}</p>
       )}
       {nonCashOver && (
         <p className="mt-3 text-xs font-bold text-error">

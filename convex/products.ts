@@ -7,6 +7,7 @@ import { describeChanges, writeAudit } from "./audit";
 import { generateSku } from "./productVariants";
 import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 import { recordVariantPrice, resolveColorId, resolveSizeId } from "./lib/catalog";
+import { loadPromotions } from "./lib/promotions";
 import { deleteStockRowsOf, patchVariant } from "./lib/stockTotals";
 
 /**
@@ -184,6 +185,8 @@ export const listForPos = query({
     const categories = await ctx.db.query("categories").collect();
     const catName = new Map(categories.map((c) => [c._id, c.name]));
 
+    // The till price per variant: the selling price, or the promotion price while one runs.
+    const tillPrice = await loadPromotions(ctx, Date.now());
     const namesOf = await loadVariantNames(ctx);
     const result = [];
     for (const p of products) {
@@ -200,11 +203,14 @@ export const listForPos = query({
           )
           .unique();
         const names = namesOf(variant);
+        const till = tillPrice(variant, p);
         activeVariants.push({
           ...variant,
           ...names,
           label: formatVariantLabel(names, variant.sku),
           stock: stock?.quantity ?? 0,
+          price: till.price,
+          promotionName: till.promotion?.name,
         });
       }
       if (activeVariants.length === 0) continue;
@@ -214,7 +220,10 @@ export const listForPos = query({
         categoryId: p.categoryId,
         categoryName: catName.get(p.categoryId) ?? "—",
         gender: p.gender ?? "unisex",
-        ...priceRange(variants),
+        // The till prices of the variants on sale (promotion prices included).
+        minPrice: Math.min(...activeVariants.map((v) => v.price)),
+        maxPrice: Math.max(...activeVariants.map((v) => v.price)),
+        promotionName: activeVariants.find((v) => v.promotionName)?.promotionName,
         variants: activeVariants,
       });
     }

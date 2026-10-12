@@ -2,14 +2,15 @@ import { v } from "convex/values";
 import {
   mutation,
   query,
+  MutationCtx,
   QueryCtx,
 } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
-import { writeAudit } from "./audit";
+import { describeChanges, writeAudit } from "./audit";
 import { nextSequence } from "./metrics";
-import { getSetting } from "./settings";
+import { getSetting, numberSetting } from "./settings";
 import { normalizePhone } from "./lib/phone";
 import { loadVariantNames } from "./lib/variantNames";
 
@@ -458,7 +459,7 @@ export const getPosContext = query({
     let tierDiscountPercent = 0;
     if (tierSettingKey) {
       const setting = await getSetting(ctx, tierSettingKey);
-      if (setting?.isActive) tierDiscountPercent = Number(setting.value ?? "0") || 0;
+      if (setting?.isActive) tierDiscountPercent = await numberSetting(ctx, tierSettingKey);
     }
 
     return {
@@ -495,11 +496,67 @@ const CUSTOMER_FIELDS = {
   notes: v.optional(v.string()),
 };
 
+type CustomerInput = {
+  name: string;
+  phone1: string;
+  phone2?: string;
+  phone3?: string;
+  email?: string;
+  address?: string;
+  notes?: string;
+};
+
+/** A phone in the one stored form ("841234567"); empty input is no phone. */
+function cleanPhone(raw: string | undefined, label: string): string | undefined {
+  if (!raw?.trim()) return undefined;
+  const phone = normalizePhone(raw);
+  if (!phone) throw new Error(`${label} needs at least 7 digits.`);
+  return phone;
+}
+
+/**
+ * Trims and checks a customer's fields: a name is required, phones are stored in one
+ * form, and the main phone must not belong to another customer.
+ */
+async function cleanCustomer(
+  ctx: MutationCtx,
+  data: CustomerInput,
+  exceptId?: Id<"customers">
+): Promise<CustomerInput> {
+  const name = data.name.trim();
+  if (!name) throw new Error("A customer needs a name.");
+  const phone1 = cleanPhone(data.phone1, "The phone number");
+  if (!phone1) throw new Error("A customer needs a phone number.");
+  await assertPhoneFree(ctx, phone1, exceptId);
+  return {
+    name,
+    phone1,
+    phone2: cleanPhone(data.phone2, "The second phone"),
+    phone3: cleanPhone(data.phone3, "The third phone"),
+    email: data.email?.trim() || undefined,
+    address: data.address?.trim() || undefined,
+    notes: data.notes?.trim() || undefined,
+  };
+}
+
+/** Refuses a main phone that another (real) customer already has. */
+async function assertPhoneFree(ctx: MutationCtx, phone1: string, exceptId?: Id<"customers">) {
+  const owners = await ctx.db
+    .query("customers")
+    .withIndex("by_phone1", (q) => q.eq("phone1", phone1))
+    .take(5);
+  const other = owners.find((c) => c._id !== exceptId && !c.isGeneric);
+  if (other) {
+    throw new Error(`${other.name} already has the phone number ${phone1}.`);
+  }
+}
+
 export const create = mutation({
   args: { token: v.string(), ...CUSTOMER_FIELDS },
   handler: async (ctx, args) => {
-    const { token, ...data } = args;
+    const { token, ...input } = args;
     const actor = await authorize(ctx, token, "customers.manage");
+    const data = await cleanCustomer(ctx, input);
     const seq = await nextSequence(ctx, "customer_code_sequence");
     const id = await ctx.db.insert("customers", {
       ...data,
@@ -513,7 +570,7 @@ export const create = mutation({
       action: "customer.created",
       entityType: "customer",
       entityId: id,
-      details: `Created customer "${data.name}"`,
+      details: `Created customer "${data.name}" (${data.phone1})`,
     });
     return id;
   },
@@ -539,8 +596,12 @@ export const getOrCreateGeneric = mutation({
 export const update = mutation({
   args: { token: v.string(), id: v.id("customers"), ...CUSTOMER_FIELDS },
   handler: async (ctx, args) => {
-    const { token, id, ...data } = args;
+    const { token, id, ...input } = args;
     const actor = await authorize(ctx, token, "customers.manage");
+    const existing = await ctx.db.get(id);
+    if (!existing) throw new Error("Customer not found.");
+    if (existing.isGeneric) throw new Error("The walk-in customer cannot be edited.");
+    const data = await cleanCustomer(ctx, input, id);
     await ctx.db.patch(id, data);
     await writeAudit(ctx, {
       userId: actor._id,
@@ -548,7 +609,7 @@ export const update = mutation({
       action: "customer.updated",
       entityType: "customer",
       entityId: id,
-      details: `Updated customer "${data.name}"`,
+      details: `"${existing.name}": ${describeChanges(existing, data) || "no changes"}`,
     });
   },
 });
@@ -604,8 +665,9 @@ export const createMinimal = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "customers.manage");
-    const normalized = normalizePhone(args.phone1) || args.phone1.trim();
+    const normalized = cleanPhone(args.phone1, "The phone number");
     if (!normalized) throw new Error("A valid phone number is required.");
+    await assertPhoneFree(ctx, normalized);
     const seq = await nextSequence(ctx, "customer_code_sequence");
     const id = await ctx.db.insert("customers", {
       name: args.name?.trim() || `Cliente ${normalized}`,
@@ -653,6 +715,7 @@ export const updateProfile = mutation({
     const actor = await authorize(ctx, token, "customers.manage");
     const existing = await ctx.db.get(id);
     if (!existing) throw new Error("Customer not found.");
+    if (existing.isGeneric) throw new Error("The walk-in customer cannot be edited.");
 
     const patch: Record<string, unknown> = {};
     if (data.notes !== undefined) patch.notes = data.notes;
@@ -671,7 +734,7 @@ export const updateProfile = mutation({
       action: "customer.profile_updated",
       entityType: "customer",
       entityId: id,
-      details: `Updated profile for "${existing.name}"`,
+      details: `"${existing.name}": ${describeChanges(existing, patch) || "no changes"}`,
     });
   },
 });

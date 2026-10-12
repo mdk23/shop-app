@@ -378,6 +378,8 @@ export default defineSchema({
     // The line after its share of the sale-level discount, before IVA (what IVA was
     // charged on). With taxAmount it is what the customer paid for the line.
     netAmount: v.optional(v.number()),
+    // The promotion the line sold under, when it sold at the promotion price.
+    promotionId: v.optional(v.id("promotions")),
     // Per-line IVA, snapshotted at sale time so later rate changes never rewrite history.
     taxRateId: v.optional(v.id("taxRates")),
     taxRatePercent: v.optional(v.number()),
@@ -510,6 +512,9 @@ export default defineSchema({
     createdByUsername: v.string(),
     notes: v.optional(v.string()),
     createdAt: v.number(),
+    // When the goods left the source branch (status IN_TRANSIT): from then on they are out of
+    // its stock. Unset on transfers received without being sent first.
+    sentAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   })
     .index("by_status", ["status"])
@@ -559,6 +564,9 @@ export default defineSchema({
     productVariantId: v.id("productVariants"),
     expectedQuantity: v.number(),
     countedQuantity: v.optional(v.number()),
+    // Stock on hand when the line was counted: the count corrects that figure, so sales
+    // and receipts after the shelf was counted are kept when the count closes.
+    stockAtCount: v.optional(v.number()),
     appliedDelta: v.optional(v.number()),
   })
     .index("by_count", ["countId"])
@@ -681,12 +689,16 @@ export default defineSchema({
     branchId: v.id("branches"),
     productVariantId: v.id("productVariants"),
     quantity: v.number(),
-    status: v.union(v.literal("ACTIVE"), v.literal("RELEASED")),
+    // RELEASED: the order was collected or cancelled. EXPIRED: it passed `expiresAt`
+    // (the reservationDays setting) and the stock went back on sale.
+    status: v.union(v.literal("ACTIVE"), v.literal("RELEASED"), v.literal("EXPIRED")),
     createdAt: v.number(),
+    expiresAt: v.number(),
     releasedAt: v.optional(v.number()),
   })
     .index("by_order", ["orderId"])
-    .index("by_branch_variant_status", ["branchId", "productVariantId", "status"]),
+    .index("by_branch_variant_status", ["branchId", "productVariantId", "status"])
+    .index("by_status_and_expires", ["status", "expiresAt"]),
 
   // Complaints (reclamações) from a customer about a purchase. Resolved by a return,
   // a repair, a credit, or rejected; a return can point back to the complaint.

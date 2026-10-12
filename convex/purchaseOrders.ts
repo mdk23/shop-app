@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
@@ -14,6 +14,38 @@ const PO_ITEM = v.object({
   quantityOrdered: v.number(),
   unitCost: v.number(),
 });
+
+type PoItemInput = { productVariantId: Id<"productVariants">; quantityOrdered: number; unitCost: number };
+
+/**
+ * Checks an order's lines and gives each item one line: quantities are whole numbers above
+ * 0, costs are not negative, and the same item twice is merged (receiving fills one line
+ * per item, so a second line for it would never complete). The same item at two costs is
+ * refused.
+ */
+async function cleanPoItems(ctx: MutationCtx, items: PoItemInput[]): Promise<PoItemInput[]> {
+  if (items.length === 0) throw new Error("Add at least one line.");
+  const byVariant = new Map<Id<"productVariants">, PoItemInput>();
+  for (const item of items) {
+    if (!Number.isInteger(item.quantityOrdered) || item.quantityOrdered <= 0) {
+      throw new Error("Each line needs a whole quantity above 0.");
+    }
+    if (!Number.isFinite(item.unitCost) || item.unitCost < 0) {
+      throw new Error("A unit cost cannot be negative.");
+    }
+    const variant = await ctx.db.get(item.productVariantId);
+    if (!variant) throw new Error("A product variant on the order was not found.");
+    const prev = byVariant.get(item.productVariantId);
+    if (prev && prev.unitCost !== item.unitCost) {
+      throw new Error(`${variant.sku} is on the order twice at different costs. Use one line.`);
+    }
+    byVariant.set(
+      item.productVariantId,
+      prev ? { ...prev, quantityOrdered: prev.quantityOrdered + item.quantityOrdered } : { ...item }
+    );
+  }
+  return [...byVariant.values()];
+}
 
 // ─────────────────────────────────────────────
 // QUERIES
@@ -121,11 +153,11 @@ export const create = mutation({
   },
   handler: async (ctx, args): Promise<Id<"purchaseOrders">> => {
     const actor = await authorize(ctx, args.token, "purchasing.manage");
-    if (args.items.length === 0) throw new Error("Add at least one line.");
+    const items = await cleanPoItems(ctx, args.items);
     if (!(await ctx.db.get(args.supplierId))) throw new Error("Supplier not found.");
     const supplyRelationId = await openRelationFor(ctx, args.supplierId);
 
-    const totalAmount = args.items.reduce(
+    const totalAmount = items.reduce(
       (s, i) => s + i.quantityOrdered * i.unitCost,
       0
     );
@@ -145,7 +177,7 @@ export const create = mutation({
       notes: args.notes,
       createdAt: now,
     });
-    for (const item of args.items) {
+    for (const item of items) {
       await ctx.db.insert("purchaseOrderItems", {
         purchaseOrderId,
         productVariantId: item.productVariantId,
@@ -161,7 +193,7 @@ export const create = mutation({
       action: "purchase_order.created",
       entityType: "purchaseOrder",
       entityId: purchaseOrderId,
-      details: `${orderCode}: ${args.items.length} line(s), total ${totalAmount}`,
+      details: `${orderCode}: ${items.length} line(s), total ${totalAmount}`,
     });
     return purchaseOrderId;
   },
@@ -184,8 +216,9 @@ export const update = mutation({
     if (!po) throw new Error("Purchase order not found.");
     if (po.status !== "DRAFT")
       throw new Error("Only draft purchase orders can be edited.");
+    const items = await cleanPoItems(ctx, args.items);
 
-    const totalAmount = args.items.reduce(
+    const totalAmount = items.reduce(
       (s, i) => s + i.quantityOrdered * i.unitCost,
       0
     );
@@ -205,7 +238,7 @@ export const update = mutation({
       .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", args.id))
       .collect();
     for (const it of existing) await ctx.db.delete(it._id);
-    for (const item of args.items) {
+    for (const item of items) {
       await ctx.db.insert("purchaseOrderItems", {
         purchaseOrderId: args.id,
         productVariantId: item.productVariantId,

@@ -526,6 +526,9 @@ export const pt: Record<string, string> = {
   "Split payment": "Dividir pagamento",
   "Paid": "Pago",
   "Change": "Troco",
+  "IVA": "IVA",
+  "Store credit available: {amount}": "Crédito na loja disponível: {amount}",
+  "More store credit than the customer has.": "Mais crédito na loja do que o cliente tem.",
   "Keep the change as store credit": "Deixar o troco como crédito na loja",
   "Only cash can give change. Lower the card or mobile payment.":
     "Só o numerário pode dar troco. Reduza o pagamento por cartão ou móvel.",

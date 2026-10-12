@@ -1,7 +1,7 @@
 import { MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { writeAudit } from "./audit";
-import { getSetting } from "./settings";
+import { numberSetting } from "./settings";
 import {
   inferSizeProfile,
   inferGender,
@@ -42,11 +42,11 @@ export async function refreshCustomerProfile(
 
   const now = Date.now();
   const windowMonths =
-    Number((await getSetting(ctx, "sizeInferenceMonths"))?.value ?? "24") || 24;
+    await numberSetting(ctx, "sizeInferenceMonths");
   const novoMaxSales =
-    Number((await getSetting(ctx, "tierNovoMaxSales"))?.value ?? "1") || 1;
+    await numberSetting(ctx, "tierNovoMaxSales");
   const vipMinSpend12m =
-    Number((await getSetting(ctx, "tierVipMinSpend12m"))?.value ?? "50000") || 50000;
+    await numberSetting(ctx, "tierVipMinSpend12m");
 
   const sales = (
     await ctx.db

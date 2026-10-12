@@ -97,7 +97,9 @@ export const recordCounts = mutation({
 
     const changed: string[] = [];
     for (const c of args.counts) {
-      if (c.countedQuantity < 0) throw new Error("Counted quantities cannot be negative.");
+      if (!Number.isInteger(c.countedQuantity) || c.countedQuantity < 0) {
+        throw new Error("Counted quantities must be whole numbers, 0 or more.");
+      }
       const existing = await ctx.db
         .query("stockCountLines")
         .withIndex("by_count_and_variant", (q) =>
@@ -105,14 +107,26 @@ export const recordCounts = mutation({
         )
         .unique();
       if (existing?.countedQuantity === c.countedQuantity) continue;
+      // What the system holds right now: the count is measured against this, not the stock
+      // when the count closes.
+      const stockAtCount =
+        (
+          await ctx.db
+            .query("variantStock")
+            .withIndex("by_branch_and_variant", (q) =>
+              q.eq("branchId", count.branchId).eq("productVariantId", c.productVariantId)
+            )
+            .unique()
+        )?.quantity ?? 0;
       if (existing) {
-        await ctx.db.patch(existing._id, { countedQuantity: c.countedQuantity });
+        await ctx.db.patch(existing._id, { countedQuantity: c.countedQuantity, stockAtCount });
       } else {
         await ctx.db.insert("stockCountLines", {
           countId: args.countId,
           productVariantId: c.productVariantId,
           expectedQuantity: 0,
           countedQuantity: c.countedQuantity,
+          stockAtCount,
         });
       }
       const variant = await ctx.db.get(c.productVariantId);
@@ -132,9 +146,9 @@ export const recordCounts = mutation({
 });
 
 /**
- * Applies every counted line whose quantity differs from stock on hand now (not the
- * snapshot), so sales made during the count are not reversed. Uncounted lines are
- * left alone and reported.
+ * Applies each counted line as the difference between what was counted and what the system
+ * held when that line was counted. Whatever moved after the shelf was counted (sales,
+ * receipts, transfers) stays. Uncounted lines are left alone and reported.
  */
 export const close = mutation({
   args: { token: v.string(), countId: v.id("stockCounts") },
@@ -162,8 +176,8 @@ export const close = mutation({
           q.eq("branchId", count.branchId).eq("productVariantId", line.productVariantId)
         )
         .unique();
-      const previousQuantity = stock?.quantity ?? 0;
-      const delta = line.countedQuantity - previousQuantity;
+      // Lines counted before stockAtCount was kept fall back to stock now.
+      const delta = line.countedQuantity - (line.stockAtCount ?? stock?.quantity ?? 0);
 
       if (delta !== 0) {
         await ctx.runMutation(internal.inventory.mutateStock, {

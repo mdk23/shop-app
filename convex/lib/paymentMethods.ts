@@ -23,3 +23,10 @@ export const PAYMENT_METHOD_LABEL: Record<RefundMethod, string> = {
   OTHER: "Other",
   STORE_CREDIT: "Store credit",
 };
+
+/**
+ * What a sale can be paid with: the money methods, or the customer's store credit (taken
+ * off their credit balance; it moves no money through the register).
+ */
+export type SalePaymentMethod = RefundMethod;
+export const salePaymentMethodValidator = refundMethodValidator;

@@ -3,6 +3,7 @@ import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { writeAudit } from "../audit";
 import { nextDocumentNumber } from "./numbering";
+import { assertWholeQuantity } from "./pricing";
 
 export type ReceiptLine = {
   productVariantId: Id<"productVariants">;
@@ -41,7 +42,8 @@ export async function receiveIntoStock(
   const now = Date.now();
   const merged = new Map<Id<"productVariants">, ReceiptLine>();
   for (const l of input.lines) {
-    if (l.quantityReceived <= 0) continue;
+    if (l.quantityReceived === 0) continue;
+    assertWholeQuantity(l.quantityReceived, "Received quantities");
     const prev = merged.get(l.productVariantId);
     merged.set(l.productVariantId, prev
       ? { ...prev, quantityReceived: prev.quantityReceived + l.quantityReceived }
@@ -51,7 +53,10 @@ export async function receiveIntoStock(
   if (toReceive.length === 0) throw new Error("Nothing received.");
 
   const plan = toReceive.map((rx) => {
-    const line = po ? poItems.find((i) => i.productVariantId === rx.productVariantId) : undefined;
+    // Orders saved before duplicate items were merged may hold an item twice: fill the line
+    // that is still open.
+    const lines = poItems.filter((i) => i.productVariantId === rx.productVariantId);
+    const line = lines.find((i) => i.quantityReceived < i.quantityOrdered) ?? lines[0];
     if (!line) {
       if (!input.allowUnannounced) {
         throw new Error("A received line is not part of this purchase order.");

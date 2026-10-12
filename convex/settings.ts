@@ -65,6 +65,12 @@ export const DEFAULT_SETTINGS: {
     label: "Desconto automático REGULAR (%)",
   },
   {
+    key: "reservationDays",
+    isActive: true,
+    value: "14",
+    label: "Dias de reserva de stock para encomendas",
+  },
+  {
     key: "language",
     isActive: true,
     value: "pt",
@@ -88,6 +94,35 @@ export async function ensureDefaultSettings(ctx: MutationCtx) {
       });
     }
   }
+}
+
+/**
+ * Settings that hold a number, the range it must stay in, and the value used when it is
+ * missing. Saving anything else is refused, and reading falls back to the default, so a
+ * typo can never reach a price, a tax or a permission check.
+ */
+export const NUMBER_SETTINGS: Record<string, { min: number; max: number; fallback: number }> = {
+  taxRatePercent: { min: 0, max: 100, fallback: 0 },
+  discountMaxPercentWithoutApproval: { min: 0, max: 100, fallback: 0 },
+  tierDiscountPercentVIP: { min: 0, max: 100, fallback: 0 },
+  tierDiscountPercentREGULAR: { min: 0, max: 100, fallback: 0 },
+  tierNovoMaxSales: { min: 0, max: 10000, fallback: 1 },
+  tierVipMinSpend12m: { min: 0, max: 1e12, fallback: 50000 },
+  sizeInferenceMonths: { min: 1, max: 240, fallback: 24 },
+  reservationDays: { min: 1, max: 365, fallback: 14 },
+};
+
+function parseNumberSetting(key: string, value: string | undefined): number | null {
+  const rule = NUMBER_SETTINGS[key];
+  if (!rule || value === undefined || value.trim() === "") return null;
+  const n = Number(value.trim().replace(",", "."));
+  return Number.isFinite(n) && n >= rule.min && n <= rule.max ? n : null;
+}
+
+/** A number setting's value, or its fallback when missing or not a valid number. */
+export async function numberSetting(ctx: QueryCtx | MutationCtx, key: string): Promise<number> {
+  const row = await getSetting(ctx, key);
+  return parseNumberSetting(key, row?.value) ?? NUMBER_SETTINGS[key]?.fallback ?? 0;
 }
 
 /** Read a single setting's value by key. New code should use this rather than re-inlining the `by_key` lookup. */
@@ -126,9 +161,16 @@ export const upsert = mutation({
       .query("settings")
       .withIndex("by_key", (q) => q.eq("key", args.key))
       .unique();
+    const rule = NUMBER_SETTINGS[args.key];
+    if (rule && args.value !== undefined && parseNumberSetting(args.key, args.value) === null) {
+      throw new Error(`${args.label ?? existing?.label ?? args.key} must be a number from ${rule.min} to ${rule.max}.`);
+    }
+    // Number settings are stored in plain form ("16", not " 16,0").
+    const value =
+      rule && args.value !== undefined ? String(parseNumberSetting(args.key, args.value)) : args.value;
     const next = {
       isActive: args.isActive,
-      value: args.value ?? existing?.value,
+      value: value ?? existing?.value,
       label: args.label ?? existing?.label,
     };
     if (existing) {
@@ -137,7 +179,7 @@ export const upsert = mutation({
       await ctx.db.insert("settings", {
         key: args.key,
         isActive: args.isActive,
-        value: args.value,
+        value,
         label: args.label,
         updatedAt: Date.now(),
       });

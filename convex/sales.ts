@@ -12,12 +12,15 @@ import { internal } from "./_generated/api";
 import { authorize, requirePermission } from "./permissions";
 import { writeAudit } from "./audit";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
-import { paymentMethodValidator, type PaymentMethod } from "./lib/paymentMethods";
+import { salePaymentMethodValidator, type SalePaymentMethod } from "./lib/paymentMethods";
 import { requireOpenSession } from "./cashRegister";
 import { assertCustomerCanBuy } from "./customers";
 import { getLocalDateString } from "./metrics";
 import { recordSaleMetrics, sumTotals, totalsByBranch, trackSale } from "./lib/salesMetrics";
 import { adjustCustomerCredit } from "./customerCredits";
+import { numberSetting } from "./settings";
+import { priceSale } from "./lib/pricing";
+import { activeHeldQuantity } from "./stockHolds";
 import { refreshCustomerProfile } from "./customerProfile";
 import { currentNuit, round2 } from "./lib/fiscal";
 import { nextDocumentNumber } from "./lib/numbering";
@@ -59,11 +62,11 @@ async function resolveOpenSession(
  * Card, M-Pesa, e-Mola and transfers cannot give change, so they cannot exceed what is due.
  */
 export function settleTendered(
-  tendered: { method: PaymentMethod; amount: number }[],
+  tendered: { method: SalePaymentMethod; amount: number }[],
   due: number,
   keepChangeAsCredit: boolean,
   isGenericCustomer: boolean
-): { payments: { method: PaymentMethod; amount: number }[]; change: number; keptAsCredit: number } {
+): { payments: { method: SalePaymentMethod; amount: number }[]; change: number; keptAsCredit: number } {
   const over = round2(tendered.reduce((s, p) => s + p.amount, 0) - due);
   if (over <= 0) return { payments: tendered, change: 0, keptAsCredit: 0 };
   if (keepChangeAsCredit) {
@@ -106,8 +109,7 @@ const saleInputValidator = {
   customerId: v.id("customers"),
   items: saleItemsValidator,
   discount: v.optional(v.number()), // absolute, sale-level
-  taxRate: v.optional(v.number()), // percent; falls back to settings
-  payments: v.optional(v.array(v.object({ method: paymentMethodValidator, amount: v.number() }))),
+  payments: v.optional(v.array(v.object({ method: salePaymentMethodValidator, amount: v.number() }))),
   cashRegisterSessionId: v.optional(v.id("cashRegisterSessions")),
   // Keep cash handed over beyond the amount due as store credit instead of giving change.
   keepChangeAsCredit: v.optional(v.boolean()),
@@ -126,8 +128,7 @@ type SaleInput = {
     discount?: number;
   }[];
   discount?: number;
-  taxRate?: number;
-  payments?: { method: PaymentMethod; amount: number }[];
+  payments?: { method: SalePaymentMethod; amount: number }[];
   /** Money already received for this sale (customer-order deposits). Linked, not copied. */
   priorPayments?: Doc<"payments">[];
   /**
@@ -155,168 +156,43 @@ export async function performSale(
   args: SaleInput
 ): Promise<Id<"sales">> {
   {
-    if (args.items.length === 0) throw new Error("A sale needs at least one item.");
-
     const branch = await ctx.db.get(args.branchId);
     if (!branch) throw new Error("Branch not found.");
-    const customer = await ctx.db.get(args.customerId);
-    if (!customer) throw new Error("Customer not found.");
 
+    // 1. Price the sale — the same calculation the till shows through `sales.quote`.
+    const {
+      customer,
+      lines,
+      subtotal,
+      manualDiscount,
+      tierDiscountAmount,
+      discount,
+      tax,
+      deliveryFeeAmount,
+      total,
+      overriddenLines,
+      priceCut,
+    } = await priceSale(ctx, args);
+    const promotionsUsed = new Set(lines.flatMap((l) => (l.promotionName ? [l.promotionName] : [])));
+
+    // 2. Stock: what is on hand less what is held for customer orders.
     const allowNegSetting = (await getSetting(ctx, "allowNegativeStock"))?.isActive ?? false;
-    const defaultTaxPercent =
-      args.taxRate ?? Number((await getSetting(ctx, "taxRatePercent"))?.value ?? "0") ?? 0;
-
-    // 1. Resolve lines, price them, and verify stock up-front.
-    const lines: {
-      productVariantId: Id<"productVariants">;
-      productName: string;
-      label: string;
-      sku: string;
-      quantity: number;
-      unitPrice: number;
-      discount: number;
-      total: number;
-      costPriceAtSale: number;
-      size?: string;
-      color?: string;
-      categoryName: string;
-      taxRateId?: Id<"taxRates">;
-      taxPercent: number;
-      net: number;
-      taxAmount: number;
-    }[] = [];
-
-    // Price overrides: lines sold at a price other than the selling price, and how much
-    // below it they went. Both count as discounts for the authority check.
-    let overriddenLines = 0;
-    let priceCut = 0;
-
-    for (const item of args.items) {
-      if (item.quantity <= 0) throw new Error("Quantities must be positive.");
-      if (item.unitPrice !== undefined && item.unitPrice < 0) {
-        throw new Error("A price cannot be negative.");
-      }
-      const variant = await ctx.db.get(item.productVariantId);
-      if (!variant || !variant.active)
-        throw new Error("A selected product variant is unavailable.");
-      const product = await ctx.db.get(variant.productId);
-      if (!product) throw new Error("Parent product missing for a variant.");
-      const category = await ctx.db.get(product.categoryId);
-      const names = await variantNames(ctx, variant);
-      const taxRate = product.taxRateId ? await ctx.db.get(product.taxRateId) : null;
-      if (taxRate && !taxRate.active) {
-        throw new Error(`The IVA rate on ${product.name} is inactive. Update the product before selling it.`);
-      }
-
-      const unitPrice = item.unitPrice ?? variant.sellingPrice;
-      if (!args.agreedPrices && Math.abs(unitPrice - variant.sellingPrice) > 1e-6) {
-        overriddenLines += 1;
-        priceCut += Math.max(0, variant.sellingPrice - unitPrice) * item.quantity;
-      }
-      const lineDiscount = item.discount ?? 0;
-      if (lineDiscount < 0) throw new Error("A discount cannot be negative.");
-      const lineTotal = Math.max(0, unitPrice * item.quantity - lineDiscount);
-
+    for (const l of lines) {
       const stock = await ctx.db
         .query("variantStock")
         .withIndex("by_branch_and_variant", (q) =>
-          q.eq("branchId", args.branchId).eq("productVariantId", item.productVariantId)
+          q.eq("branchId", args.branchId).eq("productVariantId", l.productVariantId)
         )
         .unique();
-      const holds = await ctx.db
-        .query("stockHolds")
-        .withIndex("by_branch_variant_status", (q) =>
-          q
-            .eq("branchId", args.branchId)
-            .eq("productVariantId", item.productVariantId)
-            .eq("status", "ACTIVE")
-        )
-        .collect();
-      const reserved = holds.reduce((s, h) => s + h.quantity, 0);
+      const reserved = await activeHeldQuantity(ctx, args.branchId, l.productVariantId);
       const available = (stock?.quantity ?? 0) - reserved;
-      if (available < item.quantity && !allowNegSetting) {
+      if (available < l.quantity && !allowNegSetting) {
         const reservedNote = reserved > 0 ? ` (${reserved} held for customer orders)` : "";
         throw new Error(
-          `Insufficient stock for ${product.name} (${formatVariantLabel(names, variant.sku)}). Available: ${available}${reservedNote}, requested: ${item.quantity}.`
+          `Insufficient stock for ${l.productName} (${l.label}). Available: ${available}${reservedNote}, requested: ${l.quantity}.`
         );
       }
-
-      lines.push({
-        productVariantId: item.productVariantId,
-        productName: product.name,
-        label: formatVariantLabel(names, variant.sku),
-        sku: variant.sku,
-        quantity: item.quantity,
-        unitPrice,
-        discount: lineDiscount,
-        total: lineTotal,
-        costPriceAtSale: variant.costPrice,
-        size: names.size,
-        color: names.color,
-        categoryName: category?.name ?? "Uncategorised",
-        taxRateId: taxRate?._id,
-        taxPercent: taxRate ? taxRate.percentage : defaultTaxPercent,
-        net: 0,
-        taxAmount: 0,
-      });
     }
-
-    // 2. Money.
-    const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-    const lineDiscountTotal = lines.reduce((s, l) => s + l.discount, 0);
-    const saleDiscount = Math.max(0, args.discount ?? 0);
-
-    // Automatic tier discount — server-authoritative so it can't be forged
-    // client-side, and kept out of the discount-authority check below since
-    // it's never a cashier choice. Ships dark (settings default to
-    // isActive:false / value:"0"), so this is a no-op until an admin opts in.
-    const tier = customer.tier ?? "NOVO";
-    const tierSettingKey =
-      tier === "VIP"
-        ? "tierDiscountPercentVIP"
-        : tier === "REGULAR"
-          ? "tierDiscountPercentREGULAR"
-          : null;
-    let tierDiscountPercent = 0;
-    if (tierSettingKey) {
-      const tierSetting = await getSetting(ctx, tierSettingKey);
-      if (tierSetting?.isActive) tierDiscountPercent = Number(tierSetting.value ?? "0") || 0;
-    }
-    const manualDiscount = lineDiscountTotal + saleDiscount;
-    const preTierBase = Math.max(0, subtotal - manualDiscount);
-    const tierDiscountAmount =
-      tierDiscountPercent > 0
-        ? Math.round(preTierBase * (tierDiscountPercent / 100) * 100) / 100
-        : 0;
-    const discount = manualDiscount + tierDiscountAmount;
-
-    // Sale-level discounts are spread across lines in proportion to their gross
-    // value, so each line's IVA is computed on its own net amount. The last line
-    // takes the rounding remainder, keeping the allocated total exact.
-    const saleLevelDiscount = discount - lineDiscountTotal;
-    const grossSum = lines.reduce((s, l) => s + l.total, 0);
-    let allocated = 0;
-    lines.forEach((l, i) => {
-      const share =
-        i === lines.length - 1
-          ? round2(saleLevelDiscount - allocated)
-          : grossSum > 0
-            ? round2((saleLevelDiscount * l.total) / grossSum)
-            : 0;
-      allocated = round2(allocated + share);
-      l.net = round2(Math.max(0, l.total - share));
-      l.taxAmount = round2((l.net * l.taxPercent) / 100);
-    });
-    const taxableBase = round2(lines.reduce((s, l) => s + l.net, 0));
-    const tax = round2(lines.reduce((s, l) => s + l.taxAmount, 0));
-
-    let deliveryFeeAmount = 0;
-    if (args.deliveryFeeId) {
-      const fee = await ctx.db.get(args.deliveryFeeId);
-      deliveryFeeAmount = fee?.fee ?? 0;
-    }
-
-    const total = Math.max(0, taxableBase + tax + deliveryFeeAmount);
 
     // 3. Discount authority — the manual discounts plus any price overrides, measured
     // against the list-price value; the automatic tier discount is never a cashier
@@ -324,9 +200,7 @@ export async function performSale(
     const cashierDiscount = manualDiscount + priceCut;
     const listSubtotal = subtotal + priceCut;
     const discountPct = listSubtotal > 0 ? (cashierDiscount / listSubtotal) * 100 : 0;
-    const maxWithoutApproval = Number(
-      (await getSetting(ctx, "discountMaxPercentWithoutApproval"))?.value ?? "100"
-    );
+    const maxWithoutApproval = await numberSetting(ctx, "discountMaxPercentWithoutApproval");
     if (discountPct > maxWithoutApproval) {
       requirePermission(actor, "sales.discount_large");
     } else if (cashierDiscount > 0 || overriddenLines > 0) {
@@ -358,9 +232,10 @@ export async function performSale(
     const now = Date.now();
     const saleNumber = await nextDocumentNumber(ctx, "SALE", now);
 
-    // 6. Session: every payment goes through the branch's open register.
+    // 6. Session: every payment goes through the branch's open register, except store credit,
+    // which moves no money.
     const session =
-      newPayments.length > 0
+      newPayments.some((p) => p.method !== "STORE_CREDIT")
         ? (await resolveOpenSession(ctx, args.branchId, args.cashRegisterSessionId)) ??
           (await requireOpenSession(ctx, args.branchId))
         : null;
@@ -404,6 +279,7 @@ export async function performSale(
         total: l.total,
         costPriceAtSale: l.costPriceAtSale,
         netAmount: l.net,
+        promotionId: l.promotionId,
         taxRateId: l.taxRateId,
         taxRatePercent: l.taxPercent,
         taxAmount: l.taxAmount,
@@ -426,12 +302,26 @@ export async function performSale(
     // Money already received is linked to the sale rather than recorded again.
     for (const p of priorPayments) await ctx.db.patch(p._id, { saleId });
     for (const p of newPayments) {
+      // Store credit is spent from the customer's balance (refused if it is not enough).
+      if (p.method === "STORE_CREDIT") {
+        if (customer.isGeneric) throw new Error("Store credit needs a named customer.");
+        await adjustCustomerCredit(ctx, {
+          customerId: args.customerId,
+          delta: -p.amount,
+          reason: "REDEEMED_ON_SALE",
+          referenceType: "sale",
+          referenceId: saleId,
+          userId: actor._id,
+          username: actor.username,
+          notes: `Paid ${saleNumber} with store credit`,
+        });
+      }
       await ctx.db.insert("payments", {
         saleId,
         method: p.method,
         amount: p.amount,
         kind: "payment",
-        cashRegisterSessionId: session?._id,
+        cashRegisterSessionId: p.method === "STORE_CREDIT" ? undefined : session?._id,
         userId: actor._id,
         username: actor.username,
         createdAt: now,
@@ -476,6 +366,7 @@ export async function performSale(
         (overriddenLines > 0
           ? `, price changed on ${overriddenLines} line(s) (${priceCut.toFixed(2)} below list)`
           : "") +
+        (promotionsUsed.size > 0 ? `, promotion ${[...promotionsUsed].join(", ")}` : "") +
         (change > 0 ? `, change ${change.toFixed(2)}` : "") +
         (keptAsCredit > 0 ? `, ${keptAsCredit.toFixed(2)} kept as store credit` : ""),
     });
@@ -828,5 +719,51 @@ export const get = query({
       .withIndex("by_sale", (q) => q.eq("saleId", args.id))
       .collect();
     return { ...sale, items, payments, customer, branch, returns };
+  },
+});
+
+/**
+ * What the till will charge for a cart — priced by the same `priceSale` the sale uses, so
+ * the amount due on screen is the amount saved (per-product IVA, promotions, tier discount
+ * included). Without a customer the walk-in customer is assumed. Returns `error` instead
+ * of throwing, so the till can keep showing the cart.
+ */
+export const quote = query({
+  args: {
+    token: v.string(),
+    customerId: v.optional(v.id("customers")),
+    items: saleItemsValidator,
+    discount: v.optional(v.number()),
+    deliveryFeeId: v.optional(v.id("deliveryFees")),
+  },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "pos.use");
+    const customerId =
+      args.customerId ??
+      (await ctx.db
+        .query("customers")
+        .withIndex("by_isGeneric", (q) => q.eq("isGeneric", true))
+        .first())?._id;
+    if (!customerId || args.items.length === 0) return null;
+    try {
+      const p = await priceSale(ctx, { ...args, customerId });
+      return {
+        subtotal: p.subtotal,
+        discount: p.discount,
+        tierDiscountAmount: p.tierDiscountAmount,
+        tax: p.tax,
+        deliveryFeeAmount: p.deliveryFeeAmount,
+        total: p.total,
+        lines: p.lines.map((l) => ({
+          productVariantId: l.productVariantId,
+          unitPrice: l.unitPrice,
+          total: round2(l.net + l.taxAmount),
+          promotionName: l.promotionName,
+        })),
+        error: undefined as string | undefined,
+      };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Could not price the cart." };
+    }
   },
 });

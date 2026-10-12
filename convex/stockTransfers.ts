@@ -1,11 +1,12 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { mutation, query, MutationCtx } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { nextDocumentNumber } from "./lib/numbering";
+import { assertWholeQuantity } from "./lib/pricing";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
 
 async function hydrate(ctx: MutationCtx, transferId: Id<"stockTransfers">) {
@@ -34,8 +35,7 @@ export const create = mutation({
     if (args.sourceBranchId === args.destinationBranchId)
       throw new Error("Source and destination must differ.");
     if (args.items.length === 0) throw new Error("Add at least one item.");
-    for (const it of args.items)
-      if (it.quantity <= 0) throw new Error("Quantities must be positive.");
+    for (const it of args.items) assertWholeQuantity(it.quantity, "Transfer quantities");
 
     const now = Date.now();
     const transferId = await ctx.db.insert("stockTransfers", {
@@ -67,6 +67,37 @@ export const create = mutation({
   },
 });
 
+/** Moves every line of a transfer in or out of a branch's stock. */
+async function moveTransferStock(
+  ctx: MutationCtx,
+  transfer: Doc<"stockTransfers">,
+  items: Doc<"stockTransferItems">[],
+  direction: "OUT_OF_SOURCE" | "BACK_TO_SOURCE",
+  actor: { _id: Id<"users">; username: string }
+) {
+  for (const it of items) {
+    await ctx.runMutation(internal.inventory.mutateStock, {
+      productVariantId: it.productVariantId,
+      branchId: transfer.sourceBranchId,
+      quantity: direction === "OUT_OF_SOURCE" ? -it.quantity : it.quantity,
+      movementType: direction === "OUT_OF_SOURCE" ? "TRANSFER_OUT" : "TRANSFER_IN",
+      referenceType: "stock_transfer",
+      referenceId: transfer._id,
+      notes:
+        direction === "OUT_OF_SOURCE"
+          ? `Transfer ${transfer.transferNumber} sent → destination`
+          : `Transfer ${transfer.transferNumber} cancelled — back to source`,
+      userId: actor._id,
+      username: actor.username,
+    });
+  }
+}
+
+/**
+ * Sending (IN_TRANSIT) takes the goods out of the source's stock, so they can no longer be
+ * sold there. Cancelling a sent transfer puts them back. A sent transfer cannot go back
+ * to PENDING: cancel it instead.
+ */
 export const setStatus = mutation({
   args: {
     token: v.string(),
@@ -79,26 +110,42 @@ export const setStatus = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "inventory.transfer");
-    const { transfer } = await hydrate(ctx, args.transferId);
+    const { transfer, items } = await hydrate(ctx, args.transferId);
     if (transfer.status === "RECEIVED")
       throw new Error("A received transfer cannot change status.");
     if (transfer.status === "CANCELLED")
       throw new Error("A cancelled transfer cannot change status.");
-    await ctx.db.patch(args.transferId, { status: args.status });
+    if (transfer.status === args.status) throw new Error(`The transfer is already ${args.status}.`);
+    if (args.status === "PENDING" && transfer.sentAt) {
+      throw new Error("This transfer has been sent. Cancel it to bring the goods back.");
+    }
+
+    let sentAt = transfer.sentAt;
+    if (args.status === "IN_TRANSIT" && !transfer.sentAt) {
+      await moveTransferStock(ctx, transfer, items, "OUT_OF_SOURCE", actor);
+      sentAt = Date.now();
+    }
+    if (args.status === "CANCELLED" && transfer.sentAt) {
+      await moveTransferStock(ctx, transfer, items, "BACK_TO_SOURCE", actor);
+    }
+    await ctx.db.patch(args.transferId, { status: args.status, sentAt });
     await writeAudit(ctx, {
       userId: actor._id,
       username: actor.username,
       action: "transfer.status_changed",
       entityType: "stockTransfer",
       entityId: args.transferId,
-      details: `${transfer.status} → ${args.status}`,
+      details:
+        `${transfer.status} → ${args.status}` +
+        (args.status === "IN_TRANSIT" && !transfer.sentAt ? " (stock taken out of the source)" : "") +
+        (args.status === "CANCELLED" && transfer.sentAt ? " (stock put back at the source)" : ""),
     });
   },
 });
 
 /**
- * Completing a transfer emits TRANSFER_OUT for the full sent quantity at the source
- * and TRANSFER_IN for what the destination counted. Any difference is a shortage in
+ * Completing a transfer emits TRANSFER_IN for what the destination counted, and
+ * TRANSFER_OUT for the full sent quantity at the source unless it already left when sent. Any difference is a shortage in
  * transit: it is recorded on the receipt, not put back into the destination.
  */
 export const receive = mutation({
@@ -141,18 +188,9 @@ export const receive = mutation({
       };
     });
 
+    // Not sent first: the goods leave the source now.
+    if (!transfer.sentAt) await moveTransferStock(ctx, transfer, items, "OUT_OF_SOURCE", actor);
     for (const line of lines) {
-      await ctx.runMutation(internal.inventory.mutateStock, {
-        productVariantId: line.productVariantId,
-        branchId: transfer.sourceBranchId,
-        quantity: -line.quantitySent,
-        movementType: "TRANSFER_OUT",
-        referenceType: "stock_transfer",
-        referenceId: args.transferId,
-        notes: `Transfer ${transfer.transferNumber} → destination`,
-        userId: actor._id,
-        username: actor.username,
-      });
       if (line.quantityObserved > 0) {
         await ctx.runMutation(internal.inventory.mutateStock, {
           productVariantId: line.productVariantId,

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { Search, Plus, Minus, Trash2, X } from "lucide-react";
 import { RegisterClosedNotice, useRegisterClosed } from "@/components/RegisterClosedNotice";
 import { cn } from "@/lib/utils";
-import type { PaymentMethod } from "../../../convex/lib/paymentMethods";
+import type { SalePaymentMethod as PaymentMethod } from "../../../convex/lib/paymentMethods";
 import { formatPriceRange } from "@/lib/prices";
 
 type Gender = "women" | "men" | "unisex";
@@ -37,6 +37,8 @@ type CartLine = {
   label: string;
   sku: string;
   unitPrice: number;
+  // Set when the price is a running promotion's (the server charges the same).
+  promotionName?: string;
   quantity: number;
   lineDiscount: number;
   stock: number;
@@ -62,7 +64,6 @@ export default function PosPage() {
   // Every payment needs an open register: check up front so the cashier knows before
   // ringing up a sale, not when the payment is refused.
   const registerClosed = useRegisterClosed(branchId);
-  const taxSetting = useQuery(api.settings.getByKey, { key: "taxRatePercent" });
   const sizesList = useQuery(api.sizes.list, {});
   const createSale = useMutation(api.sales.create);
   const getGeneric = useMutation(api.customers.getOrCreateGeneric);
@@ -87,7 +88,6 @@ export default function PosPage() {
   const [fichaOpen, setFichaOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const taxRate = Number(taxSetting?.value ?? "0") || 0;
 
   // Single round trip for everything the rail + catalog need about the
   // selected customer — skipped entirely for anonymous sales.
@@ -190,7 +190,8 @@ export default function PosPage() {
       _id: Id<"productVariants">;
       sku: string;
       label: string;
-      sellingPrice: number;
+      price: number;
+      promotionName?: string;
       stock: number;
       size?: string;
     },
@@ -211,7 +212,8 @@ export default function PosPage() {
           productName,
           label: v.label,
           sku: v.sku,
-          unitPrice: v.sellingPrice,
+          unitPrice: v.price,
+          promotionName: v.promotionName,
           quantity: 1,
           lineDiscount: 0,
           stock: v.stock,
@@ -262,21 +264,30 @@ export default function PosPage() {
       )
     );
 
-  const subtotal = cart.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
-  const lineDiscountTotal = cart.reduce((s, l) => s + l.lineDiscount, 0);
-  const manualDiscount = lineDiscountTotal + saleDiscount;
+  // The amounts come from the server's pricing (`sales.quote`), the same calculation the sale
+  // is saved with: per-product IVA, promotions and the tier discount included.
+  const quote = useQuery(
+    api.sales.quote,
+    cart.length > 0
+      ? {
+          token,
+          customerId: customerId ?? undefined,
+          items: cart.map((l) => ({
+            productVariantId: l.variantId,
+            quantity: l.quantity,
+            discount: l.lineDiscount || undefined,
+          })),
+          discount: saleDiscount || undefined,
+        }
+      : "skip"
+  );
+  const quoteError = quote?.error;
+  const priced = quote && !quote.error ? quote : null;
+  const subtotal = priced?.subtotal ?? 0;
   const tierDiscountPercent = customerId ? posContext?.tierDiscountPercent ?? 0 : 0;
-  const preTierBase = Math.max(0, subtotal - manualDiscount);
-  // Mirrors performSale's formula purely for display — the server recomputes
-  // this itself from the customer's stored tier, never trusting the client.
-  const tierDiscountAmount =
-    tierDiscountPercent > 0
-      ? Math.round(preTierBase * (tierDiscountPercent / 100) * 100) / 100
-      : 0;
-  const discount = manualDiscount + tierDiscountAmount;
-  const taxable = Math.max(0, subtotal - discount);
-  const tax = Math.round(taxable * (taxRate / 100) * 100) / 100;
-  const total = taxable + tax;
+  const tierDiscountAmount = priced?.tierDiscountAmount ?? 0;
+  const tax = priced?.tax ?? 0;
+  const total = priced?.total ?? 0;
 
   const completeSale = async (
     payments: { method: PaymentMethod; amount: number }[],
@@ -505,6 +516,11 @@ export default function PosPage() {
                         <p className="text-sm font-display text-primary mt-1">
                           {formatPriceRange(fmt, p.minPrice, p.maxPrice)}
                         </p>
+                        {p.promotionName && (
+                          <p className="text-[9px] uppercase tracking-wider font-bold text-success">
+                            {p.promotionName}
+                          </p>
+                        )}
                         {knownVariant ? (
                           <p className="text-[9px] uppercase tracking-wider mt-0.5 font-bold">
                             {knownVariant.size}:{" "}
@@ -607,6 +623,9 @@ export default function PosPage() {
                       </p>
                       <p className="text-[10px] text-on-surface-variant">
                         {l.label} · {fmt(l.unitPrice)}
+                        {l.promotionName && (
+                          <span className="ml-1 font-bold text-success">· {l.promotionName}</span>
+                        )}
                       </p>
                     </div>
                     <button
@@ -680,7 +699,8 @@ export default function PosPage() {
                 value={`- ${fmt(tierDiscountAmount)}`}
               />
             )}
-            {tax > 0 && <Row label={t("Tax ({rate}%)", { rate: taxRate })} value={fmt(tax)} />}
+            {tax > 0 && <Row label={t("IVA")} value={fmt(tax)} />}
+            {quoteError && <p className="text-xs font-bold text-error">{quoteError}</p>}
             <div className="flex items-center justify-between pt-1 border-t border-outline/40">
               <span className="text-sm font-black uppercase tracking-wider">{t("Total")}</span>
               <span className="text-xl font-display text-primary">{fmt(total)}</span>
@@ -688,7 +708,7 @@ export default function PosPage() {
             <Button
               className="w-full"
               size="lg"
-              disabled={cart.length === 0 || registerClosed || customerBlocked}
+              disabled={cart.length === 0 || registerClosed || customerBlocked || !priced}
               onClick={() => setPayOpen(true)}
             >
               {registerClosed
@@ -708,6 +728,7 @@ export default function PosPage() {
           onClose={() => setPayOpen(false)}
           onComplete={completeSale}
           allowCredit={!!customerId}
+          storeCredit={customerId ? posContext?.money.storeCredit ?? 0 : 0}
           extraFields={
             !customerId ? (
               <AnonymousCustomerCapture

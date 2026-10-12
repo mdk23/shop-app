@@ -336,6 +336,7 @@ describe("receiving lists and holds", () => {
           quantity,
           status: "ACTIVE",
           createdAt: Date.now(),
+          expiresAt: Date.now() + 86_400_000,
         });
       }
     });

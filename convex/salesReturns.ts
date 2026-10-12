@@ -13,6 +13,7 @@ import { nextDocumentNumber } from "./lib/numbering";
 import { requireOpenSession } from "./cashRegister";
 import { paymentMethodValidator, refundMethodValidator } from "./lib/paymentMethods";
 import { settleSale, splitReturnValue, unitValueOfLine } from "./lib/saleMoney";
+import { assertWholeQuantity } from "./lib/pricing";
 
 /**
  * A return's value and refund, read from where they live: the goods' value is the sum of
@@ -111,7 +112,7 @@ async function resolveReturnLines(
     .collect();
   const resolved = [];
   for (const item of items) {
-    if (item.quantity <= 0) throw new Error("Return quantity must be positive.");
+    assertWholeQuantity(item.quantity, "Return quantities");
     const saleItem = saleItems.find((si) => si._id === item.saleItemId);
     if (!saleItem) throw new Error("A return line does not belong to this sale.");
     const returned = await alreadyReturnedQty(ctx, item.saleItemId);

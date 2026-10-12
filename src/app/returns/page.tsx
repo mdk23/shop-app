@@ -214,6 +214,7 @@ function ReturnModal({
   sale: {
     _id: Id<"sales">;
     branchId: Id<"branches">;
+    customerId: Id<"customers">;
     saleNumber: string;
     customerName?: string;
     items: {
@@ -265,10 +266,20 @@ function ReturnModal({
   );
   const estRefund = preview?.refund ?? 0;
   const debtCleared = preview?.debtCleared ?? 0;
-  const replacementTotal = replacements.reduce(
-    (s, r) => s + r.sellingPrice * r.quantity,
-    0
+  // The replacement is priced by the server like any sale (IVA, promotions, tier discount).
+  const replacementQuote = useQuery(
+    api.sales.quote,
+    replacements.length > 0
+      ? {
+          token,
+          customerId: sale.customerId,
+          items: replacements.map((r) => ({ productVariantId: r.variantId, quantity: r.quantity })),
+        }
+      : "skip"
   );
+  const replacementTotal =
+    (replacementQuote && !replacementQuote.error ? replacementQuote.total : undefined) ??
+    replacements.reduce((s, r) => s + r.sellingPrice * r.quantity, 0);
   const difference = replacementTotal - estRefund;
   // Money taken or given back goes through the open register; store credit moves no money.
   const registerClosed = useRegisterClosed(sale.branchId);
