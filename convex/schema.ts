@@ -285,8 +285,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_active", ["active"]),
-
-  // The one source of document numbers: a gapless series per document type and year
+  // The one source of document numbers: one continuous gapless series per document type,
+  // numbers shaped "FT-0042" (see convex/lib/numbering.ts). `lastNumber` is bumped in the same mutation that
   // (see convex/lib/numbering.ts). `lastNumber` is bumped in the same mutation that
   // creates the document, so a rolled-back document consumes no number and a cancelled
   // one keeps its number.
@@ -300,19 +300,18 @@ export default defineSchema({
       v.literal("CUSTOMER_ORDER")
     ),
     prefix: v.string(),
-    fiscalYear: v.number(),
     lastNumber: v.number(),
     active: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_type_year", ["documentType", "fiscalYear"]),
+  }).index("by_type", ["documentType"]),
 
   // ─────────────────────────────────────────────
   // SALES
   // ─────────────────────────────────────────────
 
   sales: defineTable({
-    saleNumber: v.string(), // the gapless fiscal number, e.g. "FT 2026/000042"
+    saleNumber: v.string(), // the gapless number, e.g. "FT-0042"
     branchId: v.id("branches"),
     customerId: v.id("customers"),
     userId: v.optional(v.id("users")),

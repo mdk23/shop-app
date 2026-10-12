@@ -224,7 +224,7 @@ describe("IVA per line", () => {
 });
 
 describe("fiscal numbering", () => {
-  test("numbers sales gaplessly within the fiscal year", async () => {
+  test("numbers sales gaplessly", async () => {
     const { t, ids, token } = await seed();
     const numbers: string[] = [];
     for (let i = 0; i < 3; i++) {
@@ -238,9 +238,7 @@ describe("fiscal numbering", () => {
       const sale = await t.run((ctx) => ctx.db.get(saleId));
       numbers.push(sale!.saleNumber);
     }
-    const seqs = numbers.map((n) => Number(n.split("/")[1]));
-    expect(seqs).toEqual([1, 2, 3]);
-    expect(numbers[0]).toMatch(/^FT \d{4}\/000001$/);
+    expect(numbers).toEqual(["FT-0001", "FT-0002", "FT-0003"]);
   });
 
   test("a rolled-back sale consumes no fiscal number", async () => {
@@ -271,9 +269,7 @@ describe("fiscal numbering", () => {
 
     const a = await t.run((ctx) => ctx.db.get(first));
     const b = await t.run((ctx) => ctx.db.get(next));
-    expect(Number(b!.saleNumber.split("/")[1])).toBe(
-      Number(a!.saleNumber.split("/")[1]) + 1
-    );
+    expect([a!.saleNumber, b!.saleNumber]).toEqual(["FT-0001", "FT-0002"]);
   });
 
   test("copies the customer's NUIT onto the sale", async () => {

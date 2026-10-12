@@ -242,7 +242,7 @@ describe("purchase receipts", () => {
       lines: [{ productVariantId: ids.variantA, quantityReceived: 4 }],
     });
     const first = await t.query(api.purchaseReceipts.get, { id: r1 });
-    expect(first?.receiptNumber).toMatch(/^RC \d{4}\/000001$/);
+    expect(first?.receiptNumber).toBe("RC-0001");
     expect(first?.items[0].discrepancy).toBeUndefined();
     expect(await stockOf(t, ids.main, ids.variantA)).toBe(4);
 

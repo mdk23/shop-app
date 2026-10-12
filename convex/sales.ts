@@ -23,7 +23,7 @@ import { priceSale } from "./lib/pricing";
 import { activeHeldQuantity } from "./stockHolds";
 import { refreshCustomerProfile } from "./customerProfile";
 import { currentNuit, round2 } from "./lib/fiscal";
-import { nextDocumentNumber } from "./lib/numbering";
+import { formatCode, nextDocumentNumber } from "./lib/numbering";
 import { keptByMethod, paymentStatusFor, saleMoney, settleSale } from "./lib/saleMoney";
 
 // ─────────────────────────────────────────────
@@ -605,17 +605,16 @@ export const listPaged = query({
     const term = search?.trim();
     if (!term) return await salesInRange(ctx, filters).paginate(paginationOpts);
 
-    // Sale numbers ("FT 2026/000042") by prefix, or by their number alone ("42").
+    // Sale numbers ("FT-0042") by prefix, or by their number alone ("42").
     const upper = term.toUpperCase();
     const byNumber = await ctx.db
       .query("sales")
       .withIndex("by_sale_number", (q) => q.gte("saleNumber", upper).lt("saleNumber", upper + "~"))
       .take(50);
     if (/^\d+$/.test(term)) {
-      const year = getLocalDateString(args.end).slice(0, 4);
       const exact = await ctx.db
         .query("sales")
-        .withIndex("by_sale_number", (q) => q.eq("saleNumber", `FT ${year}/${term.padStart(6, "0")}`))
+        .withIndex("by_sale_number", (q) => q.eq("saleNumber", formatCode("FT", Number(term))))
         .unique();
       if (exact) byNumber.push(exact);
     }

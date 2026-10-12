@@ -1350,14 +1350,23 @@ describe("customer profile & tier", () => {
 });
 
 describe("document numbers and customer pages", () => {
-  test("a document made just after midnight on 1 January in Maputo gets the new year", async () => {
-    const { t } = await seed();
-    // 31 Dec 2026 22:30 UTC = 1 Jan 2027 00:30 in Maputo.
-    const number = await t.run(async (ctx) => {
+  test("codes are PREFIX-####, one continuous series per type that never restarts", async () => {
+    const { t, ids } = await seed();
+    const numbers = await t.run(async (ctx) => {
       const { nextDocumentNumber } = await import("./lib/numbering");
-      return await nextDocumentNumber(ctx, "SALE", Date.UTC(2026, 11, 31, 22, 30));
+      return [
+        await nextDocumentNumber(ctx, "SALE", Date.UTC(2026, 11, 31, 12)),
+        await nextDocumentNumber(ctx, "SALE", Date.UTC(2027, 0, 1, 12)), // a new year: no restart
+        await nextDocumentNumber(ctx, "RETURN"),
+        await nextDocumentNumber(ctx, "PURCHASE_ORDER"),
+        await nextDocumentNumber(ctx, "PURCHASE_RECEIPT"),
+        await nextDocumentNumber(ctx, "TRANSFER"),
+        await nextDocumentNumber(ctx, "CUSTOMER_ORDER"),
+      ];
     });
-    expect(number).toBe("FT 2027/000001");
+    expect(numbers).toEqual(["FT-0001", "FT-0002", "NC-0001", "PO-0001", "RC-0001", "TR-0001", "CE-0001"]);
+    const customerId = await t.mutation(api.customers.create, { token: ids.admin.token, name: "Ana", phone1: "841112223" });
+    expect((await t.run((ctx) => ctx.db.get(customerId)))?.customerCode).toBe("CLI-0001");
   });
 
   test("customer pages stay full when archived customers sit between them", async () => {
@@ -1624,9 +1633,8 @@ describe("sales list", () => {
     expect(unpaid.page).toHaveLength(1);
     const byName = await t.query(api.sales.listPaged, { ...range, search: "Jane", paginationOpts: { numItems: 10, cursor: null } });
     expect(byName.page).toHaveLength(2);
-    const year = new Date(Date.now() + 2 * 3_600_000).getUTCFullYear();
     const byNumber = await t.query(api.sales.listPaged, { ...range, search: "3", paginationOpts: { numItems: 10, cursor: null } });
-    expect(byNumber.page.map((s) => s.saleNumber)).toEqual([`FT ${year}/000003`]);
+    expect(byNumber.page.map((s) => s.saleNumber)).toEqual(["FT-0003"]);
     expect(await t.query(api.sales.rangeTotals, range)).toMatchObject({ count: 5, revenue: 1250, outstanding: 250 });
     expect(await t.query(api.sales.listForExport, range)).toHaveLength(5);
   });

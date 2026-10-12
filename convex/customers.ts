@@ -12,6 +12,7 @@ import { describeChanges, writeAudit } from "./audit";
 import { nextSequence } from "./metrics";
 import { getSetting, numberSetting } from "./settings";
 import { normalizePhone } from "./lib/phone";
+import { formatCode } from "./lib/numbering";
 import { loadVariantNames } from "./lib/variantNames";
 
 // ─────────────────────────────────────────────
@@ -560,7 +561,7 @@ export const create = mutation({
     const seq = await nextSequence(ctx, "customer_code_sequence");
     const id = await ctx.db.insert("customers", {
       ...data,
-      customerCode: `C-${String(seq).padStart(5, "0")}`,
+      customerCode: formatCode("CLI", seq),
       isGeneric: false,
       status: "ACTIVE",
     });
@@ -672,7 +673,7 @@ export const createMinimal = mutation({
     const id = await ctx.db.insert("customers", {
       name: args.name?.trim() || `Cliente ${normalized}`,
       phone1: normalized,
-      customerCode: `C-${String(seq).padStart(5, "0")}`,
+      customerCode: formatCode("CLI", seq),
       isGeneric: false,
       status: "ACTIVE",
       whatsappOptIn: args.whatsappOptIn ?? false,
