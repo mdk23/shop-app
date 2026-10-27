@@ -24,6 +24,26 @@ export async function activeHeldQuantity(
   return holds.filter((h) => h.expiresAt > now).reduce((s, h) => s + h.quantity, 0);
 }
 
+/**
+ * What can be sold or newly reserved at a branch: stock on hand less what is held for
+ * customer orders. The one definition used by the till, sales and orders.
+ */
+export async function availableToSell(
+  ctx: QueryCtx,
+  branchId: Id<"branches">,
+  productVariantId: Id<"productVariants">
+): Promise<{ onHand: number; held: number; available: number }> {
+  const stock = await ctx.db
+    .query("variantStock")
+    .withIndex("by_branch_and_variant", (q) =>
+      q.eq("branchId", branchId).eq("productVariantId", productVariantId)
+    )
+    .unique();
+  const onHand = stock?.quantity ?? 0;
+  const held = await activeHeldQuantity(ctx, branchId, productVariantId);
+  return { onHand, held, available: onHand - held };
+}
+
 /** Quantity held for customer orders per variant at a branch, for the stock screens. */
 export const activeByBranch = query({
   args: {

@@ -76,7 +76,7 @@ export const list = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "users.manage");
-    const users = await ctx.db.query("users").order("desc").collect();
+    const users = await ctx.db.query("users").order("desc").take(1000);
     // Strip password hash from public response
     return users.map(withoutPasswordHash);
   },

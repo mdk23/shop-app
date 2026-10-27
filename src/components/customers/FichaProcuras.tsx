@@ -25,9 +25,9 @@ import { useTranslation } from "@/contexts/LanguageContext";
 export function FichaProcuras({ customerId }: { customerId: Id<"customers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const requests = useQuery(api.demands.listByCustomer, { customerId });
-  const sizes = useQuery(api.sizes.list, {});
-  const colors = useQuery(api.colors.list, {});
+  const requests = useQuery(api.demands.listByCustomer, { token, customerId });
+  const sizes = useQuery(api.sizes.list, { token });
+  const colors = useQuery(api.colors.list, { token });
   const create = useMutation(api.demands.create);
   const setStage = useMutation(api.demands.setStage);
   const [losing, setLosing] = useState<Doc<"demands"> | null>(null);

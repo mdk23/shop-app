@@ -25,7 +25,15 @@ import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
-type Line = { productVariantId: Id<"productVariants">; label: string; quantity: number; unitCost: number; outstanding?: number };
+type Line = {
+  productVariantId: Id<"productVariants">;
+  label: string;
+  quantity: number;
+  unitCost: number;
+  outstanding?: number;
+  /** Units of the line on the chosen shipment. */
+  shipped?: number;
+};
 
 export default function NewReceiptPage() {
   const { t } = useTranslation();
@@ -33,13 +41,15 @@ export default function NewReceiptPage() {
   const fmt = useCurrency();
   const router = useRouter();
   const branch = useResolvedBranch();
-  const openOrders = useQuery(api.purchaseReceipts.openOrders, {});
-  const suppliers = useQuery(api.suppliers.list, {});
+  const openOrders = useQuery(api.purchaseReceipts.openOrders, { token });
+  const suppliers = useQuery(api.suppliers.list, { token });
+  const inTransit = useQuery(api.shipments.list, { token, status: "IN_TRANSIT" });
   const create = useMutation(api.purchaseReceipts.create);
   const inspect = useMutation(api.receiptInspections.create);
 
   const [source, setSource] = useState<string>("");
   const [supplierId, setSupplierId] = useState<string>("");
+  const [shipmentId, setShipmentId] = useState<string>("");
   const [deliveryNote, setDeliveryNote] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
@@ -47,8 +57,28 @@ export default function NewReceiptPage() {
   const [inspectionNotes, setInspectionNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Shipments still on the way that carry the chosen order.
+  const shipmentsForOrder = (inTransit ?? []).filter((sh) =>
+    sh.orders.some((o) => o._id === source && !o.received)
+  );
+
+  const pickShipment = (value: string) => {
+    setShipmentId(value);
+    const sh = inTransit?.find((x) => x._id === value);
+    // Expect what the shipment carries for this order; without one, what the order still has outstanding.
+    setLines((prev) =>
+      prev.map((l) => {
+        const shipped = sh?.items
+          .filter((i) => i.purchaseOrderId === source && i.productVariantId === l.productVariantId)
+          .reduce((n, i) => n + i.quantity, 0);
+        return sh ? { ...l, shipped: shipped ?? 0, quantity: shipped ?? 0 } : { ...l, shipped: undefined, quantity: l.outstanding ?? l.quantity };
+      })
+    );
+  };
+
   const pickSource = (value: string) => {
     setSource(value);
+    setShipmentId("");
     setLines([]);
     const found = openOrders?.find((o) => o._id === value);
     if (found) {
@@ -88,6 +118,8 @@ export default function NewReceiptPage() {
         branchId: source ? undefined : branch.branchId,
         deliveryNoteRef: deliveryNote || undefined,
         notes: notes || undefined,
+        shipmentId: shipmentId ? (shipmentId as Id<"shipments">) : undefined,
+        discrepancyReason: inspectionNotes || undefined,
         lines: received.map((l) => ({
           productVariantId: l.productVariantId,
           quantityReceived: l.quantity,
@@ -131,6 +163,19 @@ export default function NewReceiptPage() {
                   ))}
                 </Select>
               </Field>
+              {source && shipmentsForOrder.length > 0 && (
+                <Field label={t("Shipment")}>
+                  <Select value={shipmentId} onChange={(e) => pickShipment(e.target.value)}>
+                    <option value="">{t("Not from a recorded shipment")}</option>
+                    {shipmentsForOrder.map((sh) => (
+                      <option key={sh._id} value={sh._id}>
+                        {sh.carrier}
+                        {sh.trackingReference ? ` · ${sh.trackingReference}` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
               {!source && (
                 <>
                   <Field label={t("Supplier")} required>
@@ -164,6 +209,7 @@ export default function NewReceiptPage() {
                   <tr>
                     <Th>{t("Item")}</Th>
                     <Th className="text-right">{t("Outstanding")}</Th>
+                    {shipmentId && <Th className="text-right">{t("Shipped")}</Th>}
                     <Th className="text-right">{t("Received now")}</Th>
                     <Th />
                   </tr>
@@ -171,17 +217,19 @@ export default function NewReceiptPage() {
                 <tbody>
                   {lines.length === 0 && (
                     <tr>
-                      <Td colSpan={4} className="text-center text-on-surface-variant">
+                      <Td colSpan={shipmentId ? 5 : 4} className="text-center text-on-surface-variant">
                         {t("No lines yet")}
                       </Td>
                     </tr>
                   )}
                   {lines.map((l, idx) => {
                     const over = l.outstanding !== undefined && l.quantity > l.outstanding;
+                    const short = l.shipped !== undefined && l.quantity < l.shipped;
                     return (
                       <tr key={l.productVariantId}>
                         <Td>{l.label}</Td>
                         <Td className="text-right">{l.outstanding ?? "—"}</Td>
+                        {shipmentId && <Td className="text-right">{l.shipped ?? 0}</Td>}
                         <Td className="text-right">
                           <TextInput
                             type="number"
@@ -197,7 +245,10 @@ export default function NewReceiptPage() {
                             className="w-24 ml-auto"
                           />
                         </Td>
-                        <Td>{over && <Badge tone="warning">{t("Over the order")}</Badge>}</Td>
+                        <Td>
+                          {over && <Badge tone="warning">{t("Over the order")}</Badge>}
+                          {short && <Badge tone="warning">{t("Short on the shipment")}</Badge>}
+                        </Td>
                       </tr>
                     );
                   })}

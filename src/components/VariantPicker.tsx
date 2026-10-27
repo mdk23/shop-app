@@ -8,6 +8,7 @@ import { inputClass } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { Search } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 export type PickedVariant = {
   variantId: Id<"productVariants">;
@@ -24,16 +25,17 @@ export function VariantPicker({
   onPick: (v: PickedVariant) => void;
   placeholder?: string;
 }) {
+  const token = useToken();
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [openProduct, setOpenProduct] = useState<Id<"products"> | null>(null);
   const products = useQuery(
     api.products.list,
-    search.trim() ? { search, includeInactive: false } : "skip"
+    search.trim() ? { token, search, includeInactive: false } : "skip"
   );
   const detail = useQuery(
     api.products.get,
-    openProduct ? { id: openProduct } : "skip"
+    openProduct ? { token, id: openProduct } : "skip"
   );
 
   return (

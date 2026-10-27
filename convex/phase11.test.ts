@@ -108,7 +108,7 @@ describe("supplier terms and tax number", () => {
       paymentTermId: termId,
       nuit: "400000002",
     });
-    const row = (await t.query(api.suppliers.list, {})).find((s) => s._id === supplierId);
+    const row = (await t.query(api.suppliers.list, { token })).find((s) => s._id === supplierId);
     expect(row).toMatchObject({ paymentTermName: "30 dias", nuit: "400000002" });
 
     const identities = await t.run((ctx) =>
@@ -159,7 +159,7 @@ describe("supplier evaluation and relations", () => {
       qualityScore: 4,
       punctualityPercent: 90,
     });
-    expect(await t.query(api.supplierEvaluations.listBySupplier, { supplierId: ids.supplierId })).toHaveLength(1);
+    expect(await t.query(api.supplierEvaluations.listBySupplier, { token, supplierId: ids.supplierId })).toHaveLength(1);
   });
 
   test("a supplier has one open relation, and a new term closes the previous one", async () => {
@@ -185,7 +185,7 @@ describe("supplier evaluation and relations", () => {
       termType: "DEADLINES",
       content: "10 dias",
     });
-    const [rel] = await t.query(api.supplyRelations.listBySupplier, { supplierId });
+    const [rel] = await t.query(api.supplyRelations.listBySupplier, { token, supplierId });
     const deadlines = rel.terms.filter((term) => term.termType === "DEADLINES");
     expect(deadlines.filter((term) => term.validTo === undefined).map((term) => term.content)).toEqual(["10 dias"]);
   });
@@ -252,7 +252,7 @@ describe("quality issues, inspections and shipments", () => {
       t.mutation(api.receiptInspections.create, { token, receiptId, result: "DISCREPANCY" })
     ).rejects.toThrow(/Describe the discrepancy/);
     await t.mutation(api.receiptInspections.create, { token, receiptId, result: "OK" });
-    expect(await t.query(api.receiptInspections.listByReceipt, { receiptId })).toHaveLength(1);
+    expect(await t.query(api.receiptInspections.listByReceipt, { token, receiptId })).toHaveLength(1);
   });
 
   test("a shipment arrives once and keeps its customs documents", async () => {
@@ -273,7 +273,7 @@ describe("quality issues, inspections and shipments", () => {
     await expect(t.mutation(api.shipments.markArrived, { token, id: shipmentId })).rejects.toThrow(
       /already arrived/
     );
-    const rows = await t.query(api.shipments.list, { supplierId: ids.supplierId });
+    const rows = await t.query(api.shipments.list, { token, supplierId: ids.supplierId });
     expect(rows[0]).toMatchObject({ status: "ARRIVED", supplierName: "Supplier Co", orderCode: "PO-00001" });
     expect(rows[0].customs).toHaveLength(1);
   });
@@ -303,8 +303,8 @@ describe("quality issues, inspections and shipments", () => {
 
 describe("receiving lists and holds", () => {
   test("open orders show only what is still outstanding", async () => {
-    const { t } = await seed();
-    const orders = await t.query(api.purchaseReceipts.openOrders, {});
+    const { t, token } = await seed();
+    const orders = await t.query(api.purchaseReceipts.openOrders, { token });
     expect(orders).toHaveLength(1);
     expect(orders[0].lines[0].outstanding).toBe(6);
   });

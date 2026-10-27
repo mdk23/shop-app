@@ -42,7 +42,7 @@ export default function DeliveryFeesPage() {
   const fmt = useCurrency();
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
-  const fees = useQuery(api.deliveryFees.list, { search });
+  const fees = useQuery(api.deliveryFees.list, { token, search });
   const page = useClientPage(fees ?? []);
   const update = useMutation(api.deliveryFees.update);
   const remove = useMutation(api.deliveryFees.remove);

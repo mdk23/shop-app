@@ -31,8 +31,9 @@ export async function openRelationFor(
 
 /** Relations with a supplier, each with its terms and the latest orders placed under it. */
 export const listBySupplier = query({
-  args: { supplierId: v.id("suppliers") },
+  args: { token: v.string(), supplierId: v.id("suppliers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "suppliers.view");
     const relations = await ctx.db
       .query("supplyRelations")
       .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId))

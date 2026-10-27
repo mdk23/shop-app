@@ -18,7 +18,7 @@ export default function StockCountPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const countId = params.id as Id<"stockCounts">;
-  const count = useQuery(api.stockCounts.get, { id: countId });
+  const count = useQuery(api.stockCounts.get, { token, id: countId });
   const record = useMutation(api.stockCounts.recordCounts);
   const close = useMutation(api.stockCounts.close);
 

@@ -39,9 +39,9 @@ const KIND_LABEL: Record<Kind, string> = {
 export default function PromotionsPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const promotions = useQuery(api.promotions.list, {});
-  const categories = useQuery(api.categories.list, {});
-  const collections = useQuery(api.collections.list, {});
+  const promotions = useQuery(api.promotions.list, { token });
+  const categories = useQuery(api.categories.list, { token });
+  const collections = useQuery(api.collections.list, { token });
   const create = useMutation(api.promotions.create);
   const deactivate = useMutation(api.promotions.deactivate);
 

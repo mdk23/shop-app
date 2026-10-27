@@ -18,17 +18,18 @@ import {
   inputClass,
 } from "@/components/ui";
 import { ReceiptModal } from "@/components/pos/ReceiptModal";
-import { useCurrency } from "@/lib/useShop";
+import { useCurrency, useToken } from "@/lib/useShop";
 import { useClientPage } from "@/lib/pagination";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { Search, Printer } from "lucide-react";
 
 export default function ReceiptsPage() {
+  const token = useToken();
   const fmt = useCurrency();
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<Id<"sales"> | null>(null);
-  const sales = useQuery(api.sales.listRecent, { limit: 100 });
+  const sales = useQuery(api.sales.listRecent, { token, limit: 100 });
 
   const filtered = useMemo(() => {
     const t = search.trim().toLowerCase();

@@ -20,11 +20,11 @@ import { recordSaleMetrics, sumTotals, totalsByBranch, trackSale } from "./lib/s
 import { adjustCustomerCredit } from "./customerCredits";
 import { numberSetting } from "./settings";
 import { priceSale } from "./lib/pricing";
-import { activeHeldQuantity } from "./stockHolds";
+import { availableToSell } from "./stockHolds";
 import { refreshCustomerProfile } from "./customerProfile";
 import { currentNuit, round2 } from "./lib/fiscal";
 import { formatCode, nextDocumentNumber } from "./lib/numbering";
-import { keptByMethod, paymentStatusFor, saleMoney, settleSale } from "./lib/saleMoney";
+import { keptByMethod, saleMoney, settleSale } from "./lib/saleMoney";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -44,7 +44,7 @@ async function resolveOpenSession(
   const open = await ctx.db
     .query("cashRegisterSessions")
     .withIndex("by_status", (q) => q.eq("status", "OPEN"))
-    .collect();
+    .take(1000);
   return open.find((s) => s.branchId === branchId) ?? open.find((s) => !s.branchId) ?? null;
 }
 
@@ -99,7 +99,8 @@ const saleItemsValidator = v.array(
 
 const saleInputValidator = {
   branchId: v.id("branches"),
-  customerId: v.id("customers"),
+  // Absent (or the walk-in placeholder) for a sale with no customer.
+  customerId: v.optional(v.id("customers")),
   items: saleItemsValidator,
   discount: v.optional(v.number()), // absolute, sale-level
   payments: v.optional(v.array(v.object({ method: salePaymentMethodValidator, amount: v.number() }))),
@@ -113,7 +114,7 @@ const saleInputValidator = {
 
 type SaleInput = {
   branchId: Id<"branches">;
-  customerId: Id<"customers">;
+  customerId?: Id<"customers">;
   items: {
     productVariantId: Id<"productVariants">;
     quantity: number;
@@ -170,14 +171,7 @@ export async function performSale(
 
     // 2. Stock: what is on hand less what is held for customer orders.
     for (const l of lines) {
-      const stock = await ctx.db
-        .query("variantStock")
-        .withIndex("by_branch_and_variant", (q) =>
-          q.eq("branchId", args.branchId).eq("productVariantId", l.productVariantId)
-        )
-        .unique();
-      const reserved = await activeHeldQuantity(ctx, args.branchId, l.productVariantId);
-      const available = (stock?.quantity ?? 0) - reserved;
+      const { held: reserved, available } = await availableToSell(ctx, args.branchId, l.productVariantId);
       if (available < l.quantity) {
         const reservedNote = reserved > 0 ? ` (${reserved} held for customer orders)` : "";
         throw new Error(
@@ -206,7 +200,7 @@ export async function performSale(
       (args.payments ?? []).filter((p) => p.amount > 0),
       round2(Math.max(0, total - priorPaid)),
       !!args.keepChangeAsCredit,
-      !!customer.isGeneric
+      !customer
     );
     const payments = [
       ...priorPayments.map((p) => ({ method: p.method, amount: p.amount })),
@@ -215,10 +209,8 @@ export async function performSale(
     const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
     const appliedToSale = Math.min(paidAmount, total);
     const overpayment = Math.max(0, paidAmount - total);
-    const balance = Math.max(0, total - appliedToSale);
     // A rung-up sale is COMPLETED; whether it is paid is its paymentStatus.
     const status = "COMPLETED" as const;
-    const paymentStatus = paymentStatusFor(appliedToSale, total);
 
     // 5. Sale number: the gapless fiscal number, the sale's only number.
     const now = Date.now();
@@ -236,7 +228,8 @@ export async function performSale(
     const saleId = await ctx.db.insert("sales", {
       saleNumber,
       branchId: args.branchId,
-      customerId: args.customerId,
+      // A walk-in sale has no customer; the placeholder is never stored.
+      customerId: customer?._id,
       userId: actor._id,
       username: actor.username,
       status,
@@ -244,15 +237,17 @@ export async function performSale(
       discount,
       tax,
       total,
-      paidAmount: appliedToSale,
-      balance,
-      paymentStatus,
+      // Unpaid until the payment rows below exist; settleSale then sets these from them,
+      // the one calculation every later payment, return and cancellation also uses.
+      paidAmount: 0,
+      balance: total,
+      paymentStatus: "UNPAID",
       isDelivery: args.isDelivery,
       deliveryFeeId: args.deliveryFeeId,
       deliveryFeeAmount: deliveryFeeAmount || undefined,
       tierDiscountAmount: tierDiscountAmount || undefined,
-      customerNuit: await currentNuit(ctx, customer._id),
-      customerName: customer.name,
+      customerNuit: customer ? await currentNuit(ctx, customer._id) : undefined,
+      customerName: customer?.name,
       createdAt: now,
       updatedAt: now,
     });
@@ -295,9 +290,9 @@ export async function performSale(
     for (const p of newPayments) {
       // Store credit is spent from the customer's balance (refused if it is not enough).
       if (p.method === "STORE_CREDIT") {
-        if (customer.isGeneric) throw new Error("Store credit needs a named customer.");
+        if (!customer) throw new Error("Store credit needs a named customer.");
         await adjustCustomerCredit(ctx, {
-          customerId: args.customerId,
+          customerId: customer._id,
           delta: -p.amount,
           reason: "REDEEMED_ON_SALE",
           referenceType: "sale",
@@ -319,11 +314,13 @@ export async function performSale(
       });
     }
 
+    await settleSale(ctx, saleId);
+
     // 11. Overpayment → store credit: money already received beyond the total (deposits),
     // or change the customer chose to leave as credit.
-    if (overpayment > 0 && !customer.isGeneric) {
+    if (overpayment > 0 && customer) {
       await adjustCustomerCredit(ctx, {
-        customerId: args.customerId,
+        customerId: customer._id,
         delta: overpayment,
         reason: "OVERPAYMENT",
         referenceType: "sale",
@@ -338,7 +335,7 @@ export async function performSale(
     // since its saleItems were just inserted above). Skipped for the
     // walk-in/generic customer inside the helper. Runs before metrics/audit
     // so a failure here can never leave a misleading "sale created" trail.
-    await refreshCustomerProfile(ctx, args.customerId, {
+    await refreshCustomerProfile(ctx, customer?._id, {
       _id: actor._id,
       username: actor.username,
     });
@@ -373,7 +370,7 @@ export const create = mutation({
     const actor = await authorize(ctx, token, "pos.use");
     // A new sale needs a customer who can buy. Exchanges and order collections reuse
     // performSale for business that already exists, so they are not checked.
-    const customer = await ctx.db.get(rest.customerId);
+    const customer = rest.customerId ? await ctx.db.get(rest.customerId) : null;
     if (customer) assertCustomerCanBuy(customer);
     return await performSale(ctx, actor, rest);
   },
@@ -453,6 +450,7 @@ export const cancel = mutation({
       : null;
     for (const r of refunds) {
       if (r.method === "STORE_CREDIT") {
+        if (!sale.customerId) throw new Error("A sale without a customer cannot be refunded as store credit.");
         await adjustCustomerCredit(ctx, {
           customerId: sale.customerId,
           delta: r.amount,
@@ -510,8 +508,9 @@ export const cancel = mutation({
 // ─────────────────────────────────────────────
 
 export const listRecent = query({
-  args: { limit: v.optional(v.number()), branchId: v.optional(v.id("branches")) },
+  args: { token: v.string(), limit: v.optional(v.number()), branchId: v.optional(v.id("branches")) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     let rows = await ctx.db
       .query("sales")
       .withIndex("by_created_at")
@@ -590,8 +589,9 @@ function salesInRange(ctx: QueryCtx, f: SaleListFilters) {
 
 /** The sales list, a page at a time. A search looks up sale numbers and customer names. */
 export const listPaged = query({
-  args: { ...saleListFilters, search: v.optional(v.string()), paginationOpts: paginationOptsValidator },
+  args: { token: v.string(), ...saleListFilters, search: v.optional(v.string()), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     const { search, paginationOpts, ...filters } = args;
     const term = search?.trim();
     if (!term) return await salesInRange(ctx, filters).paginate(paginationOpts);
@@ -638,14 +638,18 @@ export const listPaged = query({
 
 /** Every sale for the CSV export, on request (up to 5,000). */
 export const listForExport = query({
-  args: saleListFilters,
-  handler: async (ctx, args) => await salesInRange(ctx, args).take(5000),
+  args: { token: v.string(), ...saleListFilters },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
+    return await salesInRange(ctx, args).take(5000);
+  },
 });
 
 /** The period's totals for the sales page, from the daily/monthly sales totals. */
 export const rangeTotals = query({
-  args: { start: v.number(), end: v.number(), branchId: v.optional(v.id("branches")) },
+  args: { token: v.string(), start: v.number(), end: v.number(), branchId: v.optional(v.id("branches")) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     const t = sumTotals(
       (
         await totalsByBranch(
@@ -661,8 +665,9 @@ export const rangeTotals = query({
 });
 
 export const listByCustomer = query({
-  args: { customerId: v.id("customers"), limit: v.optional(v.number()) },
+  args: { token: v.string(), customerId: v.id("customers"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     return await ctx.db
       .query("sales")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
@@ -674,10 +679,12 @@ export const listByCustomer = query({
 /** Cursor-paginated sales history for one customer — powers the Ficha's unbounded Histórico tab. */
 export const listByCustomerPaged = query({
   args: {
+    token: v.string(),
     customerId: v.id("customers"),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     return await ctx.db
       .query("sales")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
@@ -687,8 +694,9 @@ export const listByCustomerPaged = query({
 });
 
 export const get = query({
-  args: { id: v.id("sales") },
+  args: { token: v.string(), id: v.id("sales") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     const sale = await ctx.db.get(args.id);
     if (!sale) return null;
     const items = await ctx.db
@@ -699,7 +707,7 @@ export const get = query({
       .query("payments")
       .withIndex("by_sale", (q) => q.eq("saleId", args.id))
       .collect();
-    const customer = await ctx.db.get(sale.customerId);
+    const customer = sale.customerId ? await ctx.db.get(sale.customerId) : null;
     const branch = await ctx.db.get(sale.branchId);
     const returns = await ctx.db
       .query("salesReturns")
@@ -725,15 +733,9 @@ export const quote = query({
   },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "pos.use");
-    const customerId =
-      args.customerId ??
-      (await ctx.db
-        .query("customers")
-        .withIndex("by_isGeneric", (q) => q.eq("isGeneric", true))
-        .first())?._id;
-    if (!customerId || args.items.length === 0) return null;
+    if (args.items.length === 0) return null;
     try {
-      const p = await priceSale(ctx, { ...args, customerId });
+      const p = await priceSale(ctx, args);
       return {
         subtotal: p.subtotal,
         discount: p.discount,

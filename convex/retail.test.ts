@@ -328,6 +328,7 @@ describe("customer status", () => {
     const listed = async (showArchived: boolean) =>
       (
         await t.query(api.customers.listPaginated, {
+          token: ids.admin.token,
           paginationOpts: { numItems: 50, cursor: null },
           showArchived,
         })
@@ -507,7 +508,7 @@ describe("returns", () => {
     expect(credits[0].delta).toBe(250);
 
     // The payment row is the refund's record; the return keeps only its lines.
-    const ret = await t.query(api.salesReturns.get, { id: returnId });
+    const ret = await t.query(api.salesReturns.get, { token: ids.admin.token, id: returnId });
     expect(ret).toMatchObject({ returnValue: 250, refunded: 250, refundMethods: ["STORE_CREDIT"] });
     expect(ret).not.toHaveProperty("refundMethod");
   });
@@ -545,6 +546,7 @@ describe("returns", () => {
     await t.run((ctx) => ctx.db.patch(session._id, { status: "OPEN" }));
     await refund();
     const { page } = await t.query(api.salesReturns.listPaged, {
+          token: ids.admin.token,
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(page[0]).toMatchObject({ returnValue: 250, refunded: 250, refundMethods: ["CARD"] });
@@ -606,7 +608,7 @@ describe("money on returns, cancellations and prices", () => {
     // The debt report and the customer's figures follow.
     const debt = await t.query(api.analytics.customerDebt, { token: ids.admin.token });
     expect(debt).toEqual([expect.objectContaining({ balance: 250 })]);
-    const customer = await t.query(api.customers.getById, { id: ids.namedCustomerId });
+    const customer = await t.query(api.customers.getById, { token: ids.admin.token, id: ids.namedCustomerId });
     expect(customer?.stats).toMatchObject({ totalPurchases: 250, outstandingDebt: 250 });
   });
 
@@ -683,7 +685,7 @@ describe("money on returns, cancellations and prices", () => {
     expect(original).toMatchObject({ status: "RETURNED", paidAmount: 0, balance: 0 });
     expect(replacement).toMatchObject({ discount: 0, total: 250, paidAmount: 250, paymentStatus: "PAID" });
     // The customer bought one item: lifetime spend counts it once.
-    const customer = await t.query(api.customers.getById, { id: ids.namedCustomerId });
+    const customer = await t.query(api.customers.getById, { token: ids.admin.token, id: ids.namedCustomerId });
     expect(customer?.stats.totalPurchases).toBe(250);
   });
 
@@ -706,7 +708,7 @@ describe("money on returns, cancellations and prices", () => {
     });
     const replacement = await t.run((ctx) => ctx.db.get(res.replacementSaleId));
     expect(replacement).toMatchObject({ total: 250, paidAmount: 0, balance: 250 });
-    const customer = await t.query(api.customers.getById, { id: ids.namedCustomerId });
+    const customer = await t.query(api.customers.getById, { token: ids.admin.token, id: ids.namedCustomerId });
     expect(customer?.stats).toMatchObject({ totalPurchases: 250, outstandingDebt: 250 });
   });
 
@@ -952,6 +954,7 @@ describe("stock adjustments", () => {
     });
     expect(await stockAt()).toBe(7);
     const { page } = await t.query(api.stockAdjustments.listPaged, {
+          token: ids.admin.token,
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(page).toHaveLength(1);
@@ -1291,6 +1294,7 @@ describe("customer profile & tier", () => {
       });
     }
     const context = await t.query(api.customers.getPosContext, {
+          token: ids.admin.token,
       customerId: ids.namedCustomerId,
     });
     expect(context.recentSales).toHaveLength(3);
@@ -1315,6 +1319,7 @@ describe("customer profile & tier", () => {
     expect(customer?.topColorName).toBe("Black");
 
     const context = await t.query(api.customers.getPosContext, {
+          token: ids.admin.token,
       customerId: ids.namedCustomerId,
     });
     expect(context.customer?.topCategoryName).toBe("T-Shirts");
@@ -1333,6 +1338,7 @@ describe("customer profile & tier", () => {
       preferredBrands: ["Nike", "Adidas"],
     });
     const context = await t.query(api.customers.getPosContext, {
+          token: ids.admin.token,
       customerId: ids.namedCustomerId,
     });
     expect(context.customer?.preferredCategoryIds).toEqual([ids.categoryId]);
@@ -1379,7 +1385,7 @@ describe("document numbers and customer pages", () => {
     let pages = 0;
     for (;;) {
       const res: { page: { name: string; status: string }[]; isDone: boolean; continueCursor: string } =
-        await t.query(api.customers.listPaginated, { paginationOpts: { numItems: 4, cursor } });
+        await t.query(api.customers.listPaginated, { token: ids.admin.token, paginationOpts: { numItems: 4, cursor } });
       pages++;
       if (!res.isDone) expect(res.page).toHaveLength(4);
       expect(res.page.every((c) => c.status !== "ARCHIVED")).toBe(true);
@@ -1391,6 +1397,7 @@ describe("document numbers and customer pages", () => {
     expect(all.slice(0, 3)).toEqual(["C19", "C17", "C15"]); // newest first
     expect(all).toContain("C9"); // DISABLED is listed
     const withArchived = await t.query(api.customers.listPaginated, {
+          token: ids.admin.token,
       paginationOpts: { numItems: 50, cursor: null },
       showArchived: true,
     });
@@ -1593,10 +1600,10 @@ describe("lost sales by reason", () => {
     const a = await t.mutation(api.demands.create, { token: ids.admin.token, description: "Red dress M", reason: "SIZE" });
     const b = await t.mutation(api.demands.create, { token: ids.admin.token, description: "Cheaper jeans" });
     await t.mutation(api.demands.create, { token: ids.admin.token, description: "Blue", reason: "COLOR" });
-    expect(await t.query(api.demands.countByReason, {})).toEqual({ SIZE: 1, COLOR: 1 });
+    expect(await t.query(api.demands.countByReason, { token: ids.admin.token })).toEqual({ SIZE: 1, COLOR: 1 });
     await t.mutation(api.demands.setStage, { token: ids.admin.token, id: b, stage: "LOST", reason: "PRICE" });
     await t.mutation(api.demands.setStage, { token: ids.admin.token, id: a, stage: "LOST", reason: "STOCK" });
-    expect(await t.query(api.demands.countByReason, {})).toEqual({ STOCK: 1, COLOR: 1, PRICE: 1 });
+    expect(await t.query(api.demands.countByReason, { token: ids.admin.token })).toEqual({ STOCK: 1, COLOR: 1, PRICE: 1 });
   });
 });
 
@@ -1614,21 +1621,22 @@ describe("sales list", () => {
       });
     }
     const range = { start: Date.now() - 3_600_000, end: Date.now() + 3_600_000 };
-    const first = await t.query(api.sales.listPaged, { ...range, paginationOpts: { numItems: 2, cursor: null } });
+    const first = await t.query(api.sales.listPaged, { token: ids.admin.token, ...range, paginationOpts: { numItems: 2, cursor: null } });
     expect(first.page).toHaveLength(2);
     expect(first.isDone).toBe(false);
     const unpaid = await t.query(api.sales.listPaged, {
+      token: ids.admin.token,
       ...range,
       paymentStatus: "UNPAID",
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(unpaid.page).toHaveLength(1);
-    const byName = await t.query(api.sales.listPaged, { ...range, search: "Jane", paginationOpts: { numItems: 10, cursor: null } });
+    const byName = await t.query(api.sales.listPaged, { token: ids.admin.token, ...range, search: "Jane", paginationOpts: { numItems: 10, cursor: null } });
     expect(byName.page).toHaveLength(2);
-    const byNumber = await t.query(api.sales.listPaged, { ...range, search: "3", paginationOpts: { numItems: 10, cursor: null } });
+    const byNumber = await t.query(api.sales.listPaged, { token: ids.admin.token, ...range, search: "3", paginationOpts: { numItems: 10, cursor: null } });
     expect(byNumber.page.map((s) => s.saleNumber)).toEqual(["FT-0003"]);
-    expect(await t.query(api.sales.rangeTotals, range)).toMatchObject({ count: 5, revenue: 1250, outstanding: 250 });
-    expect(await t.query(api.sales.listForExport, range)).toHaveLength(5);
+    expect(await t.query(api.sales.rangeTotals, { token: ids.admin.token, ...range })).toMatchObject({ count: 5, revenue: 1250, outstanding: 250 });
+    expect(await t.query(api.sales.listForExport, { token: ids.admin.token, ...range })).toHaveLength(5);
   });
 });
 
@@ -1874,7 +1882,7 @@ describe("IVA, number settings and promotions", () => {
       t.mutation(api.settings.upsert, { token: ids.admin.token, key: "taxRatePercent", isActive: true, value: "16%" })
     ).rejects.toThrow(/must be a number/);
     await t.mutation(api.settings.upsert, { token: ids.admin.token, key: "taxRatePercent", isActive: true, value: " 16,0 " });
-    expect((await t.query(api.settings.getByKey, { key: "taxRatePercent" }))?.value).toBe("16");
+    expect((await t.query(api.settings.getByKey, { token: ids.admin.token, key: "taxRatePercent" }))?.value).toBe("16");
 
     // A bad value already stored (e.g. from before this check): never NaN, and the discount
     // limit falls back to the strictest rule.
@@ -1913,7 +1921,7 @@ describe("IVA, number settings and promotions", () => {
     await promo("Basic −30", "AMOUNT_OFF", 30, { productId: ids.productId }); // 220
     await promo("Old deal", "FIXED_PRICE", 50, { productVariantId: ids.variantId }, now - 10_000, now - 5_000); // expired
 
-    const pos = await t.query(api.products.listForPos, { branchId: ids.branchId });
+    const pos = await t.query(api.products.listForPos, { token: ids.admin.token, branchId: ids.branchId });
     expect(pos[0]).toMatchObject({ minPrice: 200, promotionName: "Tees 20%" });
 
     // A seller sells at the promotion price without any discount permission.
@@ -1969,7 +1977,7 @@ describe("purchase order lines and customer records", () => {
       { productVariantId: v, quantityOrdered: 2, unitCost: 100 },
       { productVariantId: v, quantityOrdered: 3, unitCost: 100 },
     ]);
-    const po = await t.query(api.purchaseOrders.get, { id: poId });
+    const po = await t.query(api.purchaseOrders.get, { token: ids.admin.token, id: poId });
     expect(po?.items).toHaveLength(1);
     expect(po?.items[0]).toMatchObject({ quantityOrdered: 5 });
     expect(po?.totalAmount).toBe(500);
@@ -2068,7 +2076,7 @@ describe("till total, store credit, order IVA, whole quantities and reservations
       }) as Promise<Id<"sales">>;
     const saleId = await sell(ids.namedCustomerId, 250);
     expect(await t.run((ctx) => ctx.db.get(saleId))).toMatchObject({ paidAmount: 250, paymentStatus: "PAID" });
-    expect(await t.query(api.customerCredits.getBalance, { customerId: ids.namedCustomerId })).toBe(50);
+    expect(await t.query(api.customerCredits.getBalance, { token: ids.admin.token, customerId: ids.namedCustomerId })).toBe(50);
     await expect(sell(ids.namedCustomerId, 250)).rejects.toThrow(/cannot go negative/);
     await expect(sell(ids.customerId, 250)).rejects.toThrow(/named customer/);
   });
@@ -2179,7 +2187,7 @@ describe("refunds go back the way the money came in", () => {
     const { saleId, saleItemId } = await paidSale(s, s.ids.namedCustomerId, [{ method: "STORE_CREDIT", amount: 250 }]);
     await expect(returnAs(s, s.ids.seller.token, saleId, saleItemId, "CASH")).rejects.toThrow(/needs a manager/);
     await returnAs(s, s.ids.seller.token, saleId, saleItemId, "STORE_CREDIT");
-    expect(await s.t.query(api.customerCredits.getBalance, { customerId: s.ids.namedCustomerId })).toBe(250);
+    expect(await s.t.query(api.customerCredits.getBalance, { token: s.ids.admin.token, customerId: s.ids.namedCustomerId })).toBe(250);
   });
 
   test("a card sale is not paid out in cash, unless a manager says so", async () => {
@@ -2196,7 +2204,7 @@ describe("refunds go back the way the money came in", () => {
     const s = await seed();
     await s.setStock(10);
     const { saleId, saleItemId } = await paidSale(s, s.ids.customerId, [{ method: "CASH", amount: 250 }]);
-    await expect(returnAs(s, s.ids.admin.token, saleId, saleItemId, "STORE_CREDIT")).rejects.toThrow(/walk-in customer cannot be given store credit/);
+    await expect(returnAs(s, s.ids.admin.token, saleId, saleItemId, "STORE_CREDIT")).rejects.toThrow(/without a customer cannot be refunded as store credit/);
   });
 
   test("store credit spent is not counted as money collected", async () => {
@@ -2267,7 +2275,7 @@ describe("large catalogues", () => {
     const { t, ids, setStock } = await seed();
     await setStock(5);
     const countId = await t.mutation(api.stockCounts.start, { token: ids.admin.token, branchId: ids.branchId });
-    const count = await t.query(api.stockCounts.get, { id: countId });
+    const count = await t.query(api.stockCounts.get, { token: ids.admin.token, id: countId });
     expect(count?.lines[0]).toMatchObject({ sku: "BASIC-BLK-M" });
     expect(count?.lines[0].name).toContain("Basic Tee");
   });

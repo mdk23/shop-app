@@ -5,8 +5,9 @@ import { writeAudit } from "./audit";
 
 /** Business relations this customer takes part in, with everyone on each relation. */
 export const listByCustomer = query({
-  args: { customerId: v.id("customers") },
+  args: { token: v.string(), customerId: v.id("customers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const mine = await ctx.db
       .query("relationParticipants")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))

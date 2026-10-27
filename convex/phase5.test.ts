@@ -140,7 +140,7 @@ describe("one source for a receipt's supplier and a variant's product", () => {
     const receiptId = await t.mutation(api.purchaseReceipts.create, { token, purchaseOrderId: poId, lines });
     const stored = await t.run((ctx) => ctx.db.get(receiptId));
     expect(stored?.supplierId).toBeUndefined(); // read through the order
-    const receipt = await t.query(api.purchaseReceipts.get, { id: receiptId });
+    const receipt = await t.query(api.purchaseReceipts.get, { token, id: receiptId });
     expect(receipt?.supplierId).toBe(ids.supplierId);
 
     const receiptItemId = receipt!.items[0]._id;
@@ -193,7 +193,7 @@ describe("purchase orders and supply relations", () => {
     const first = await sentPurchaseOrder(t, token, ids, 5);
     const second = await sentPurchaseOrder(t, token, ids, 3);
 
-    const relations = await t.query(api.supplyRelations.listBySupplier, { supplierId: ids.supplierId });
+    const relations = await t.query(api.supplyRelations.listBySupplier, { token, supplierId: ids.supplierId });
     expect(relations).toHaveLength(1);
     expect(relations[0].endedAt).toBeUndefined();
     expect(relations[0].orders.map((o) => o._id).sort()).toEqual([first, second].sort());
@@ -241,7 +241,7 @@ describe("purchase receipts", () => {
       purchaseOrderId: poId,
       lines: [{ productVariantId: ids.variantA, quantityReceived: 4 }],
     });
-    const first = await t.query(api.purchaseReceipts.get, { id: r1 });
+    const first = await t.query(api.purchaseReceipts.get, { token, id: r1 });
     expect(first?.receiptNumber).toBe("RC-0001");
     expect(first?.items[0].discrepancy).toBeUndefined();
     expect(await stockOf(t, ids.main, ids.variantA)).toBe(4);
@@ -251,7 +251,7 @@ describe("purchase receipts", () => {
       purchaseOrderId: poId,
       lines: [{ productVariantId: ids.variantA, quantityReceived: 8 }],
     });
-    const second = await t.query(api.purchaseReceipts.get, { id: r2 });
+    const second = await t.query(api.purchaseReceipts.get, { token, id: r2 });
     expect(second?.items[0].discrepancy).toBe("OVER");
     expect(await stockOf(t, ids.main, ids.variantA)).toBe(12);
 
@@ -268,7 +268,7 @@ describe("purchase receipts", () => {
       deliveryNoteRef: "GT-7781",
       lines: [{ productVariantId: ids.variantA, quantityReceived: 3, unitCost: 35 }],
     });
-    const receipt = await t.query(api.purchaseReceipts.get, { id: rid });
+    const receipt = await t.query(api.purchaseReceipts.get, { token, id: rid });
     expect(receipt?.items[0].discrepancy).toBe("UNANNOUNCED");
     expect(receipt?.deliveryNoteRef).toBe("GT-7781");
     expect(await stockOf(t, ids.main, ids.variantA)).toBe(3);
@@ -315,7 +315,7 @@ describe("transfer receipts", () => {
     expect(await stockOf(t, ids.main, ids.variantB)).toBe(95);
     expect(await stockOf(t, ids.second, ids.variantB)).toBe(4);
 
-    const receipt = await t.query(api.stockTransfers.getReceipt, { transferId });
+    const receipt = await t.query(api.stockTransfers.getReceipt, { token, transferId });
     expect(receipt?.lines[0]).toMatchObject({ quantitySent: 5, quantityObserved: 4 });
   });
 
@@ -353,6 +353,7 @@ describe("stock counts", () => {
     expect(await stockOf(t, ids.main, ids.variantB)).toBe(90);
 
     const { page: adjustments } = await t.query(api.stockAdjustments.listPaged, {
+          token,
       paginationOpts: { numItems: 10, cursor: null },
     });
     expect(adjustments).toHaveLength(1);
@@ -363,7 +364,7 @@ describe("stock counts", () => {
       newQuantity: 90,
     });
 
-    const closed = await t.query(api.stockCounts.get, { id: countId });
+    const closed = await t.query(api.stockCounts.get, { token, id: countId });
     expect(closed?.status).toBe("CLOSED");
   });
 

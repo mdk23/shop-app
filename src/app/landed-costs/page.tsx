@@ -11,6 +11,8 @@ import {
   Card,
   Field,
   TextInput,
+  Select,
+  Badge,
   Modal,
   Table,
   Th,
@@ -23,7 +25,7 @@ import {
 import { useToken, useCurrency } from "@/lib/useShop";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2 } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 type Component = { componentType: string; value: number };
@@ -41,12 +43,20 @@ export default function LandedCostsPage() {
   const create = useMutation(api.landedCosts.create);
   const update = useMutation(api.landedCosts.update);
   const remove = useMutation(api.landedCosts.remove);
+  const apply = useMutation(api.landedCosts.apply);
+  const shipments = useQuery(api.shipments.list, { token });
+  const receipts = useQuery(api.purchaseReceipts.list, { token });
 
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id<"landedCosts"> | null>(null);
   const [calculatedFor, setCalculatedFor] = useState(today);
   const [methodVersion, setMethodVersion] = useState("");
   const [components, setComponents] = useState<Component[]>([{ componentType: "", value: 0 }]);
+  // What the cost is for: "shipment:<id>", "receipt:<id>" or nothing yet.
+  const [target, setTarget] = useState("");
+  const [allocationMethod, setAllocationMethod] = useState<"VALUE" | "QUANTITY">("VALUE");
+  const [applying, setApplying] = useState<LandedCost | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<LandedCost | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -57,6 +67,8 @@ export default function LandedCostsPage() {
     setCalculatedFor(today());
     setMethodVersion("");
     setComponents([{ componentType: "", value: 0 }]);
+    setTarget("");
+    setAllocationMethod("VALUE");
   };
 
   const openEdit = (c: LandedCost) => {
@@ -68,6 +80,8 @@ export default function LandedCostsPage() {
         ? c.components.map((comp) => ({ componentType: comp.componentType, value: comp.componentValue }))
         : [{ componentType: "", value: 0 }]
     );
+    setTarget(c.shipmentId ? `shipment:${c.shipmentId}` : c.receiptId ? `receipt:${c.receiptId}` : "");
+    setAllocationMethod(c.allocationMethod ?? "VALUE");
     setOpen(true);
   };
 
@@ -79,6 +93,9 @@ export default function LandedCostsPage() {
         calculatedFor: new Date(calculatedFor).getTime(),
         methodVersion: methodVersion || undefined,
         components,
+        shipmentId: target.startsWith("shipment:") ? (target.slice(9) as Id<"shipments">) : undefined,
+        receiptId: target.startsWith("receipt:") ? (target.slice(8) as Id<"purchaseReceipts">) : undefined,
+        allocationMethod,
       };
       if (editingId) {
         await update({ ...payload, id: editingId });
@@ -106,6 +123,20 @@ export default function LandedCostsPage() {
       toast.error(e instanceof Error ? e.message : t("Failed to delete"));
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  const confirmApply = async () => {
+    if (!applying) return;
+    setApplyBusy(true);
+    try {
+      await apply({ token, id: applying._id });
+      toast.success(t("Landed cost added to the cost prices"));
+      setApplying(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setApplyBusy(false);
     }
   };
 
@@ -142,9 +173,10 @@ export default function LandedCostsPage() {
               <thead>
                 <tr>
                   <Th>{t("Date")}</Th>
-                  <Th>{t("Method")}</Th>
+                  <Th>{t("For")}</Th>
                   <Th>{t("Costs")}</Th>
                   <Th className="text-right">{t("Total")}</Th>
+                  <Th>{t("Status")}</Th>
                   <Th />
                 </tr>
               </thead>
@@ -152,20 +184,56 @@ export default function LandedCostsPage() {
                 {costs.map((c) => (
                   <tr key={c._id} className="hover:bg-surface-container-low">
                     <Td>{formatDate(c.calculatedFor)}</Td>
-                    <Td className="text-xs text-on-surface-variant">{c.methodVersion}</Td>
+                    <Td className="text-xs">
+                      {c.shipmentLabel
+                        ? `${t("Shipment")} ${c.shipmentLabel}`
+                        : c.receiptNumber
+                          ? `${t("Receipt")} ${c.receiptNumber}`
+                          : <span className="text-on-surface-variant">{t("Not linked")}</span>}
+                      <div className="text-on-surface-variant">
+                        {(c.allocationMethod ?? "VALUE") === "VALUE" ? t("Spread by value") : t("Spread by units")}
+                      </div>
+                    </Td>
                     <Td>
                       {c.components.map((comp) => `${comp.componentType} ${formatMoney(comp.componentValue)}`).join(" · ")}
+                      {c.allocations.length > 0 && (
+                        <div className="mt-1 text-xs text-on-surface-variant">
+                          {c.allocations.map((a) => (
+                            <div key={a._id}>
+                              {a.label}: {formatMoney(a.amount)} ({formatMoney(a.unitAmount)} × {a.quantity})
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </Td>
                     <Td className="text-right font-bold">{formatMoney(c.total)}</Td>
                     <Td>
-                      <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(c)} aria-label={t("Edit")}>
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setDeleting(c)} aria-label={t("Delete")}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                      {c.appliedAt ? (
+                        <Badge tone="success">{t("Applied {date}", { date: formatDate(c.appliedAt) })}</Badge>
+                      ) : (
+                        <Badge tone="neutral">{t("Not applied")}</Badge>
+                      )}
+                    </Td>
+                    <Td>
+                      {!c.appliedAt && (
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setApplying(c)}
+                            disabled={!c.shipmentId && !c.receiptId}
+                            title={!c.shipmentId && !c.receiptId ? t("Link it to a shipment or a receipt first") : undefined}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" /> {t("Apply")}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(c)} aria-label={t("Edit")}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setDeleting(c)} aria-label={t("Delete")}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </Td>
                   </tr>
                 ))}
@@ -204,6 +272,33 @@ export default function LandedCostsPage() {
               />
             </Field>
           </div>
+          <Field label={t("For")}>
+            <Select value={target} onChange={(e) => setTarget(e.target.value)}>
+              <option value="">{t("Not linked yet")}</option>
+              <optgroup label={t("Shipments")}>
+                {(shipments ?? []).map((sh) => (
+                  <option key={sh._id} value={`shipment:${sh._id}`}>
+                    {sh.carrier}
+                    {sh.trackingReference ? ` · ${sh.trackingReference}` : ""}
+                    {sh.orderCode ? ` · ${sh.orderCode}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t("Receipts")}>
+                {(receipts ?? []).map((r) => (
+                  <option key={r._id} value={`receipt:${r._id}`}>
+                    {r.receiptNumber} · {r.supplierName}
+                  </option>
+                ))}
+              </optgroup>
+            </Select>
+          </Field>
+          <Field label={t("Spread over the goods")}>
+            <Select value={allocationMethod} onChange={(e) => setAllocationMethod(e.target.value as "VALUE" | "QUANTITY")}>
+              <option value="VALUE">{t("By value (quantity × unit cost)")}</option>
+              <option value="QUANTITY">{t("By units")}</option>
+            </Select>
+          </Field>
           <Field label={t("Costs")} required>
             <div className="space-y-2">
               {components.map((c, i) => (
@@ -246,6 +341,16 @@ export default function LandedCostsPage() {
           </Field>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!applying}
+        onClose={() => setApplying(null)}
+        onConfirm={confirmApply}
+        title={t("Apply landed cost")}
+        message={t("Spread this cost over the goods received and add it to their cost prices? After this it can no longer be edited or deleted.")}
+        confirmLabel={t("Apply")}
+        loading={applyBusy}
+      />
 
       <ConfirmDialog
         open={!!deleting}

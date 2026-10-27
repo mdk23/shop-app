@@ -14,8 +14,8 @@ type VariantRefs = Pick<Doc<"productVariants">, "sizeId" | "colorId">;
  * many variants in one function (catalogue lists, analytics); both lists are small.
  */
 export async function loadVariantNames(ctx: QueryCtx) {
-  const sizes = new Map((await ctx.db.query("sizes").collect()).map((s) => [s._id, s.name]));
-  const colors = new Map((await ctx.db.query("colors").collect()).map((c) => [c._id, c.name]));
+  const sizes = new Map((await ctx.db.query("sizes").take(1000)).map((s) => [s._id, s.name]));
+  const colors = new Map((await ctx.db.query("colors").take(1000)).map((c) => [c._id, c.name]));
   return (variant: VariantRefs): VariantNames => ({
     size: variant.sizeId ? sizes.get(variant.sizeId) : undefined,
     color: variant.colorId ? colors.get(variant.colorId) : undefined,

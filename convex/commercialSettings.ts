@@ -1,13 +1,14 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { writeAudit } from "./audit";
 
 /** Payment terms the shop offers (e.g. 30 dias, sinal de 50%). */
 export const listPaymentTerms = query({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query("paymentTerms").collect();
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
+    const rows = await ctx.db.query("paymentTerms").take(1000);
     return rows.sort((a, b) => a.days - b.days);
   },
 });
@@ -63,9 +64,10 @@ export const setPaymentTermActive = mutation({
 
 /** Pricing policies: margin target and rounding rule. A new policy closes the one before it. */
 export const listPricingPolicies = query({
-  args: {},
-  handler: async (ctx) => {
-    return (await ctx.db.query("pricingPolicies").collect()).sort((a, b) => b.validFrom - a.validFrom);
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
+    return (await ctx.db.query("pricingPolicies").take(1000)).sort((a, b) => b.validFrom - a.validFrom);
   },
 });
 
@@ -84,7 +86,7 @@ export const createPricingPolicy = mutation({
       throw new Error("The margin must be at least 0 and below 100%.");
     }
     const now = Date.now();
-    const current = await ctx.db.query("pricingPolicies").collect();
+    const current = await ctx.db.query("pricingPolicies").take(1000);
     for (const policy of current) {
       if (policy.validTo === undefined) await ctx.db.patch(policy._id, { validTo: now });
     }
@@ -108,8 +110,9 @@ export const createPricingPolicy = mutation({
 
 /** Product positioning (essential, core, premium). A new position closes the previous one. */
 export const currentPositioning = query({
-  args: { productId: v.id("products") },
+  args: { token: v.string(), productId: v.id("products") },
   handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
     const rows = await ctx.db
       .query("productPositioning")
       .withIndex("by_product", (q) => q.eq("productId", args.productId))

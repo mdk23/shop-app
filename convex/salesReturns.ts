@@ -1,3 +1,4 @@
+import { getSetting } from "./settings";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
@@ -63,12 +64,6 @@ const RESOLUTION = v.union(
 
 const REFUND_METHOD = refundMethodValidator;
 
-async function getSetting(ctx: MutationCtx, key: string) {
-  return await ctx.db
-    .query("settings")
-    .withIndex("by_key", (q) => q.eq("key", key))
-    .unique();
-}
 
 async function alreadyReturnedQty(
   ctx: QueryCtx,
@@ -259,6 +254,8 @@ export const create = mutation({
     // cash); store credit also adds to the customer's credit balance.
     if (refundAmount > 0) {
       if (args.refundMethod === "STORE_CREDIT") {
+        // assertRefundMethod already refused store credit for a sale without a customer.
+        if (!sale.customerId) throw new Error("A sale without a customer cannot be refunded as store credit.");
         await adjustCustomerCredit(ctx, {
           customerId: sale.customerId,
           delta: refundAmount,
@@ -465,6 +462,8 @@ export const exchange = mutation({
       const leftoverSession =
         args.refundMethod === "STORE_CREDIT" ? null : await requireOpenSession(ctx, sale.branchId);
       if (args.refundMethod === "STORE_CREDIT") {
+        // assertRefundMethod already refused store credit for a sale without a customer.
+        if (!sale.customerId) throw new Error("A sale without a customer cannot be refunded as store credit.");
         await adjustCustomerCredit(ctx, {
           customerId: sale.customerId,
           delta: leftover,
@@ -525,10 +524,12 @@ export const exchange = mutation({
 
 export const listPaged = query({
   args: {
+    token: v.string(),
     branchId: v.optional(v.id("branches")),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "returns.view");
     const result = await ctx.db
       .query("salesReturns")
       .withIndex("by_created_at")
@@ -548,8 +549,9 @@ export const listPaged = query({
 });
 
 export const getForSale = query({
-  args: { saleId: v.id("sales") },
+  args: { token: v.string(), saleId: v.id("sales") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "returns.view");
     const returns = await ctx.db
       .query("salesReturns")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
@@ -559,8 +561,9 @@ export const getForSale = query({
 });
 
 export const get = query({
-  args: { id: v.id("salesReturns") },
+  args: { token: v.string(), id: v.id("salesReturns") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "returns.view");
     const ret = await ctx.db.get(args.id);
     if (!ret) return null;
     const sale = await ctx.db.get(ret.saleId);

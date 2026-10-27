@@ -40,11 +40,12 @@ const TERM_LABEL: Record<(typeof TERM_TYPES)[number], string> = {
 };
 
 export default function SupplierDetailPage() {
+  const token = useToken();
   const { t } = useTranslation();
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const supplierId = params.id as Id<"suppliers">;
-  const suppliers = useQuery(api.suppliers.list, {});
+  const suppliers = useQuery(api.suppliers.list, { token });
   const supplier = suppliers?.find((s) => s._id === supplierId);
   const [tab, setTab] = useState<Tab>("EVALUATION");
 
@@ -107,7 +108,7 @@ export default function SupplierDetailPage() {
 function EvaluationTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const rows = useQuery(api.supplierEvaluations.listBySupplier, { supplierId });
+  const rows = useQuery(api.supplierEvaluations.listBySupplier, { token, supplierId });
   const create = useMutation(api.supplierEvaluations.create);
   const [quality, setQuality] = useState("4");
   const [punctuality, setPunctuality] = useState("90");
@@ -200,7 +201,7 @@ function EvaluationTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
 function TermsTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const relations = useQuery(api.supplyRelations.listBySupplier, { supplierId });
+  const relations = useQuery(api.supplyRelations.listBySupplier, { token, supplierId });
   const createRelation = useMutation(api.supplyRelations.createRelation);
   const addTerm = useMutation(api.supplyRelations.addTerm);
   const [termType, setTermType] = useState<(typeof TERM_TYPES)[number]>("DEADLINES");
@@ -329,8 +330,9 @@ function QualityTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
 }
 
 function ShipmentsTab({ supplierId }: { supplierId: Id<"suppliers"> }) {
+  const token = useToken();
   const { t } = useTranslation();
-  const rows = useQuery(api.shipments.list, { supplierId });
+  const rows = useQuery(api.shipments.list, { token, supplierId });
   if (rows === undefined) return <Spinner />;
   if (rows.length === 0) return <p className="text-sm text-on-surface-variant">{t("No shipments yet")}</p>;
   return (

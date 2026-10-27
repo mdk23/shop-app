@@ -175,7 +175,8 @@ function SessionDetail({
   fmt: (n: number) => string;
   onClose: () => void;
 }) {
-  const s = useQuery(api.cashRegister.getSessionWithMovements, { sessionId: id });
+  const token = useToken();
+  const s = useQuery(api.cashRegister.getSessionWithMovements, { token, sessionId: id });
   const { t } = useTranslation();
   return (
     <Modal open onClose={onClose} size="lg" title={t("Session detail")}>

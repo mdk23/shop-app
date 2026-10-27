@@ -64,6 +64,7 @@ import {
 } from "../../../convex/lib/paymentMethods";
 
 export default function ReturnsPage() {
+  const token = useToken();
   const { t } = useTranslation();
   const fmt = useCurrency();
   const [saleQuery, setSaleQuery] = useState("");
@@ -81,11 +82,11 @@ export default function ReturnsPage() {
 
   const found = useQuery(
     api.sales.get,
-    pickedSaleId ? { id: pickedSaleId } : "skip"
+    pickedSaleId ? { token, id: pickedSaleId } : "skip"
   );
   const saleMatches = useQuery(
     api.sales.listRecent,
-    saleQuery.trim() ? { limit: 50 } : "skip"
+    saleQuery.trim() ? { token, limit: 50 } : "skip"
   );
 
   return (
@@ -214,7 +215,7 @@ function ReturnModal({
   sale: {
     _id: Id<"sales">;
     branchId: Id<"branches">;
-    customerId: Id<"customers">;
+    customerId?: Id<"customers">;
     saleNumber: string;
     customer?: { isGeneric?: boolean } | null;
     payments?: { method: RefundMethod; amount: number }[];
@@ -243,7 +244,7 @@ function ReturnModal({
   const keptByMethod = new Map<RefundMethod, number>();
   for (const p of sale.payments ?? []) keptByMethod.set(p.method, (keptByMethod.get(p.method) ?? 0) + p.amount);
   const paidWith = [...keptByMethod.entries()].filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
-  const isWalkIn = !!sale.customer?.isGeneric;
+  const isWalkIn = !sale.customer || !!sale.customer.isGeneric;
   const refundChoices = REFUND_METHODS.filter((m) => !(isWalkIn && m === "STORE_CREDIT"));
   const [refundMethod, setRefundMethod] = useState<RefundMethod>(paidWith[0]?.[0] ?? "CASH");
   const [resolution, setResolution] = useState<Resolution | "">("");

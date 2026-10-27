@@ -52,11 +52,11 @@ describe("customer tabs", () => {
       ctx.db.insert("customers", { name: "Coach", phone1: "1", isGeneric: false, status: "ACTIVE" })
     );
     await t.mutation(api.businessRelations.open, { token, customerId: ids.customerId, role: "Buyer for the school team" });
-    const relationId = (await t.query(api.businessRelations.listByCustomer, { customerId: ids.customerId }))[0].relationId;
+    const relationId = (await t.query(api.businessRelations.listByCustomer, { token, customerId: ids.customerId }))[0].relationId;
     await t.run((ctx) =>
       ctx.db.insert("relationParticipants", { relationId, customerId: other, role: "Coach", validFrom: Date.now() })
     );
-    const rows = await t.query(api.businessRelations.listByCustomer, { customerId: ids.customerId });
+    const rows = await t.query(api.businessRelations.listByCustomer, { token, customerId: ids.customerId });
     expect(rows[0].people.map((p) => p.name).sort()).toEqual(["Coach", "Jane Doe"]);
     expect(rows[0].people.find((p) => p.isThisCustomer)?.name).toBe("Jane Doe");
   });
@@ -68,7 +68,7 @@ describe("customer tabs", () => {
     ).rejects.toThrow(/nine digits/);
     await t.mutation(api.fiscalIdentities.setNuit, { token, customerId: ids.customerId, number: "400000001" });
     await t.mutation(api.fiscalIdentities.setNuit, { token, customerId: ids.customerId, number: "400000002" });
-    expect(await t.query(api.fiscalIdentities.getNuit, { customerId: ids.customerId })).toBe("400000002");
+    expect(await t.query(api.fiscalIdentities.getNuit, { token, customerId: ids.customerId })).toBe("400000002");
     const rows = await t.run((ctx) =>
       ctx.db
         .query("fiscalIdentities")
@@ -93,7 +93,7 @@ describe("commercial settings", () => {
       depositPercent: 50,
     });
     await t.mutation(api.commercialSettings.setPaymentTermActive, { token, id, active: false });
-    const [term] = await t.query(api.commercialSettings.listPaymentTerms, {});
+    const [term] = await t.query(api.commercialSettings.listPaymentTerms, { token });
     expect(term.active).toBe(false);
   });
 
@@ -101,7 +101,7 @@ describe("commercial settings", () => {
     const { t, token } = await seed();
     await t.mutation(api.commercialSettings.createPricingPolicy, { token, name: "Standard", marginPercent: 40 });
     await t.mutation(api.commercialSettings.createPricingPolicy, { token, name: "Promo", marginPercent: 30 });
-    const policies = await t.query(api.commercialSettings.listPricingPolicies, {});
+    const policies = await t.query(api.commercialSettings.listPricingPolicies, { token });
     expect(policies).toHaveLength(2);
     expect(policies.filter((p) => p.validTo === undefined).map((p) => p.name)).toEqual(["Promo"]);
   });
@@ -119,7 +119,7 @@ describe("commercial settings", () => {
     expect(rows).toHaveLength(1);
 
     await t.mutation(api.commercialSettings.setPositioning, { token, productId: ids.productId, positioning: "PREMIUM" });
-    const current = await t.query(api.commercialSettings.currentPositioning, { productId: ids.productId });
+    const current = await t.query(api.commercialSettings.currentPositioning, { token, productId: ids.productId });
     expect(current?.positioning).toBe("PREMIUM");
     rows = await t.run((ctx) =>
       ctx.db
@@ -168,7 +168,7 @@ describe("supplier scorecard", () => {
       description: "Mancha",
       items: [{ productVariantId: variantId, affectedQuantity: 1 }],
     });
-    const card = (await t.query(api.supplierEvaluations.scorecard, {})).find((s) => s.supplierId === supplierId);
+    const card = (await t.query(api.supplierEvaluations.scorecard, { token })).find((s) => s.supplierId === supplierId);
     expect(card).toMatchObject({ evaluations: 2, avgQuality: 3, avgPunctuality: 90, openQualityIssues: 1 });
   });
 });

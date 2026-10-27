@@ -1,3 +1,4 @@
+import { availableToSell } from "./stockHolds";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
@@ -34,11 +35,13 @@ export function priceRange(variants: Doc<"productVariants">[]) {
 
 export const list = query({
   args: {
+    token: v.string(),
     categoryId: v.optional(v.id("categories")),
     search: v.optional(v.string()),
     includeInactive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     let products;
     if (args.search && args.search.trim()) {
       products = await ctx.db
@@ -49,7 +52,7 @@ export const list = query({
       products = await ctx.db
         .query("products")
         .withIndex("by_category", (q) => q.eq("categoryId", args.categoryId!))
-        .collect();
+        .take(2000);
     } else {
       // Without a search or category: the newest 200 (pickers search by name instead).
       products = args.includeInactive
@@ -96,11 +99,13 @@ export const list = query({
  */
 export const listPaged = query({
   args: {
+    token: v.string(),
     categoryId: v.optional(v.id("categories")),
     search: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const result =
       args.search && args.search.trim()
         ? await ctx.db
@@ -142,8 +147,9 @@ export const listPaged = query({
 });
 
 export const get = query({
-  args: { id: v.id("products") },
+  args: { token: v.string(), id: v.id("products") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const product = await ctx.db.get(args.id);
     if (!product) return null;
     const variants = await ctx.db
@@ -182,14 +188,15 @@ export const get = query({
  * list; `productVariants.getBySkuOrBarcode` handles exact SKU/barcode entry.
  */
 export const listForPos = query({
-  args: { branchId: v.id("branches") },
+  args: { token: v.string(), branchId: v.id("branches") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "pos.use");
     const products = await ctx.db
       .query("products")
       .withIndex("by_active", (q) => q.eq("active", true))
-      .collect();
+      .take(2000);
 
-    const categories = await ctx.db.query("categories").collect();
+    const categories = await ctx.db.query("categories").take(1000);
     const catName = new Map(categories.map((c) => [c._id, c.name]));
 
     // The till price per variant: the selling price, or the promotion price while one runs.
@@ -203,19 +210,15 @@ export const listForPos = query({
         .collect();
       const activeVariants = [];
       for (const variant of variants.filter((v) => v.active)) {
-        const stock = await ctx.db
-          .query("variantStock")
-          .withIndex("by_branch_and_variant", (q) =>
-            q.eq("branchId", args.branchId).eq("productVariantId", variant._id)
-          )
-          .unique();
+        // What the sale will allow: on hand less what is held for customer orders.
+        const { available } = await availableToSell(ctx, args.branchId, variant._id);
         const names = namesOf(variant);
         const till = tillPrice(variant, p);
         activeVariants.push({
           ...variant,
           ...names,
           label: formatVariantLabel(names, variant.sku),
-          stock: stock?.quantity ?? 0,
+          stock: available,
           price: till.price,
           promotionName: till.promotion?.name,
         });

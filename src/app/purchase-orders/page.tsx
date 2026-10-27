@@ -63,7 +63,7 @@ export default function PurchaseOrdersPage() {
   const token = useToken();
   const fmt = useCurrency();
   const { branchId, branches } = useResolvedBranch();
-  const suppliers = useQuery(api.suppliers.list, { status: "ACTIVE" });
+  const suppliers = useQuery(api.suppliers.list, { token, status: "ACTIVE" });
   const [statusFilter, setStatusFilter] = useState("");
   const {
     rows: list,
@@ -344,7 +344,7 @@ function PODetail({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const po = useQuery(api.purchaseOrders.get, { id });
+  const po = useQuery(api.purchaseOrders.get, { token, id });
   const updateStatus = useMutation(api.purchaseOrders.updateStatus);
   const receiveItems = useMutation(api.purchaseOrders.receiveItems);
   const removePo = useMutation(api.purchaseOrders.remove);

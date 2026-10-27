@@ -2,6 +2,7 @@ import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { getLocalDateString } from "../metrics";
 import { round2 } from "./fiscal";
+import { namedCustomer } from "../customers";
 
 /**
  * Sales totals per branch per day (`dailyMetrics`) and per month (`monthlyMetrics`), so
@@ -183,8 +184,8 @@ async function saleShare(ctx: QueryCtx, sale: Doc<"sales">): Promise<Totals> {
     .reduce((s, p) => s + p.amount, 0);
   t.collected = Math.max(0, sale.paidAmount - Math.max(0, creditKept));
 
-  const customer = await ctx.db.get(sale.customerId);
-  if (customer && !customer.isGeneric) t.customers[sale.customerId] = 1;
+  const customer = await namedCustomer(ctx, sale.customerId);
+  if (customer) t.customers[customer._id] = 1;
   const hour = new Date(sale.createdAt + 2 * 60 * 60 * 1000).getUTCHours();
   t.hours[String(hour).padStart(2, "0")] = { revenue: sale.total, sales: 1 };
   return addTotals(emptyTotals(), t); // rounds
@@ -322,11 +323,11 @@ export async function dayRows(
         .withIndex("by_branch_and_date", (q) =>
           q.eq("branchId", branchId).gte("dateString", from).lte("dateString", to)
         )
-        .collect()
+        .take(2000)
     : await ctx.db
         .query("dailyMetrics")
         .withIndex("by_date", (q) => q.gte("dateString", from).lte("dateString", to))
-        .collect();
+        .take(2000);
 }
 
 /**
@@ -350,11 +351,11 @@ export async function totalsByBranch(
           ? await ctx.db
               .query("monthlyMetrics")
               .withIndex("by_branch_and_month", (q) => q.eq("branchId", branchId).eq("month", month))
-              .collect()
+              .take(2000)
           : await ctx.db
               .query("monthlyMetrics")
               .withIndex("by_month", (q) => q.eq("month", month))
-              .collect())
+              .take(2000))
       );
     } else {
       rows.push(...(await dayRows(ctx, from > first ? from : first, to < last ? to : last, branchId)));

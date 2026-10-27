@@ -39,7 +39,7 @@ type Row = {
 export default function ColorsPage() {
   const token = useToken();
   const { t } = useTranslation();
-  const rows = useQuery(api.colors.list, { includeInactive: true });
+  const rows = useQuery(api.colors.list, { token, includeInactive: true });
   const page = useClientPage(rows ?? []);
   const create = useMutation(api.colors.create);
   const update = useMutation(api.colors.update);

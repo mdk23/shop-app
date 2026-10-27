@@ -2,6 +2,7 @@ import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { round2 } from "./fiscal";
 import { userHasPermission } from "../permissions";
+import { namedCustomer } from "../customers";
 
 /**
  * A sale's money, in one place. The sources are the sale's `total`, its returned goods
@@ -135,10 +136,10 @@ export async function assertRefundMethod(
   amount: number
 ) {
   if (amount <= 0) return;
-  const customer = await ctx.db.get(sale.customerId);
+  const customer = await namedCustomer(ctx, sale.customerId);
   if (method === "STORE_CREDIT") {
-    if (!customer || customer.isGeneric) {
-      throw new Error("The walk-in customer cannot be given store credit. Refund another way.");
+    if (!customer) {
+      throw new Error("A sale without a customer cannot be refunded as store credit. Refund another way.");
     }
     return;
   }

@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
-import { Button, Card, Badge, Spinner, Table, Th, Td } from "@/components/ui";
-import { useCurrency } from "@/lib/useShop";
+import { Button, Card, Badge, Spinner, Table, Th, Td, Modal, Field, TextInput } from "@/components/ui";
+import { useCurrency, useToken } from "@/lib/useShop";
+import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
@@ -33,9 +35,28 @@ export default function PurchaseOrderDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params.id as Id<"purchaseOrders">;
-  const po = useQuery(api.purchaseOrders.get, { id });
-  const receipts = useQuery(api.purchaseReceipts.listByPurchaseOrder, { purchaseOrderId: id });
-  const shipments = useQuery(api.shipments.list, {});
+  const token = useToken();
+  const po = useQuery(api.purchaseOrders.get, { token, id });
+  const receipts = useQuery(api.purchaseReceipts.listByPurchaseOrder, { token, purchaseOrderId: id });
+  const shipments = useQuery(api.shipments.list, { token });
+  const closeShort = useMutation(api.purchaseOrders.closeShort);
+  const [closing, setClosing] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const confirmCloseShort = async () => {
+    setBusy(true);
+    try {
+      await closeShort({ token, id, reason });
+      toast.success(t("Order closed short"));
+      setClosing(false);
+      setReason("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("Failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (po === undefined) {
     return (
@@ -54,7 +75,8 @@ export default function PurchaseOrderDetailPage() {
 
   const ordered = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
   const received = po.items.reduce((s, i) => s + i.quantityReceived, 0);
-  const mine = (shipments ?? []).filter((s) => s.purchaseOrderId === id);
+  const mine = (shipments ?? []).filter((s) => s.orders.some((o) => o._id === id));
+  const waiting = po.status === "SENT" || po.status === "PARTIALLY_RECEIVED";
 
   return (
     <PageLayout title={po.orderCode} subtitle={`${po.supplierName} · ${po.branchName ?? ""}`}>
@@ -62,8 +84,43 @@ export default function PurchaseOrderDetailPage() {
         <Button variant="ghost" onClick={() => router.push("/purchase-orders")}>
           <ArrowLeft className="w-3.5 h-3.5" /> {t("Back")}
         </Button>
-        <Badge tone={STATUS_TONE[po.status]}>{t(STATUS_LABEL[po.status])}</Badge>
+        <div className="flex items-center gap-2">
+          {waiting && (
+            <Button size="sm" variant="secondary" onClick={() => setClosing(true)}>
+              {t("Close short")}
+            </Button>
+          )}
+          <Badge tone={STATUS_TONE[po.status]}>{t(STATUS_LABEL[po.status])}</Badge>
+        </div>
       </div>
+
+      <Modal
+        open={closing}
+        onClose={() => setClosing(false)}
+        title={t("Close short")}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setClosing(false)}>
+              {t("Cancel")}
+            </Button>
+            <Button onClick={confirmCloseShort} loading={busy} disabled={!reason.trim()}>
+              {t("Close order")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm">
+            {t("The supplier will not send the rest ({count} unit(s)). Each line still short is recorded as a short delivery and the order is completed.", {
+              count: ordered - received,
+            })}
+          </p>
+          <Field label={t("Reason")} required>
+            <TextInput value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        </div>
+      </Modal>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <Card className="p-4">

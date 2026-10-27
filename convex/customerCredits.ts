@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, MutationCtx } from "./_generated/server";
+import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
@@ -12,14 +12,14 @@ export type CreditReason =
 
 /** Current store-credit balance for a customer (sum of the ledger). */
 export async function creditBalance(
-  ctx: MutationCtx,
+  ctx: QueryCtx,
   customerId: Id<"customers">
 ): Promise<number> {
   const rows = await ctx.db
     .query("customerCredits")
     .withIndex("by_customer", (q) => q.eq("customerId", customerId))
     .collect();
-  return rows.reduce((s, r) => s + r.delta, 0);
+  return Math.round(rows.reduce((s, r) => s + r.delta, 0) * 100) / 100;
 }
 
 /**
@@ -64,19 +64,17 @@ export async function adjustCustomerCredit(
 // ─────────────────────────────────────────────
 
 export const getBalance = query({
-  args: { customerId: v.id("customers") },
+  args: { token: v.string(), customerId: v.id("customers") },
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("customerCredits")
-      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
-      .collect();
-    return rows.reduce((s, r) => s + r.delta, 0);
+    await authorize(ctx, args.token, "customers.view");
+    return await creditBalance(ctx, args.customerId);
   },
 });
 
 export const listForCustomer = query({
-  args: { customerId: v.id("customers"), limit: v.optional(v.number()) },
+  args: { token: v.string(), customerId: v.id("customers"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     return await ctx.db
       .query("customerCredits")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))

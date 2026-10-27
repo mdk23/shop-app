@@ -4,8 +4,9 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
 export const listByReceipt = query({
-  args: { receiptId: v.id("purchaseReceipts") },
+  args: { token: v.string(), receiptId: v.id("purchaseReceipts") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     return await ctx.db
       .query("receiptInspections")
       .withIndex("by_receipt", (q) => q.eq("receiptId", args.receiptId))

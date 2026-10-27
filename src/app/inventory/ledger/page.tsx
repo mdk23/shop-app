@@ -18,7 +18,7 @@ import {
   Spinner,
   Toolbar,
 } from "@/components/ui";
-import { useResolvedBranch } from "@/lib/useShop";
+import { useResolvedBranch, useToken } from "@/lib/useShop";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { usePagedQuery } from "@/lib/pagination";
 import { Download } from "lucide-react";
@@ -39,6 +39,7 @@ const TYPES = [
 ];
 
 export default function LedgerPage() {
+  const token = useToken();
   const { t } = useTranslation();
   const { branchId, branches } = useResolvedBranch();
   const [type, setType] = useState("");
@@ -71,6 +72,7 @@ export default function LedgerPage() {
 
   // Separate, capped fetch used only for "export everything matching this filter".
   const exportRows = useQuery(api.inventory.listMovements, {
+          token,
     ...filterArgs,
     limit: 2000,
   });

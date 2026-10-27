@@ -5,6 +5,7 @@ import { useConvex, useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { PageLayout } from "@/components/PageLayout";
+import { DeliveriesCard } from "@/components/DeliveriesCard";
 import {
   Card,
   Button,
@@ -81,6 +82,7 @@ export default function SalesPage() {
   };
   const page = usePagedQuery(api.sales.listPaged, { ...filters, search: search.trim() || undefined });
   const totals = useQuery(api.sales.rangeTotals, {
+          token,
     start,
     end,
     branchId: filters.branchId,
@@ -88,7 +90,7 @@ export default function SalesPage() {
 
   const convex = useConvex();
   const exportCsv = async () => {
-    const rows = await convex.query(api.sales.listForExport, filters);
+    const rows = await convex.query(api.sales.listForExport, { token, ...filters });
     const header = "sale,date,customer,status,payment,subtotal,discount,tax,total,paid,balance";
     const body = rows
       .map((s) =>
@@ -253,7 +255,7 @@ function SaleDetail({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const sale = useQuery(api.sales.get, { id });
+  const sale = useQuery(api.sales.get, { token, id });
   const registerClosed = useRegisterClosed(sale?.branchId);
   // Cancelling gives back the money kept for the sale, by the method it came in; all but
   // store credit goes through the register.
@@ -391,6 +393,8 @@ function SaleDetail({
                 </div>
               </Card>
             )}
+
+            {sale.isDelivery && sale.status !== "CANCELLED" && <DeliveriesCard saleId={sale._id} />}
           </div>
         )}
       </Modal>

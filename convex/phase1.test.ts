@@ -74,6 +74,7 @@ describe("variant price history", () => {
     });
 
     let history = await t.query(api.productVariants.priceHistory, {
+          token,
       productVariantId: variantId,
     });
     expect(history).toHaveLength(1);
@@ -85,6 +86,7 @@ describe("variant price history", () => {
       sellingPrice: 300,
     });
     history = await t.query(api.productVariants.priceHistory, {
+          token,
       productVariantId: variantId,
     });
     expect(history).toHaveLength(2);
@@ -99,6 +101,7 @@ describe("variant price history", () => {
       sellingPrice: 300,
     });
     history = await t.query(api.productVariants.priceHistory, {
+          token,
       productVariantId: variantId,
     });
     expect(history).toHaveLength(2);
@@ -106,6 +109,7 @@ describe("variant price history", () => {
     // A cost change also opens a new period, keeping the selling price.
     await t.mutation(api.productVariants.update, { token, id: variantId, costPrice: 120 });
     history = await t.query(api.productVariants.priceHistory, {
+          token,
       productVariantId: variantId,
     });
     expect(history).toHaveLength(3);
@@ -153,7 +157,7 @@ describe("prices live on variants only", () => {
     expect(copied).toMatchObject({ costPrice: 100, sellingPrice: 250 });
 
     await t.mutation(api.productVariants.update, { token, id: second, sellingPrice: 300 });
-    const product = await t.query(api.products.get, { id: ids.productId });
+    const product = await t.query(api.products.get, { token, id: ids.productId });
     expect(product).toMatchObject({ minPrice: 250, maxPrice: 300, minCost: 100, maxCost: 100 });
     expect(product).not.toHaveProperty("defaultSellingPrice");
   });
@@ -192,7 +196,7 @@ describe("audit trail records what changed", () => {
 
 describe("phase 1 backfill", () => {
   test("is idempotent and fills price history and the size scale", async () => {
-    const { t, ids } = await seed();
+    const { t, ids, token } = await seed();
     const legacyVariantId = await t.run((ctx) =>
       ctx.db.insert("productVariants", {
         productId: ids.productId,
@@ -219,6 +223,7 @@ describe("phase 1 backfill", () => {
     expect(size?.scaleId).toBeDefined();
 
     const historyRows = await t.query(api.productVariants.priceHistory, {
+          token,
       productVariantId: legacyVariantId,
     });
     expect(historyRows).toHaveLength(1);
@@ -266,7 +271,7 @@ describe("promotions", () => {
       validFrom: Date.now(),
       targets: [{ categoryId: ids.categoryId }],
     });
-    const rows = await t.query(api.promotions.list, {});
+    const rows = await t.query(api.promotions.list, { token });
     expect(rows).toHaveLength(1);
     expect(rows[0]._id).toBe(promotionId);
     expect(rows[0].targets).toHaveLength(1);
@@ -278,7 +283,7 @@ describe("catalogue extensions", () => {
   test("creates collections and size scales", async () => {
     const { t, token } = await seed();
     await t.mutation(api.collections.create, { token, name: "Verão 2026", season: "SS26" });
-    const collections = await t.query(api.collections.list, {});
+    const collections = await t.query(api.collections.list, { token });
     expect(collections.map((c) => c.name)).toEqual(["Verão 2026"]);
 
     await t.mutation(api.sizeScales.create, {
@@ -287,7 +292,7 @@ describe("catalogue extensions", () => {
       scaleType: "SHOE",
       region: "EU",
     });
-    const scales = await t.query(api.sizeScales.list, {});
+    const scales = await t.query(api.sizeScales.list, { token });
     expect(scales.map((s) => s.name)).toEqual(["EU calçado"]);
   });
 });

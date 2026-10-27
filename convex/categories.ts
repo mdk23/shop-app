@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { writeAudit } from "./audit";
 import { patchVariant } from "./lib/stockTotals";
 
@@ -20,7 +20,7 @@ async function cascadeDeactivateProducts(
   const products = await ctx.db
     .query("products")
     .withIndex("by_category", (q) => q.eq("categoryId", categoryId))
-    .collect();
+    .take(2000);
   const now = Date.now();
   let affected = 0;
   for (const p of products) {
@@ -40,14 +40,15 @@ async function cascadeDeactivateProducts(
 }
 
 export const list = query({
-  args: { includeInactive: v.optional(v.boolean()) },
+  args: { token: v.string(), includeInactive: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
     const rows = args.includeInactive
-      ? await ctx.db.query("categories").collect()
+      ? await ctx.db.query("categories").take(1000)
       : await ctx.db
           .query("categories")
           .withIndex("by_active", (q) => q.eq("active", true))
-          .collect();
+          .take(1000);
     const sorted = rows.sort(
       (a, b) =>
         (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)
@@ -57,7 +58,7 @@ export const list = query({
         const products = await ctx.db
           .query("products")
           .withIndex("by_category", (q) => q.eq("categoryId", c._id))
-          .collect();
+          .take(2000);
         return { ...c, productCount: products.length };
       })
     );
@@ -65,8 +66,9 @@ export const list = query({
 });
 
 export const search = query({
-  args: { query: v.string() },
+  args: { token: v.string(), query: v.string() },
   handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
     if (!args.query.trim()) return [];
     return await ctx.db
       .query("categories")

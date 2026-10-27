@@ -24,7 +24,7 @@ const CHANNEL_LABEL: Record<Channel, string> = {
 export function FichaContatos({ customerId }: { customerId: Id<"customers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const interactions = useQuery(api.customerInteractions.listByCustomer, { customerId });
+  const interactions = useQuery(api.customerInteractions.listByCustomer, { token, customerId });
   const create = useMutation(api.customerInteractions.create);
 
   const [channel, setChannel] = useState<Channel>("PHONE");

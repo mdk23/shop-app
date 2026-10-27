@@ -7,6 +7,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Field, TextInput } from "@/components/ui";
 import { TIER_LABEL } from "@/lib/badgeTones";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 export type CaptureResult =
   | { kind: "none" }
@@ -26,13 +27,14 @@ export function AnonymousCustomerCapture({
   onChange: (result: CaptureResult) => void;
   onWhatsappOptInChange: (optIn: boolean) => void;
 }) {
+  const token = useToken();
   const { t } = useTranslation();
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState(false);
   const digits = phone.replace(/\D/g, "");
   const eligible = digits.length >= 7;
 
-  const match = useQuery(api.customers.findByPhone, eligible ? { phone } : "skip");
+  const match = useQuery(api.customers.findByPhone, eligible ? { token, phone } : "skip");
 
   useEffect(() => {
     if (!eligible) {

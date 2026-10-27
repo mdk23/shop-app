@@ -10,7 +10,6 @@ import {
   Card,
   Field,
   TextInput,
-  Select,
   Modal,
   Table,
   Th,
@@ -32,14 +31,15 @@ export default function ShipmentsPage() {
   const { t } = useTranslation();
   const token = useToken();
   const [filter, setFilter] = useState<Filter>("IN_TRANSIT");
-  const shipments = useQuery(api.shipments.list, filter === "ALL" ? {} : { status: filter });
-  const openOrders = useQuery(api.purchaseReceipts.openOrders, {});
+  const shipments = useQuery(api.shipments.list, filter === "ALL" ? { token } : { token, status: filter });
+  const openOrders = useQuery(api.purchaseReceipts.openOrders, { token });
   const create = useMutation(api.shipments.create);
   const arrive = useMutation(api.shipments.markArrived);
   const addCustoms = useMutation(api.shipments.addCustomsDocument);
 
   const [creating, setCreating] = useState(false);
-  const [orderId, setOrderId] = useState("");
+  // Units to ship per order line; lines may come from several orders.
+  const [shipQty, setShipQty] = useState<Record<string, number>>({});
   const [carrier, setCarrier] = useState("");
   const [tracking, setTracking] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,18 +50,31 @@ export default function ShipmentsPage() {
 
   const closeCreate = () => {
     setCreating(false);
-    setOrderId("");
+    setShipQty({});
     setCarrier("");
     setTracking("");
   };
 
+  const shippable = (line: { outstanding: number; inTransit: number }) =>
+    Math.max(0, line.outstanding - line.inTransit);
+  const shipWholeOrder = (lines: { _id: string; outstanding: number; inTransit: number }[]) =>
+    setShipQty((p) => {
+      const next = { ...p };
+      for (const l of lines) if (shippable(l) > 0) next[l._id] = shippable(l);
+      return next;
+    });
+  const items = Object.entries(shipQty)
+    .filter(([, q]) => q > 0)
+    .map(([id, quantity]) => ({ purchaseOrderItemId: id as Id<"purchaseOrderItems">, quantity }));
+
   const saveNew = async () => {
     if (!carrier.trim()) return toast.error(t("Name the carrier."));
+    if (items.length === 0) return toast.error(t("Choose what the shipment carries."));
     setBusy(true);
     try {
       await create({
         token,
-        purchaseOrderId: orderId ? (orderId as Id<"purchaseOrders">) : undefined,
+        items,
         carrier,
         trackingReference: tracking || undefined,
       });
@@ -138,7 +151,8 @@ export default function ShipmentsPage() {
                   <Th>{t("Carrier")}</Th>
                   <Th>{t("Tracking")}</Th>
                   <Th>{t("Supplier")}</Th>
-                  <Th>{t("Order")}</Th>
+                  <Th>{t("Orders")}</Th>
+                  <Th>{t("Contents")}</Th>
                   <Th>{t("Customs documents")}</Th>
                   <Th>{t("Status")}</Th>
                   <Th />
@@ -151,7 +165,25 @@ export default function ShipmentsPage() {
                     <Td className="font-bold">{s.carrier}</Td>
                     <Td className="font-mono">{s.trackingReference ?? "—"}</Td>
                     <Td>{s.supplierName ?? "—"}</Td>
-                    <Td className="font-mono">{s.orderCode ?? "—"}</Td>
+                    <Td>
+                      {s.orders.length === 0
+                        ? "—"
+                        : s.orders.map((o) => (
+                            <div key={o._id} className="font-mono whitespace-nowrap">
+                              {o.orderCode}
+                              {o.received && <span className="ml-1 text-success">✓ {t("received")}</span>}
+                            </div>
+                          ))}
+                    </Td>
+                    <Td className="text-xs">
+                      {s.items.length === 0
+                        ? "—"
+                        : s.items.map((i) => (
+                            <div key={i._id}>
+                              {i.label} <span className="font-bold">×{i.quantity}</span>
+                            </div>
+                          ))}
+                    </Td>
                     <Td>{s.customs.map((c) => `${c.documentType} ${c.reference}`).join(", ") || "—"}</Td>
                     <Td>
                       <Badge tone={s.status === "ARRIVED" ? "success" : "info"}>
@@ -182,28 +214,57 @@ export default function ShipmentsPage() {
         open={creating}
         onClose={closeCreate}
         title={t("New shipment")}
-        size="sm"
+        size="lg"
         footer={
           <>
             <Button variant="ghost" onClick={closeCreate}>
               {t("Cancel")}
             </Button>
-            <Button onClick={saveNew} loading={busy}>
+            <Button onClick={saveNew} loading={busy} disabled={items.length === 0}>
               {t("Save")}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label={t("Order")}>
-            <Select value={orderId} onChange={(e) => setOrderId(e.target.value)}>
-              <option value="">{t("Not linked to an order")}</option>
+          <Field label={t("Contents")} required>
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {(openOrders ?? []).length === 0 && (
+                <p className="text-xs text-on-surface-variant">{t("No orders are waiting for goods.")}</p>
+              )}
               {(openOrders ?? []).map((o) => (
-                <option key={o._id} value={o._id}>
-                  {o.orderCode} · {o.supplierName}
-                </option>
+                <div key={o._id} className="rounded-lg border border-outline/40 p-2 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold">
+                      <span className="font-mono">{o.orderCode}</span> · {o.supplierName}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => shipWholeOrder(o.lines)}>
+                      {t("Ship all")}
+                    </Button>
+                  </div>
+                  {o.lines.map((l) => (
+                    <div key={l._id} className="flex items-center gap-2 text-xs">
+                      <span className="flex-1 truncate">
+                        {l.productName} {l.variantLabel}
+                      </span>
+                      <span className="text-on-surface-variant whitespace-nowrap">
+                        {t("{count} left to ship", { count: shippable(l) })}
+                      </span>
+                      <TextInput
+                        type="number"
+                        min={0}
+                        max={shippable(l)}
+                        value={shipQty[l._id] ?? 0}
+                        disabled={shippable(l) === 0}
+                        onChange={(e) => setShipQty((p) => ({ ...p, [l._id]: Number(e.target.value) }))}
+                        className="w-20"
+                        aria-label={t("Quantity")}
+                      />
+                    </div>
+                  ))}
+                </div>
               ))}
-            </Select>
+            </div>
           </Field>
           <Field label={t("Carrier")} required>
             <TextInput value={carrier} onChange={(e) => setCarrier(e.target.value)} />

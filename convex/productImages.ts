@@ -12,8 +12,9 @@ export const generateUploadUrl = mutation({
 });
 
 export const listByProduct = query({
-  args: { productId: v.id("products") },
+  args: { token: v.string(), productId: v.id("products") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const images = await ctx.db
       .query("productImages")
       .withIndex("by_product", (q) => q.eq("productId", args.productId))

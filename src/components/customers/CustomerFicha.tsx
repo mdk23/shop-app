@@ -15,6 +15,7 @@ import { FichaProcuras } from "./FichaProcuras";
 import { FichaNuit } from "./FichaNuit";
 import { FichaRelacao } from "./FichaRelacao";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 const TABS = [
   "Summary",
@@ -41,9 +42,10 @@ export function CustomerFicha({
   customerId: Id<"customers">;
   variant: "drawer" | "page";
 }) {
+  const token = useToken();
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("Summary");
-  const context = useQuery(api.customers.getPosContext, { customerId });
+  const context = useQuery(api.customers.getPosContext, { token, customerId });
 
   if (!context || !context.customer) {
     return (

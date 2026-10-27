@@ -53,8 +53,8 @@ export default function QualityPage() {
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [source, setSource] = useState<Source | "ALL">("ALL");
   const rows = useQuery(api.qualityIssues.list, { token, source: source === "ALL" ? undefined : source });
-  const suppliers = useQuery(api.suppliers.list, {});
-  const openComplaints = useQuery(api.complaints.list, { status: "OPEN" });
+  const suppliers = useQuery(api.suppliers.list, { token });
+  const openComplaints = useQuery(api.complaints.list, { token, status: "OPEN" });
   const create = useMutation(api.qualityIssues.create);
   const treat = useMutation(api.qualityIssues.treat);
 

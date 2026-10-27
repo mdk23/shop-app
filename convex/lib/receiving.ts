@@ -8,6 +8,7 @@ import { recordVariantPrice } from "./catalog";
 import { patchVariant } from "./stockTotals";
 import { choiceSetting } from "../settings";
 import { assertWholeQuantity } from "./pricing";
+import { shipmentItemsOf, shipmentOrderIds, shipmentReceipts } from "./shipping";
 
 export type ReceiptLine = {
   productVariantId: Id<"productVariants">;
@@ -33,9 +34,27 @@ export async function receiveIntoStock(
     lines: ReceiptLine[];
     allowOver: boolean;
     allowUnannounced: boolean;
+    /** The shipment the goods came on. Its lines for this order are what was expected. */
+    shipmentId?: Id<"shipments">;
+    /** Why what arrived differs from what was expected, kept on the discrepancy rows. */
+    discrepancyReason?: string;
   }
 ): Promise<Id<"purchaseReceipts">> {
   const po = input.purchaseOrder;
+  const shipment = input.shipmentId ? await ctx.db.get(input.shipmentId) : null;
+  if (input.shipmentId && !shipment) throw new Error("Shipment not found.");
+  const shippedLines = shipment && po
+    ? (await shipmentItemsOf(ctx, shipment._id)).filter((i) => i.purchaseOrderId === po._id)
+    : [];
+  if (shipment) {
+    if (!po) throw new Error("Goods from a shipment are received against one of its orders.");
+    if (!shipmentOrderIds(shipment, await shipmentItemsOf(ctx, shipment._id)).includes(po._id)) {
+      throw new Error("This order is not on that shipment.");
+    }
+    if ((await shipmentReceipts(ctx, shipment)).some((r) => r.purchaseOrderId === po._id)) {
+      throw new Error("This order's goods from that shipment were already received.");
+    }
+  }
   const poItems = po
     ? await ctx.db
         .query("purchaseOrderItems")
@@ -68,7 +87,7 @@ export async function receiveIntoStock(
       if (rx.unitCost === undefined || rx.unitCost < 0) {
         throw new Error("Unannounced goods need a unit cost.");
       }
-      return { rx, line: undefined, discrepancy: "UNANNOUNCED" as const, unitCost: rx.unitCost };
+      return { rx, line: undefined, outstanding: 0, discrepancy: "UNANNOUNCED" as const, unitCost: rx.unitCost };
     }
     const outstanding = line.quantityOrdered - line.quantityReceived;
     const over = rx.quantityReceived > outstanding;
@@ -80,6 +99,7 @@ export async function receiveIntoStock(
     return {
       rx,
       line,
+      outstanding,
       discrepancy: over ? ("OVER" as const) : undefined,
       unitCost: line.unitCost,
     };
@@ -92,6 +112,7 @@ export async function receiveIntoStock(
     // Stored only for goods without an order; with an order, the supplier is the order's.
     supplierId: po ? undefined : input.supplierId,
     branchId: input.branchId,
+    shipmentId: shipment?._id,
     deliveryNoteRef: input.deliveryNoteRef?.trim() || undefined,
     notes: input.notes?.trim() || undefined,
     unitsTotal: plan.reduce((s, p) => s + p.rx.quantityReceived, 0),
@@ -147,6 +168,64 @@ export async function receiveIntoStock(
     await ctx.db.patch(po._id, { status: newStatus });
   }
 
+  // Discrepancies: lines over what the order still had outstanding or not on it at all,
+  // and, for a shipment, each of its lines for this order that came in short or over.
+  const reason = input.discrepancyReason?.trim() || undefined;
+  const supplierId = po?.supplierId ?? input.supplierId;
+  const record = async (row: {
+    kind: "SHORT" | "OVER" | "UNANNOUNCED";
+    expectedFrom: "ORDER" | "SHIPMENT" | "NONE";
+    productVariantId: Id<"productVariants">;
+    purchaseOrderItemId?: Id<"purchaseOrderItems">;
+    expectedQuantity: number;
+    receivedQuantity: number;
+  }) => {
+    await ctx.db.insert("receiptDiscrepancies", {
+      ...row,
+      supplierId,
+      purchaseOrderId: po?._id,
+      shipmentId: shipment?._id,
+      receiptId,
+      reason,
+      recordedBy: actor._id,
+      recordedByUsername: actor.username,
+      recordedAt: now,
+    });
+  };
+  for (const p of plan) {
+    if (!p.discrepancy) continue;
+    await record({
+      kind: p.discrepancy,
+      expectedFrom: p.line ? "ORDER" : "NONE",
+      productVariantId: p.rx.productVariantId,
+      purchaseOrderItemId: p.line?._id,
+      expectedQuantity: p.outstanding,
+      receivedQuantity: p.rx.quantityReceived,
+    });
+  }
+  for (const shipped of shippedLines) {
+    const received = plan
+      .filter((p) => p.line?._id === shipped.purchaseOrderItemId)
+      .reduce((s, p) => s + p.rx.quantityReceived, 0);
+    const flaggedOver = plan.some(
+      (p) => p.line?._id === shipped.purchaseOrderItemId && p.discrepancy === "OVER"
+    );
+    if (received < shipped.quantity || (received > shipped.quantity && !flaggedOver)) {
+      await record({
+        kind: received < shipped.quantity ? "SHORT" : "OVER",
+        expectedFrom: "SHIPMENT",
+        productVariantId: shipped.productVariantId,
+        purchaseOrderItemId: shipped.purchaseOrderItemId,
+        expectedQuantity: shipped.quantity,
+        receivedQuantity: received,
+      });
+    }
+  }
+  // Goods from a shipment being received means it has arrived.
+  if (shipment && shipment.status === "IN_TRANSIT") {
+    await ctx.db.patch(shipment._id, { status: "ARRIVED", arrivedAt: now });
+  }
+
   const flagged = plan.filter((p) => p.discrepancy).length;
   await writeAudit(ctx, {
     userId: actor._id,
@@ -193,24 +272,46 @@ async function applyPurchaseCost(
   if (!variant) return;
   let newCost = unitCost;
   if (method === "WEIGHTED_AVERAGE") {
-    const rows = await ctx.db
-      .query("variantStock")
-      .withIndex("by_variant", (q) => q.eq("productVariantId", variantId))
-      .collect();
-    const onHand = rows.reduce((s, r) => s + Math.max(0, r.quantity), 0);
+    const onHand = await unitsOnHand(ctx, variantId);
     if (onHand > 0) newCost = (onHand * variant.costPrice + quantity * unitCost) / (onHand + quantity);
   }
-  newCost = round2(newCost);
+  await setVariantCost(
+    ctx,
+    actor,
+    variant,
+    newCost,
+    `${method === "LATEST" ? "latest purchase" : "weighted average"}, ${receiptNumber}`
+  );
+}
+
+/** Units of a variant on hand across all branches (its cost is the variant's, not a branch's). */
+export async function unitsOnHand(ctx: QueryCtx, variantId: Id<"productVariants">): Promise<number> {
+  const rows = await ctx.db
+    .query("variantStock")
+    .withIndex("by_variant", (q) => q.eq("productVariantId", variantId))
+    .take(200);
+  return rows.reduce((s, r) => s + Math.max(0, r.quantity), 0);
+}
+
+/** Sets a variant's cost price, with a price-history row and an audit entry saying why. */
+export async function setVariantCost(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  variant: Doc<"productVariants">,
+  cost: number,
+  why: string
+) {
+  const newCost = round2(cost);
   if (newCost === variant.costPrice) return;
   const now = Date.now();
-  await patchVariant(ctx, variantId, { costPrice: newCost, updatedAt: now });
-  await recordVariantPrice(ctx, variantId, { sellingPrice: variant.sellingPrice, costPrice: newCost }, now);
+  await patchVariant(ctx, variant._id, { costPrice: newCost, updatedAt: now });
+  await recordVariantPrice(ctx, variant._id, { sellingPrice: variant.sellingPrice, costPrice: newCost }, now);
   await writeAudit(ctx, {
     userId: actor._id,
     username: actor.username,
     action: "variant.cost_updated",
     entityType: "productVariant",
-    entityId: variantId,
-    details: `${variant.sku}: costPrice ${variant.costPrice} → ${newCost} (${method === "LATEST" ? "latest purchase" : "weighted average"}, ${receiptNumber})`,
+    entityId: variant._id,
+    details: `${variant.sku}: costPrice ${variant.costPrice} → ${newCost} (${why})`,
   });
 }

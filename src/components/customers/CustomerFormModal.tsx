@@ -59,11 +59,11 @@ export function CustomerFormModal({
   const updateProfile = useMutation(api.customers.updateProfile);
   const setStatus = useMutation(api.customers.setStatus);
 
-  const categories = useQuery(api.categories.list, {});
-  const colors = useQuery(api.colors.list, {});
+  const categories = useQuery(api.categories.list, { token });
+  const colors = useQuery(api.colors.list, { token });
   const currentNuitValue = useQuery(
     api.fiscalIdentities.getNuit,
-    existing ? { customerId: existing._id } : "skip"
+    existing ? { token, customerId: existing._id } : "skip"
   );
   const setNuitMutation = useMutation(api.fiscalIdentities.setNuit);
   const [nuit, setNuitValue] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export function CustomerFormModal({
   // Only fetched when editing, to prefill preferences already on file.
   const context = useQuery(
     api.customers.getPosContext,
-    existing ? { customerId: existing._id } : "skip"
+    existing ? { token, customerId: existing._id } : "skip"
   );
 
   const [f, setF] = useState({

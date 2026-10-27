@@ -7,6 +7,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { inputClass } from "@/components/ui";
 import { Search, X } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 /**
  * Picks one product by typing its name. Every product can be found, however large the
@@ -19,12 +20,13 @@ export function ProductSearchSelect({
   value: Id<"products"> | "";
   onChange: (id: Id<"products"> | "") => void;
 }) {
+  const token = useToken();
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<string>("");
   const results = useQuery(
     api.products.list,
-    search.trim() ? { search, includeInactive: false } : "skip"
+    search.trim() ? { token, search, includeInactive: false } : "skip"
   );
 
   if (value && picked) {

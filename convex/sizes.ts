@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { writeAudit } from "./audit";
 
 /**
@@ -10,14 +10,15 @@ import { writeAudit } from "./audit";
  */
 
 export const list = query({
-  args: { includeInactive: v.optional(v.boolean()) },
+  args: { token: v.string(), includeInactive: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
     const rows = args.includeInactive
-      ? await ctx.db.query("sizes").collect()
+      ? await ctx.db.query("sizes").take(1000)
       : await ctx.db
           .query("sizes")
           .withIndex("by_active", (q) => q.eq("active", true))
-          .collect();
+          .take(1000);
     return rows.sort(
       (a, b) =>
         (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)
@@ -35,7 +36,7 @@ export const create = mutation({
     const actor = await authorize(ctx, args.token, "products.manage");
     const name = args.name.trim();
     if (!name) throw new Error("Size name is required.");
-    const existing = await ctx.db.query("sizes").collect();
+    const existing = await ctx.db.query("sizes").take(1000);
     if (existing.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
       throw new Error(`Size "${name}" already exists.`);
     }

@@ -114,6 +114,7 @@ describe("procurement planning and demand responses", () => {
     );
     await t.mutation(api.procurementPlanning.createNeed, {
       token,
+      branchId: ids.branchId,
       items: [{ variantId: ids.variantId, quantity: 3 }],
     });
     await t.mutation(api.procurementPlanning.createDecision, {

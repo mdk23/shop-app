@@ -10,10 +10,12 @@ import { useClientPage } from "@/lib/pagination";
 import { PagedFooter } from "@/components/ui";
 import { Plus } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 export default function ReceiptsPage() {
+  const token = useToken();
   const { t } = useTranslation();
-  const receipts = useQuery(api.purchaseReceipts.list, {});
+  const receipts = useQuery(api.purchaseReceipts.list, { token });
   const page = useClientPage(receipts ?? []);
 
   return (

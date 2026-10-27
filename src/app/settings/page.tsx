@@ -44,6 +44,7 @@ const TOGGLE_KEYS = [
 const VALUE_KEYS = [
   "businessName",
   "receiptFooter",
+  "currency",
   "currencySymbol",
   "taxRatePercent",
   "discountMaxPercentWithoutApproval",
@@ -51,8 +52,8 @@ const VALUE_KEYS = [
 
 export default function SettingsPage() {
   const token = useToken();
-  const settings = useQuery(api.settings.getAll, {});
-  const branches = useQuery(api.branches.listAll, {});
+  const settings = useQuery(api.settings.getAll, { token });
+  const branches = useQuery(api.branches.listAll, { token });
   const branchesPage = useClientPage(branches ?? []);
   const upsert = useMutation(api.settings.upsert);
   const initDefaults = useMutation(api.settings.initializeDefaults);
@@ -370,6 +371,8 @@ export default function SettingsPage() {
               ))}
             </div>
           </Card>
+
+          <DataChecksCard token={token} />
         </div>
       )}
 
@@ -381,6 +384,68 @@ export default function SettingsPage() {
         />
       )}
     </PageLayout>
+  );
+}
+
+const ISSUE_LABEL = { STOCK: "Stock", SALE_MONEY: "Sale paid / balance", PO_RECEIVED: "Received on order", PO_PAYMENT: "Order payment status" } as const;
+
+/** The nightly check that stored copies still match their source (convex/integrity.ts). */
+function DataChecksCard({ token }: { token: string }) {
+  const { t } = useTranslation();
+  const data = useQuery(api.integrity.latest, { token });
+  const runNow = useMutation(api.integrity.runNow);
+  return (
+    <Card className="p-4 lg:col-span-2">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-black uppercase tracking-wider">{t("Data checks")}</h3>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={async () => {
+            try {
+              await runNow({ token });
+              toast.success(t("Check started"));
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : t("Failed"));
+            }
+          }}
+        >
+          {t("Run now")}
+        </Button>
+      </div>
+      <p className="text-xs text-on-surface-variant mb-2">
+        {t("Every night stock, sale balances and received quantities are compared with their source records.")}{" "}
+        {data?.lastRunAt ? t("Last run: {date}", { date: new Date(data.lastRunAt).toLocaleString() }) : t("Not run yet.")}
+      </p>
+      {data === undefined ? (
+        <Spinner />
+      ) : data.issues.length === 0 ? (
+        data.lastRunAt && <Badge tone="success">{t("Everything matches")}</Badge>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>{t("Kind")}</Th>
+              <Th>{t("Record")}</Th>
+              <Th className="text-right">{t("Stored")}</Th>
+              <Th className="text-right">{t("From source")}</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.issues.map((i) => (
+              <tr key={i._id}>
+                <Td>
+                  <Badge tone="error">{t(ISSUE_LABEL[i.kind])}</Badge>
+                </Td>
+                <Td className="font-mono text-xs">{i.label}</Td>
+                <Td className="text-right">{i.stored}</Td>
+                <Td className="text-right font-bold">{i.expected}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Card>
   );
 }
 

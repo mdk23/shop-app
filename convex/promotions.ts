@@ -36,16 +36,17 @@ async function assertTargetExists(ctx: MutationCtx, target: Target): Promise<voi
 }
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const promotions = await ctx.db.query("promotions").collect();
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
+    const promotions = await ctx.db.query("promotions").take(1000);
     return await Promise.all(
       promotions.map(async (p) => ({
         ...p,
         targets: await ctx.db
           .query("promotionTargets")
           .withIndex("by_promotion", (q) => q.eq("promotionId", p._id))
-          .collect(),
+          .take(2000),
       }))
     );
   },

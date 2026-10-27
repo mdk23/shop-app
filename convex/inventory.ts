@@ -157,6 +157,8 @@ export const mutateStock = internalMutation({
         args.costPerUnit !== undefined
           ? args.costPerUnit * args.quantity
           : undefined,
+      // Purchases update the cost before booking the goods, so this is the cost after them.
+      variantCostAfter: variant.costPrice,
       referenceType: args.referenceType,
       referenceId: args.referenceId,
       adjustmentReason: args.adjustmentReason,
@@ -185,6 +187,7 @@ export const mutateStock = internalMutation({
 
 export const listMovements = query({
   args: {
+    token: v.string(),
     start: v.optional(v.number()),
     end: v.optional(v.number()),
     movementType: v.optional(v.string()),
@@ -195,6 +198,7 @@ export const listMovements = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const limit = args.limit ?? 500;
     let rows;
 
@@ -246,6 +250,7 @@ export const listMovements = query({
  */
 export const listMovementsPaged = query({
   args: {
+    token: v.string(),
     start: v.optional(v.number()),
     end: v.optional(v.number()),
     movementType: v.optional(v.string()),
@@ -254,6 +259,7 @@ export const listMovementsPaged = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const result = args.productVariantId
       ? await ctx.db
           .query("inventoryMovements")

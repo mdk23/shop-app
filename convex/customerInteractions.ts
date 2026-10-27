@@ -4,8 +4,9 @@ import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 
 export const listByCustomer = query({
-  args: { customerId: v.id("customers") },
+  args: { token: v.string(), customerId: v.id("customers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     return await ctx.db
       .query("customerInteractions")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))

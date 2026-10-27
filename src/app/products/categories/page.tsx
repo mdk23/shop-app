@@ -40,7 +40,7 @@ type Row = {
 export default function CategoriesPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const rows = useQuery(api.categories.list, { includeInactive: true });
+  const rows = useQuery(api.categories.list, { token, includeInactive: true });
   const page = useClientPage(rows ?? []);
   const create = useMutation(api.categories.create);
   const update = useMutation(api.categories.update);

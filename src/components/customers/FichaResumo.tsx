@@ -28,6 +28,7 @@ export function FichaResumo({ context }: { context: PosContext }) {
   const grant = useMutation(api.customerCredits.grant);
 
   if (!customer) return null;
+  const balance = money.accountBalance;
 
   const saveNotes = async () => {
     setSavingNotes(true);
@@ -66,7 +67,7 @@ export function FichaResumo({ context }: { context: PosContext }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <StatCard label={t("Total spent")} value={fmt(money.lifetimeSpend)} />
         <StatCard label={t("Purchases")} value={money.saleCount} />
         <StatCard label={t("Average ticket")} value={fmt(money.avgTicket)} />
@@ -74,6 +75,13 @@ export function FichaResumo({ context }: { context: PosContext }) {
           label={t("Debt")}
           value={fmt(money.outstandingDebt)}
           accent={money.outstandingDebt > 0 ? "error" : "primary"}
+        />
+        <StatCard label={t("Store credit")} value={fmt(money.storeCredit)} />
+        {/* One figure for the account: owed on sales less store credit held. */}
+        <StatCard
+          label={balance > 0.005 ? t("Balance: customer owes") : balance < -0.005 ? t("Balance: shop owes") : t("Balance")}
+          value={fmt(Math.abs(balance))}
+          accent={balance > 0.005 ? "error" : "primary"}
         />
       </div>
 

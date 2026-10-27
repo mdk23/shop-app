@@ -258,7 +258,7 @@ function TransferDetail({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const transfer = useQuery(api.stockTransfers.get, { id });
+  const transfer = useQuery(api.stockTransfers.get, { token, id });
   const setStatus = useMutation(api.stockTransfers.setStatus);
   const [receivingId, setReceivingId] = useState<Id<"stockTransfers"> | null>(null);
   const [busy, setBusy] = useState(false);

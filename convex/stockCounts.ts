@@ -7,8 +7,9 @@ import { writeAudit } from "./audit";
 import { formatVariantLabel, loadVariantNames } from "./lib/variantNames";
 
 export const get = query({
-  args: { id: v.id("stockCounts") },
+  args: { token: v.string(), id: v.id("stockCounts") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const count = await ctx.db.get(args.id);
     if (!count) return null;
     const lines = await ctx.db
@@ -34,8 +35,9 @@ export const get = query({
 });
 
 export const listByBranch = query({
-  args: { branchId: v.id("branches") },
+  args: { token: v.string(), branchId: v.id("branches") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     return await ctx.db
       .query("stockCounts")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
@@ -54,7 +56,7 @@ export const start = mutation({
     const open = await ctx.db
       .query("stockCounts")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .collect();
+      .take(1000);
     if (open.some((c) => c.status === "OPEN")) {
       throw new Error("A count is already open for this branch. Close it first.");
     }
@@ -71,7 +73,7 @@ export const start = mutation({
     const stock = await ctx.db
       .query("variantStock")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .collect();
+      .take(10000);
     for (const row of stock) {
       await ctx.db.insert("stockCountLines", {
         countId,

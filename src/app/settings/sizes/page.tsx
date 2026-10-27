@@ -37,7 +37,7 @@ type Row = {
 export default function SizesPage() {
   const token = useToken();
   const { t } = useTranslation();
-  const rows = useQuery(api.sizes.list, { includeInactive: true });
+  const rows = useQuery(api.sizes.list, { token, includeInactive: true });
   const page = useClientPage(rows ?? []);
   const create = useMutation(api.sizes.create);
   const update = useMutation(api.sizes.update);

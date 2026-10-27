@@ -8,8 +8,9 @@ const score = (n: number, label: string) => {
 };
 
 export const listBySupplier = query({
-  args: { supplierId: v.id("suppliers") },
+  args: { token: v.string(), supplierId: v.id("suppliers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "suppliers.view");
     return await ctx.db
       .query("supplierEvaluations")
       .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId))
@@ -20,11 +21,14 @@ export const listBySupplier = query({
 
 /**
  * Per active supplier: average quality and punctuality over its latest 50 evaluations,
- * and how many of its quality issues are still open (untreated).
+ * how many of its quality issues are still open (untreated), and its delivery
+ * discrepancies over the last 12 months (units short, over and unannounced).
  */
 export const scorecard = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "suppliers.view");
+    const since = Date.now() - 365 * 24 * 60 * 60 * 1000;
     const suppliers = await ctx.db
       .query("suppliers")
       .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
@@ -45,6 +49,16 @@ export const scorecard = query({
             .take(500)
         ).length;
         const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+        const discrepancies = await ctx.db
+          .query("receiptDiscrepancies")
+          .withIndex("by_supplier_and_recorded_at", (q) =>
+            q.eq("supplierId", s._id).gte("recordedAt", since)
+          )
+          .take(1000);
+        const units = (kind: "SHORT" | "OVER" | "UNANNOUNCED") =>
+          discrepancies
+            .filter((d) => d.kind === kind)
+            .reduce((sum, d) => sum + Math.abs(d.expectedQuantity - d.receivedQuantity), 0);
         return {
           supplierId: s._id,
           name: s.name,
@@ -52,6 +66,10 @@ export const scorecard = query({
           avgQuality: avg(evals.map((e) => e.qualityScore)),
           avgPunctuality: avg(evals.map((e) => e.punctualityPercent)),
           openQualityIssues: openIssues,
+          discrepancies: discrepancies.length,
+          shortUnits: units("SHORT"),
+          overUnits: units("OVER"),
+          unannouncedUnits: units("UNANNOUNCED"),
         };
       })
     );

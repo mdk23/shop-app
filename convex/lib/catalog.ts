@@ -40,7 +40,7 @@ export async function resolveSizeId(
 ): Promise<Id<"sizes"> | undefined> {
   const wanted = name?.trim().toLowerCase();
   if (!wanted) return undefined;
-  const sizes = await ctx.db.query("sizes").collect();
+  const sizes = await ctx.db.query("sizes").take(1000);
   const match = sizes.find((s) => s.name.trim().toLowerCase() === wanted);
   if (!match) throw new Error(`Size "${name!.trim()}" does not exist. Add it in Settings → Sizes first.`);
   return match._id;
@@ -53,7 +53,7 @@ export async function resolveColorId(
 ): Promise<Id<"colors"> | undefined> {
   const wanted = name?.trim().toLowerCase();
   if (!wanted) return undefined;
-  const colors = await ctx.db.query("colors").collect();
+  const colors = await ctx.db.query("colors").take(1000);
   const match = colors.find((c) => c.name.trim().toLowerCase() === wanted);
   if (!match) throw new Error(`Color "${name!.trim()}" does not exist. Add it in Settings → Colors first.`);
   return match._id;
@@ -62,7 +62,7 @@ export async function resolveColorId(
 /** The size with this name, created (active, unscaled) if the list does not have it yet. */
 export async function findOrCreateSize(ctx: MutationCtx, name: string): Promise<Id<"sizes">> {
   const wanted = name.trim();
-  const existing = (await ctx.db.query("sizes").collect()).find(
+  const existing = (await ctx.db.query("sizes").take(1000)).find(
     (s) => s.name.trim().toLowerCase() === wanted.toLowerCase()
   );
   if (existing) return existing._id;
@@ -73,7 +73,7 @@ export async function findOrCreateSize(ctx: MutationCtx, name: string): Promise<
 /** The colour with this name, created (active) if the list does not have it yet. */
 export async function findOrCreateColor(ctx: MutationCtx, name: string): Promise<Id<"colors">> {
   const wanted = name.trim();
-  const existing = (await ctx.db.query("colors").collect()).find(
+  const existing = (await ctx.db.query("colors").take(1000)).find(
     (c) => c.name.trim().toLowerCase() === wanted.toLowerCase()
   );
   if (existing) return existing._id;

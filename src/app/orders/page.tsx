@@ -12,6 +12,7 @@ import {
   Field,
   TextInput,
   Textarea,
+  Select,
   Modal,
   Table,
   Th,
@@ -57,7 +58,7 @@ export default function OrdersPage() {
   const branch = useResolvedBranch();
 
   const [filter, setFilter] = useState<"ALL" | Status>("ALL");
-  const orders = useQuery(api.customerOrders.list, filter === "ALL" ? {} : { status: filter });
+  const orders = useQuery(api.customerOrders.list, filter === "ALL" ? { token } : { token, status: filter });
   const page = useClientPage(orders ?? []);
   const create = useMutation(api.customerOrders.create);
 
@@ -66,20 +67,37 @@ export default function OrdersPage() {
   const [customerId, setCustomerId] = useState<Id<"customers"> | null>(null);
   const customer = useQuery(
     api.customers.getPosContext,
-    customerId ? { customerId } : "skip"
+    customerId ? { token, customerId } : "skip"
   );
-  const [lines, setLines] = useState<(PickedVariant & { quantity: number })[]>([]);
+  const [lines, setLines] = useState<(PickedVariant & { quantity: number; demandId?: string })[]>([]);
   const [reserve, setReserve] = useState(false);
+  const [paymentTermId, setPaymentTermId] = useState("");
+  const paymentTerms = useQuery(api.commercialSettings.listPaymentTerms, { token });
+  // The customer's requests still open, to say which one an order line answers.
+  const customerDemands = useQuery(api.demands.listByCustomer, customerId ? { token, customerId } : "skip");
+  const openDemands = (customerDemands ?? []).filter((d) => d.stage === "OPEN" || d.stage === "PROCEEDING");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const total = lines.reduce((s, l) => s + l.sellingPrice * l.quantity, 0);
+  // Priced by the server, the same way the order will be saved (promotions, tier, IVA).
+  const quote = useQuery(
+    api.sales.quote,
+    lines.length > 0
+      ? {
+          token,
+          customerId: customerId ?? undefined,
+          items: lines.map((l) => ({ productVariantId: l.variantId, quantity: l.quantity })),
+        }
+      : "skip"
+  );
+  const total = quote && !quote.error ? quote.total : undefined;
 
   const closeForm = () => {
     setCreating(false);
     setCustomerId(null);
     setLines([]);
     setReserve(false);
+    setPaymentTermId("");
     setNotes("");
   };
 
@@ -104,8 +122,10 @@ export default function OrdersPage() {
         items: lines.map((l) => ({
           productVariantId: l.variantId,
           quantity: l.quantity,
+          demandId: l.demandId ? (l.demandId as Id<"demands">) : undefined,
         })),
         reserve,
+        paymentTermId: paymentTermId ? (paymentTermId as Id<"paymentTerms">) : undefined,
         notes: notes.trim() || undefined,
       });
       toast.success(t("Order created"));
@@ -262,7 +282,31 @@ export default function OrdersPage() {
                     }
                     className="w-20"
                   />
-                  <span className="w-24 text-right font-bold">{fmt(l.sellingPrice * l.quantity)}</span>
+                  {openDemands.length > 0 && (
+                    <Select
+                      value={l.demandId ?? ""}
+                      onChange={(e) =>
+                        setLines((prev) =>
+                          prev.map((x) => (x.variantId === l.variantId ? { ...x, demandId: e.target.value || undefined } : x))
+                        )
+                      }
+                      className="w-40"
+                      aria-label={t("From request")}
+                    >
+                      <option value="">{t("Not from a request")}</option>
+                      {openDemands.map((d) => (
+                        <option key={d._id} value={d._id}>
+                          {d.description}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                  <span className="w-24 text-right font-bold">
+                    {(() => {
+                      const priced = quote && !quote.error ? quote.lines?.find((q) => q.productVariantId === l.variantId) : undefined;
+                      return priced ? fmt(priced.total) : "—";
+                    })()}
+                  </span>
                   <button
                     onClick={() => setLines((prev) => prev.filter((x) => x.variantId !== l.variantId))}
                     className="text-on-surface-variant hover:text-error"
@@ -274,8 +318,22 @@ export default function OrdersPage() {
               ))}
             </div>
             <p className="mt-2 text-right font-black">
-              {t("Total")}: {fmt(total)}
+              {t("Total")}: {total === undefined ? "—" : fmt(total)}
             </p>
+          </Field>
+
+          <Field label={t("Payment term")}>
+            <Select value={paymentTermId} onChange={(e) => setPaymentTermId(e.target.value)}>
+              <option value="">{t("No deposit required")}</option>
+              {(paymentTerms ?? [])
+                .filter((pt) => pt.active)
+                .map((pt) => (
+                  <option key={pt._id} value={pt._id}>
+                    {pt.name}
+                    {pt.depositPercent ? ` · ${t("deposit {percent}%", { percent: pt.depositPercent })}` : ""}
+                  </option>
+                ))}
+            </Select>
           </Field>
 
           <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">

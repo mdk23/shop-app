@@ -45,12 +45,12 @@ describe("demands (requests)", () => {
       description: "Black running shoes, size 42",
     });
 
-    const mine = await t.query(api.demands.listByCustomer, { customerId });
+    const mine = await t.query(api.demands.listByCustomer, { token, customerId });
     expect(mine).toHaveLength(1);
     expect(mine[0].stage).toBe("OPEN");
 
     await t.mutation(api.demands.setStage, { token, id, stage: "FULFILLED" });
-    const after = await t.query(api.demands.listByCustomer, { customerId });
+    const after = await t.query(api.demands.listByCustomer, { token, customerId });
     expect(after[0].stage).toBe("FULFILLED");
     expect(after[0].closedAt).toBeDefined();
 
@@ -65,7 +65,7 @@ describe("demands (requests)", () => {
     await t.mutation(api.demands.create, { token, description: "Walk-in B" });
     await t.mutation(api.demands.setStage, { token, id: a, stage: "LOST", reason: "OTHER" });
 
-    const open = await t.query(api.demands.list, { stage: "OPEN" });
+    const open = await t.query(api.demands.list, { token, stage: "OPEN" });
     expect(open.map((r) => r.description)).toEqual(["Walk-in B"]);
   });
 
@@ -115,7 +115,7 @@ describe("demands: size, colour, budget and reason", () => {
       description: "Any sock",
       reason: "STOCK",
     });
-    const counts = await t.query(api.demands.countByReason, {});
+    const counts = await t.query(api.demands.countByReason, { token });
     expect(counts).toEqual({ PRICE: 1, STOCK: 1 });
   });
 
@@ -145,7 +145,7 @@ describe("customer interactions", () => {
       occurredAt: 2_000,
     });
 
-    const rows = await t.query(api.customerInteractions.listByCustomer, { customerId });
+    const rows = await t.query(api.customerInteractions.listByCustomer, { token, customerId });
     expect(rows.map((r) => r.channel)).toEqual(["WHATSAPP", "PHONE"]);
     expect(rows[0].createdByUsername).toBe("admin");
   });

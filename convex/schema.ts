@@ -297,7 +297,8 @@ export default defineSchema({
       v.literal("PURCHASE_ORDER"),
       v.literal("PURCHASE_RECEIPT"),
       v.literal("TRANSFER"),
-      v.literal("CUSTOMER_ORDER")
+      v.literal("CUSTOMER_ORDER"),
+      v.literal("DELIVERY")
     ),
     prefix: v.string(),
     lastNumber: v.number(),
@@ -313,7 +314,9 @@ export default defineSchema({
   sales: defineTable({
     saleNumber: v.string(), // the gapless number, e.g. "FT-0042"
     branchId: v.id("branches"),
-    customerId: v.id("customers"),
+    // Absent for a walk-in sale: no customer. (Older sales point at the walk-in
+    // placeholder customer, isGeneric, which means the same.)
+    customerId: v.optional(v.id("customers")),
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
     // What happened to the sale (goods). Money owed or refunded is `paymentStatus`.
@@ -393,7 +396,7 @@ export default defineSchema({
     // Copied from the sale when the return is made (a sale's branch and customer never
     // change), kept so returns can be listed by branch and by customer through indexes.
     branchId: v.id("branches"),
-    customerId: v.id("customers"),
+    customerId: v.optional(v.id("customers")), // absent when the sale had no customer
     userId: v.optional(v.id("users")),
     username: v.optional(v.string()),
     status: v.union(v.literal("COMPLETED"), v.literal("CANCELLED")),
@@ -478,6 +481,10 @@ export default defineSchema({
     newBalance: v.number(),
     costPerUnit: v.optional(v.number()),
     totalCostImpact: v.optional(v.number()),
+    // The variant's cost price (the weighted average under that cost method) once this
+    // movement is booked. `costPerUnit` is what this movement's goods cost, e.g. the
+    // supplier's price on a purchase.
+    variantCostAfter: v.optional(v.number()),
     referenceType: v.optional(v.string()), // sale, sale_return, purchase_order, transfer, stock_adjustment
     referenceId: v.optional(v.string()),
     // Set on stock adjustments (referenceType "stock_adjustment"): manual corrections
@@ -660,6 +667,10 @@ export default defineSchema({
     notes: v.optional(v.string()),
     paymentTermId: v.optional(v.id("paymentTerms")),
     conditions: v.optional(v.string()),
+    // The deposit rule: the share of the total (%) that must be paid before the order is
+    // confirmed (binding). Absent on orders from before the rule = no deposit required.
+    depositPercent: v.optional(v.number()),
+    confirmedAt: v.optional(v.number()),
     saleId: v.optional(v.id("sales")),
     createdBy: v.id("users"),
     createdByUsername: v.string(),
@@ -669,7 +680,8 @@ export default defineSchema({
   })
     .index("by_customer", ["customerId"])
     .index("by_status", ["status"])
-    .index("by_order_number", ["orderNumber"]),
+    .index("by_order_number", ["orderNumber"])
+    .index("by_sale", ["saleId"]),
 
   customerOrderItems: defineTable({
     orderId: v.id("customerOrders"),
@@ -871,7 +883,9 @@ export default defineSchema({
     quantityReceived: v.number(),
     unitCost: v.number(),
     totalCost: v.number(),
-  }).index("by_purchase_order", ["purchaseOrderId"]),
+  })
+    .index("by_purchase_order", ["purchaseOrderId"])
+    .index("by_product_variant", ["productVariantId"]),
 
   // A goods-received note. Every stock increase from a purchase goes through one of
   // these, so receiving has a document of its own. `purchaseOrderId` is absent for
@@ -883,6 +897,8 @@ export default defineSchema({
     // (read with lib/receiving.receiptSupplierId).
     supplierId: v.optional(v.id("suppliers")),
     branchId: v.id("branches"),
+    // The shipment the goods came on; one receipt per order per shipment.
+    shipmentId: v.optional(v.id("shipments")),
     deliveryNoteRef: v.optional(v.string()),
     notes: v.optional(v.string()),
     unitsTotal: v.number(),
@@ -893,7 +909,8 @@ export default defineSchema({
   })
     .index("by_purchase_order", ["purchaseOrderId"])
     .index("by_branch", ["branchId"])
-    .index("by_receipt_number", ["receiptNumber"]),
+    .index("by_receipt_number", ["receiptNumber"])
+    .index("by_shipment", ["shipmentId"]),
 
   purchaseReceiptItems: defineTable({
     receiptId: v.id("purchaseReceipts"),
@@ -906,7 +923,8 @@ export default defineSchema({
     discrepancy: v.optional(v.union(v.literal("OVER"), v.literal("UNANNOUNCED"))),
   })
     .index("by_receipt", ["receiptId"])
-    .index("by_variant", ["productVariantId"]),
+    .index("by_variant", ["productVariantId"])
+    .index("by_purchase_order_item", ["purchaseOrderItemId"]),
 
   // ─────────────────────────────────────────────
   // CASH REGISTER

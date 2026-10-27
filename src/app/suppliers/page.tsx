@@ -51,6 +51,7 @@ export default function SuppliersPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const rows = useQuery(api.suppliers.list, {
+          token,
     search: search || undefined,
     status: (statusFilter || undefined) as "ACTIVE" | "INACTIVE" | undefined,
   });
@@ -207,7 +208,7 @@ function SupplierModal({
   const { t } = useTranslation();
   const create = useMutation(api.suppliers.create);
   const update = useMutation(api.suppliers.update);
-  const terms = useQuery(api.commercialSettings.listPaymentTerms, {});
+  const terms = useQuery(api.commercialSettings.listPaymentTerms, { token });
   const [f, setF] = useState({
     name: existing?.name ?? "",
     contactName: existing?.contactName ?? "",

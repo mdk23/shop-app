@@ -179,7 +179,7 @@ describe("customer orders: reservations", () => {
     await t.mutation(api.customerOrders.cancel, { token, orderId, reason: "Changed mind" });
 
     expect(await creditTotal(t, ids.customerId)).toBe(100);
-    const order = await t.query(api.customerOrders.get, { id: orderId });
+    const order = await t.query(api.customerOrders.get, { token, id: orderId });
     expect(order?.status).toBe("CANCELLED");
 
     await t.mutation(api.sales.create, {
@@ -218,7 +218,7 @@ describe("customer orders: deposits and collection", () => {
     expect(sale?.status).toBe("COMPLETED");
     expect(await stockOf(t, ids.branchId, ids.variantId)).toBe(8);
 
-    const order = await t.query(api.customerOrders.get, { id: orderId });
+    const order = await t.query(api.customerOrders.get, { token, id: orderId });
     expect(order?.status).toBe("COLLECTED");
     expect(order?.saleId).toBe(saleId);
 
@@ -257,7 +257,7 @@ describe("customer orders: deposits and collection", () => {
     await t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 100, method: "CASH" });
     await t.mutation(api.customerOrders.addDeposit, { token, orderId, amount: 30, method: "CARD" });
 
-    const session = await t.query(api.cashRegister.getSessionWithMovements, { sessionId });
+    const session = await t.query(api.cashRegister.getSessionWithMovements, { token, sessionId });
     expect(session?.expectedCash).toBe(150);
     // The opening float is kept once, on the session; no "opening" row is stored.
     expect(session?.openingAmount).toBe(50);

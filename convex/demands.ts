@@ -34,8 +34,9 @@ async function withCustomerName(ctx: QueryCtx, rows: Doc<"demands">[]) {
 
 /** Procuras view: every demand, newest first, optionally by stage or by lost-sale reason. */
 export const list = query({
-  args: { stage: v.optional(STAGE), reason: v.optional(REASON) },
+  args: { token: v.string(), stage: v.optional(STAGE), reason: v.optional(REASON) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const rows = args.reason
       ? await ctx.db
           .query("demands")
@@ -58,8 +59,9 @@ export const list = query({
 
 /** Oportunidades view: demands that proceeded, whatever happened to them after. */
 export const listOpportunities = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const rows = await ctx.db
       .query("demands")
       .withIndex("by_proceeded_at", (q) => q.gt("proceededAt", 0))
@@ -70,8 +72,9 @@ export const listOpportunities = query({
 });
 
 export const listByCustomer = query({
-  args: { customerId: v.id("customers") },
+  args: { token: v.string(), customerId: v.id("customers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     return await ctx.db
       .query("demands")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
@@ -107,8 +110,9 @@ async function moveReasonCount(
 
 /** Count of demands per reason, for buying: which causes lose sales most. */
 export const countByReason = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const rows = await ctx.db
       .query("counters")
       .withIndex("by_key", (q) => q.gte("key", REASON_KEY).lt("key", REASON_KEY + "~"))

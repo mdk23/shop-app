@@ -11,6 +11,7 @@ import { Search, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
+import { useToken } from "@/lib/useShop";
 
 /**
  * Search/create customer panel — extracted from the old always-visible
@@ -28,12 +29,13 @@ export function CustomerSearchPanel({
   onClose: () => void;
   onSelect: (id: Id<"customers">) => void;
 }) {
+  const token = useToken();
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [onboardingId, setOnboardingId] = useState<Id<"customers"> | null>(null);
 
-  const results = useQuery(api.customers.search, query.trim() ? { query } : "skip");
+  const results = useQuery(api.customers.search, query.trim() ? { token, query } : "skip");
 
   const reset = () => {
     setQuery("");

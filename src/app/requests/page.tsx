@@ -56,12 +56,13 @@ export default function RequestsPage() {
   const [reason, setReason] = useState<DemandReason | "ALL">("ALL");
 
   const demands = useQuery(api.demands.list, {
+          token,
     stage: stage === "ALL" ? undefined : stage,
     reason: reason === "ALL" ? undefined : reason,
   });
-  const counts = useQuery(api.demands.countByReason, {});
-  const sizes = useQuery(api.sizes.list, {});
-  const colors = useQuery(api.colors.list, {});
+  const counts = useQuery(api.demands.countByReason, { token });
+  const sizes = useQuery(api.sizes.list, { token });
+  const colors = useQuery(api.colors.list, { token });
   const changeStage = useMutation(api.demands.setStage);
   const respond = useMutation(api.demandResponses.record);
   const page = useClientPage(demands ?? []);

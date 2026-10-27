@@ -1,14 +1,16 @@
 import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { writeAudit } from "./audit";
 import { getSetting } from "./settings";
 
 // List all branches (Admin view)
 export const listAll = query({
-  handler: async (ctx) => {
-    return await ctx.db.query("branches").collect();
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
+    return await ctx.db.query("branches").take(1000);
   },
 });
 
@@ -18,7 +20,7 @@ export const listActive = query({
     const branches = await ctx.db
       .query("branches")
       .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
-      .collect();
+      .take(1000);
 
     // If no branches exist, return empty array
     return branches;
@@ -32,7 +34,7 @@ async function assertCanAddActiveBranch(ctx: MutationCtx, exceptId?: Id<"branche
   const active = await ctx.db
     .query("branches")
     .withIndex("by_status", (q) => q.eq("status", "ACTIVE"))
-    .collect();
+    .take(1000);
   if (active.some((b) => b._id !== exceptId)) {
     throw new Error("Multi-branch mode is off. Turn it on in Settings to add another branch.");
   }
@@ -62,7 +64,7 @@ export const create = mutation({
 
     if (args.isDefault) {
       // Unset previous defaults
-      const allBranches = await ctx.db.query("branches").collect();
+      const allBranches = await ctx.db.query("branches").take(1000);
       for (const b of allBranches) {
         if (b.isDefault) {
           await ctx.db.patch(b._id, { isDefault: false });
@@ -115,7 +117,7 @@ export const update = mutation({
     }
 
     if (args.isDefault) {
-      const allBranches = await ctx.db.query("branches").collect();
+      const allBranches = await ctx.db.query("branches").take(1000);
       for (const b of allBranches) {
         if (b._id !== args.id && b.isDefault) {
           await ctx.db.patch(b._id, { isDefault: false });
@@ -145,8 +147,10 @@ export const update = mutation({
 
 // Ensure a default branch exists (seed fallback)
 export const ensureDefaultBranch = mutation({
-  handler: async (ctx) => {
-    const branches = await ctx.db.query("branches").collect();
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "settings.manage");
+    const branches = await ctx.db.query("branches").take(1000);
     if (branches.length === 0) {
       const defaultId = await ctx.db.insert("branches", {
         name: "Main Store",

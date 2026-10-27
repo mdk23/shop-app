@@ -30,8 +30,10 @@ export const overview = query({
           .query("procurementNeedItems")
           .withIndex("by_need", (q) => q.eq("needId", need._id))
           .collect();
+        const branch = need.branchId ? await ctx.db.get(need.branchId) : null;
         return {
           ...need,
+          branchName: branch?.name ?? null,
           items: await Promise.all(
             items.map(async (item) => ({ ...item, label: await variantLabel(ctx, item.productVariantId) }))
           ),
@@ -50,8 +52,25 @@ export const overview = query({
             const coverages = await ctx.db
               .query("decisionNeedCoverages")
               .withIndex("by_decision_item", (q) => q.eq("decisionItemId", item._id))
-              .collect();
-            return { ...item, label: await variantLabel(ctx, item.productVariantId), coverages: coverages.length };
+              .take(100);
+            const orderLines = await ctx.db
+              .query("decisionOrderLines")
+              .withIndex("by_decision_item", (q) => q.eq("decisionItemId", item._id))
+              .take(100);
+            const orders = await Promise.all(
+              orderLines.map(async (l) => {
+                const line = await ctx.db.get(l.purchaseOrderItemId);
+                const po = line ? await ctx.db.get(line.purchaseOrderId) : null;
+                return { _id: l._id, orderCode: po?.orderCode ?? "—", quantity: l.quantity };
+              })
+            );
+            return {
+              ...item,
+              label: await variantLabel(ctx, item.productVariantId),
+              coverages: coverages.length,
+              orders,
+              quantityOrdered: orderLines.reduce((s, l) => s + l.quantity, 0),
+            };
           })
         );
         return { ...decision, items: itemsOut };
@@ -62,11 +81,12 @@ export const overview = query({
 });
 
 export const createNeed = mutation({
-  args: { token: v.string(), items: v.array(itemInput) },
+  args: { token: v.string(), branchId: v.id("branches"), items: v.array(itemInput) },
   handler: async (ctx, args) => {
     const actor = await authorize(ctx, args.token, "purchasing.manage");
     if (args.items.length === 0) throw new Error("Add at least one item.");
-    const id = await ctx.db.insert("procurementNeeds", { recognizedAt: Date.now() });
+    if (!(await ctx.db.get(args.branchId))) throw new Error("Branch not found.");
+    const id = await ctx.db.insert("procurementNeeds", { recognizedAt: Date.now(), branchId: args.branchId });
     for (const item of args.items) {
       if (item.quantity <= 0) throw new Error("Quantities must be positive.");
       const variant = await ctx.db.get(item.variantId);
@@ -150,6 +170,95 @@ export const coverNeed = mutation({
       entityType: "procurementDecision",
       entityId: decisionItem.decisionId,
       details: `${args.quantity} unit(s)`,
+    });
+    return id;
+  },
+});
+
+/** Open purchase order lines for a variant, to carry a decision out on. */
+export const openOrderLines = query({
+  args: { token: v.string(), variantId: v.id("productVariants") },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
+    const lines = await ctx.db
+      .query("purchaseOrderItems")
+      .withIndex("by_product_variant", (q) => q.eq("productVariantId", args.variantId))
+      .take(200);
+    const out = [];
+    for (const line of lines) {
+      const po = await ctx.db.get(line.purchaseOrderId);
+      if (!po || po.status === "CANCELLED" || po.status === "COMPLETED") continue;
+      const supplier = await ctx.db.get(po.supplierId);
+      out.push({
+        _id: line._id,
+        orderCode: po.orderCode,
+        status: po.status,
+        supplierName: supplier?.name ?? "—",
+        quantityOrdered: line.quantityOrdered,
+        quantityFromDecisions: await decidedOnLine(ctx, line._id),
+      });
+    }
+    return out;
+  },
+});
+
+async function decidedOnLine(ctx: QueryCtx, purchaseOrderItemId: Id<"purchaseOrderItems">) {
+  const rows = await ctx.db
+    .query("decisionOrderLines")
+    .withIndex("by_purchase_order_item", (q) => q.eq("purchaseOrderItemId", purchaseOrderItemId))
+    .take(100);
+  return rows.reduce((s, r) => s + r.quantity, 0);
+}
+
+/**
+ * Says that (part of) a decision item was placed on a purchase order line. The line must be
+ * for the same variant; a decision item cannot be ordered beyond what was decided, nor a
+ * line be claimed by decisions beyond what it orders.
+ */
+export const linkToOrder = mutation({
+  args: {
+    token: v.string(),
+    decisionItemId: v.id("procurementDecisionItems"),
+    purchaseOrderItemId: v.id("purchaseOrderItems"),
+    quantity: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
+    const decisionItem = await ctx.db.get(args.decisionItemId);
+    const line = await ctx.db.get(args.purchaseOrderItemId);
+    if (!decisionItem || !line) throw new Error("Decision or order line not found.");
+    if (decisionItem.productVariantId !== line.productVariantId) {
+      throw new Error("A decision can only be ordered on a line for the same product variant.");
+    }
+    const po = await ctx.db.get(line.purchaseOrderId);
+    if (!po || po.status === "CANCELLED") throw new Error("That order is cancelled.");
+    if (args.quantity <= 0) throw new Error("The ordered quantity must be positive.");
+    const already = (
+      await ctx.db
+        .query("decisionOrderLines")
+        .withIndex("by_decision_item", (q) => q.eq("decisionItemId", args.decisionItemId))
+        .take(100)
+    ).reduce((s, r) => s + r.quantity, 0);
+    const decided = decisionItem.quantityDecided ?? 0;
+    if (already + args.quantity > decided) {
+      throw new Error(`Only ${Math.max(0, decided - already)} unit(s) of this decision are left to order.`);
+    }
+    const onLine = await decidedOnLine(ctx, line._id);
+    if (onLine + args.quantity > line.quantityOrdered) {
+      throw new Error(`That line orders ${line.quantityOrdered}; decisions already account for ${onLine}.`);
+    }
+    const id = await ctx.db.insert("decisionOrderLines", {
+      decisionItemId: args.decisionItemId,
+      purchaseOrderItemId: line._id,
+      quantity: args.quantity,
+    });
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "procurement.decision_ordered",
+      entityType: "procurementDecision",
+      entityId: decisionItem.decisionId,
+      details: `${args.quantity} unit(s) on ${po.orderCode}`,
     });
     return id;
   },

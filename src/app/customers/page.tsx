@@ -22,6 +22,7 @@ import { usePagedQuery } from "@/lib/pagination";
 import { CustomerFormModal, type CustomerStatus } from "@/components/customers/CustomerFormModal";
 import { Plus, Search, Pencil } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 type Customer = {
   _id: Id<"customers">;
@@ -38,13 +39,14 @@ type Customer = {
 };
 
 export default function CustomersPage() {
+  const token = useToken();
   const { t } = useTranslation();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const searchResults = useQuery(
     api.customers.search,
-    search.trim() ? { query: search, showArchived } : "skip"
+    search.trim() ? { token, query: search, showArchived } : "skip"
   );
   const {
     rows: pagedResults,

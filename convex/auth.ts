@@ -241,7 +241,7 @@ export const listActiveSessions = query({
     const activeSessions = await ctx.db
       .query("userSessions")
       .withIndex("by_expires_at", (q) => q.gt("expiresAt", Date.now()))
-      .collect();
+      .take(2000);
     const results = [];
 
     for (const s of activeSessions) {

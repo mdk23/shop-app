@@ -84,6 +84,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { name: "Sales", href: "/sales", icon: Receipt, allowedRoles: MANAGER },
       { name: "Returns", href: "/returns", icon: RotateCcw },
+      { name: "Deliveries", href: "/deliveries", icon: Truck },
       { name: "Cash Reports", href: "/cash-register/reports", icon: ScrollText, allowedRoles: MANAGER },
     ],
   },

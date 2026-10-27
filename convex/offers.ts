@@ -9,20 +9,20 @@ export const list = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "products.view");
-    const offers = await ctx.db.query("offers").collect();
+    const offers = await ctx.db.query("offers").take(1000);
     return await Promise.all(
       offers.map(async (offer) => {
         const links = await ctx.db
           .query("offerAssortments")
           .withIndex("by_offer", (q) => q.eq("offerId", offer._id))
-          .collect();
+          .take(1000);
         const assortments = await Promise.all(
           links.map(async (link) => {
             const assortment = await ctx.db.get(link.assortmentId);
             const items = await ctx.db
               .query("assortmentItems")
               .withIndex("by_assortment", (q) => q.eq("assortmentId", link.assortmentId))
-              .collect();
+              .take(2000);
             const named = await Promise.all(
               items.map(async (item) => ({
                 _id: item._id,
@@ -43,7 +43,7 @@ export const listAssortments = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "products.view");
-    return await ctx.db.query("assortments").collect();
+    return await ctx.db.query("assortments").take(1000);
   },
 });
 
@@ -125,7 +125,7 @@ export const includeAssortment = mutation({
     const existing = await ctx.db
       .query("offerAssortments")
       .withIndex("by_offer", (q) => q.eq("offerId", args.offerId))
-      .collect();
+      .take(1000);
     if (existing.some((e) => e.assortmentId === args.assortmentId && e.validTo === undefined)) {
       throw new Error("This assortment is already in the offer.");
     }

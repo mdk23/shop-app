@@ -77,7 +77,7 @@ export const listInventory = query({
     await authorize(ctx, args.token, "inventory.view");
     const namesOf = await loadVariantNames(ctx);
     const categoryName = new Map<string, string>();
-    for (const c of await ctx.db.query("categories").collect()) categoryName.set(c._id, c.name);
+    for (const c of await ctx.db.query("categories").take(1000)) categoryName.set(c._id, c.name);
 
     const productCache = new Map<Id<"products">, Doc<"products"> | null>();
     const productOf = async (id: Id<"products">) => {
@@ -191,8 +191,8 @@ export const lowStockSummary = query({
         ? await ctx.db
             .query("stockTotals")
             .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
-            .collect()
-        : await ctx.db.query("stockTotals").collect()
+            .take(10000)
+        : await ctx.db.query("stockTotals").take(10000)
     ).reduce((s, r) => ({ low: s.low + r.lowCount, out: s.out + r.outCount }), { low: 0, out: 0 });
 
     const items: {

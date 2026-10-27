@@ -24,7 +24,7 @@ export function TransferReceiveModal({
 }) {
   const { t } = useTranslation();
   const token = useToken();
-  const transfer = useQuery(api.stockTransfers.get, { id: transferId });
+  const transfer = useQuery(api.stockTransfers.get, { token, id: transferId });
   const receive = useMutation(api.stockTransfers.receive);
   const [observed, setObserved] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);

@@ -40,9 +40,9 @@ export default function InventoryPage() {
   const effectiveBranch = (pickBranch || branchId) as Id<"branches"> | undefined;
 
   const token = useToken();
-  const categories = useQuery(api.categories.list, {});
-  const sizes = useQuery(api.sizes.list, {});
-  const colors = useQuery(api.colors.list, {});
+  const categories = useQuery(api.categories.list, { token });
+  const sizes = useQuery(api.sizes.list, { token });
+  const colors = useQuery(api.colors.list, { token });
   const [categoryId, setCategoryId] = useState("");
   const [size, setSize] = useState("");
   const [color, setColor] = useState("");

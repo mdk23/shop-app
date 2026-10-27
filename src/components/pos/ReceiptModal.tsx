@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Modal, Button, Spinner } from "@/components/ui";
-import { useCurrency } from "@/lib/useShop";
+import { useCurrency, useToken } from "@/lib/useShop";
 import { formatDateTime } from "@/lib/utils";
 import { getReceiptChannel } from "@/lib/receipts";
 import { useTranslation } from "@/contexts/LanguageContext";
@@ -18,10 +18,11 @@ export function ReceiptModal({
   saleId: Id<"sales">;
   onClose: () => void;
 }) {
+  const token = useToken();
   const fmt = useCurrency();
   const { t } = useTranslation();
-  const sale = useQuery(api.sales.get, { id: saleId });
-  const settings = useQuery(api.settings.getAll, {});
+  const sale = useQuery(api.sales.get, { token, id: saleId });
+  const settings = useQuery(api.settings.getAll, { token });
 
   const s = (key: string) =>
     settings?.find((x) => x.key === key)?.value ?? "";

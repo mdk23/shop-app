@@ -94,8 +94,9 @@ export const create = mutation({
 
 /** Stock adjustments, newest first: the ledger's movements of the adjustment kind. */
 export const listPaged = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: { token: v.string(), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const result = await ctx.db
       .query("inventoryMovements")
       .withIndex("by_reference_type_and_date", (q) => q.eq("referenceType", "stock_adjustment"))

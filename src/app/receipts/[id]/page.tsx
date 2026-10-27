@@ -31,8 +31,8 @@ export default function ReceiptDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const receiptId = params.id as Id<"purchaseReceipts">;
-  const receipt = useQuery(api.purchaseReceipts.get, { id: receiptId });
-  const inspections = useQuery(api.receiptInspections.listByReceipt, { receiptId });
+  const receipt = useQuery(api.purchaseReceipts.get, { token, id: receiptId });
+  const inspections = useQuery(api.receiptInspections.listByReceipt, { token, receiptId });
   const createIssue = useMutation(api.qualityIssues.create);
 
   const [target, setTarget] = useState<Line | null>(null);
@@ -137,6 +137,53 @@ export default function ReceiptDetailPage() {
           </Table>
         </div>
       </Card>
+
+      {receipt.shipmentCarrier && (
+        <p className="text-xs text-on-surface-variant mb-4">
+          {t("Came on shipment {carrier}", { carrier: receipt.shipmentCarrier })}
+          {receipt.shipmentTracking ? ` · ${receipt.shipmentTracking}` : ""}
+        </p>
+      )}
+
+      {receipt.discrepancies.length > 0 && (
+        <Card className="mb-4">
+          <p className="px-4 pt-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+            {t("Discrepancies")}
+          </p>
+          <div className="overflow-x-auto">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>{t("Item")}</Th>
+                  <Th>{t("Kind")}</Th>
+                  <Th>{t("Expected from")}</Th>
+                  <Th className="text-right">{t("Expected")}</Th>
+                  <Th className="text-right">{t("Received")}</Th>
+                  <Th>{t("Reason")}</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {receipt.discrepancies.map((d) => (
+                  <tr key={d._id}>
+                    <Td>{d.label}</Td>
+                    <Td>
+                      <Badge tone="warning">
+                        {d.kind === "SHORT" ? t("Short") : d.kind === "OVER" ? t("Over") : t("Not on the order")}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      {d.expectedFrom === "SHIPMENT" ? t("Shipment") : d.expectedFrom === "ORDER" ? t("Order") : "—"}
+                    </Td>
+                    <Td className="text-right">{d.expectedQuantity}</Td>
+                    <Td className="text-right font-bold">{d.receivedQuantity}</Td>
+                    <Td className="text-xs">{d.reason ?? "—"}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-4">
         <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">

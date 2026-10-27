@@ -74,6 +74,8 @@ export type PosContext = {
   money: {
     storeCredit: number;
     outstandingDebt: number;
+    /** Owed on sales less store credit: positive = the customer owes the shop. */
+    accountBalance: number;
     lifetimeSpend: number;
     saleCount: number;
     avgTicket: number;

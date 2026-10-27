@@ -63,7 +63,7 @@ describe("opportunities (demands that proceeded)", () => {
     await expect(t.mutation(api.demands.setStage, { token, id, stage: "LOST" })).rejects.toThrow(/Say why/);
 
     await t.mutation(api.demands.setStage, { token, id, stage: "LOST", reason: "PRICE" });
-    const board = await t.query(api.demands.listOpportunities, {});
+    const board = await t.query(api.demands.listOpportunities, { token });
     expect(board).toHaveLength(1);
     expect(board[0]).toMatchObject({ stage: "LOST", reason: "PRICE", customerName: "Jane Doe" });
   });
@@ -71,11 +71,11 @@ describe("opportunities (demands that proceeded)", () => {
   test("a request joins the board once it proceeds", async () => {
     const { t, token } = await seed();
     const id = await t.mutation(api.demands.create, { token, description: "Casaco" });
-    expect(await t.query(api.demands.listOpportunities, {})).toHaveLength(0);
+    expect(await t.query(api.demands.listOpportunities, { token })).toHaveLength(0);
     await t.mutation(api.demands.setStage, { token, id, stage: "PROCEEDING" });
-    const board = await t.query(api.demands.listOpportunities, {});
+    const board = await t.query(api.demands.listOpportunities, { token });
     expect(board.map((d) => d._id)).toEqual([id]);
-    expect(await t.query(api.demands.list, {})).toHaveLength(1);
+    expect(await t.query(api.demands.list, { token })).toHaveLength(1);
   });
 
   test("a proceeding opportunity converts into an order of the same customer", async () => {
@@ -101,7 +101,7 @@ describe("opportunities (demands that proceeded)", () => {
     );
     await t.mutation(api.demands.markConverted, { token, id, orderId });
 
-    const converted = await t.query(api.demands.list, { stage: "CONVERTED" });
+    const converted = await t.query(api.demands.list, { token, stage: "CONVERTED" });
     expect(converted[0].convertedOrderId).toBe(orderId);
     await expect(
       t.mutation(api.demands.setStage, { token, id, stage: "LOST", reason: "OTHER" })
@@ -140,7 +140,7 @@ describe("opportunities (demands that proceeded)", () => {
 
 describe("list queries for the new pages", () => {
   test("orders are listed by status with the customer's name", async () => {
-    const { t, ids } = await seed();
+    const { t, ids, token } = await seed();
     await t.run((ctx) =>
       ctx.db.insert("customerOrders", {
         orderNumber: "CE-00003",
@@ -154,8 +154,8 @@ describe("list queries for the new pages", () => {
         updatedAt: Date.now(),
       })
     );
-    const ready = await t.query(api.customerOrders.list, { status: "READY" });
-    const collected = await t.query(api.customerOrders.list, { status: "COLLECTED" });
+    const ready = await t.query(api.customerOrders.list, { token, status: "READY" });
+    const collected = await t.query(api.customerOrders.list, { token, status: "COLLECTED" });
     expect(ready).toHaveLength(1);
     expect(ready[0].customerName).toBe("Jane Doe");
     expect(collected).toHaveLength(0);
@@ -170,10 +170,10 @@ describe("list queries for the new pages", () => {
       reason: "COLOR",
     });
     await t.mutation(api.demands.create, { token, description: "Azul L", reason: "STOCK" });
-    const byReason = await t.query(api.demands.list, { reason: "COLOR" });
+    const byReason = await t.query(api.demands.list, { token, reason: "COLOR" });
     expect(byReason.map((r) => r.description)).toEqual(["Preto M"]);
     expect(byReason[0].customerName).toBe("Jane Doe");
-    const open = await t.query(api.demands.list, { stage: "OPEN" });
+    const open = await t.query(api.demands.list, { token, stage: "OPEN" });
     expect(open).toHaveLength(2);
   });
 
@@ -185,7 +185,7 @@ describe("list queries for the new pages", () => {
       description: "Costura solta",
     });
     await t.mutation(api.complaints.resolve, { token, id, resolutionType: "REPARACAO" });
-    expect(await t.query(api.complaints.list, { status: "RESOLVED" })).toHaveLength(1);
-    expect(await t.query(api.complaints.list, { status: "OPEN" })).toHaveLength(0);
+    expect(await t.query(api.complaints.list, { token, status: "RESOLVED" })).toHaveLength(1);
+    expect(await t.query(api.complaints.list, { token, status: "OPEN" })).toHaveLength(0);
   });
 });

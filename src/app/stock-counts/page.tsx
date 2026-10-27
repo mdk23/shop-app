@@ -18,7 +18,7 @@ export default function StockCountsPage() {
   const branch = useResolvedBranch();
   const counts = useQuery(
     api.stockCounts.listByBranch,
-    branch.branchId ? { branchId: branch.branchId } : "skip"
+    branch.branchId ? { token, branchId: branch.branchId } : "skip"
   );
   const start = useMutation(api.stockCounts.start);
 

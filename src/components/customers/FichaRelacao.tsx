@@ -14,7 +14,7 @@ import { useTranslation } from "@/contexts/LanguageContext";
 export function FichaRelacao({ customerId }: { customerId: Id<"customers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const relations = useQuery(api.businessRelations.listByCustomer, { customerId: customerId });
+  const relations = useQuery(api.businessRelations.listByCustomer, { token, customerId: customerId });
   const open = useMutation(api.businessRelations.open);
   const [role, setRole] = useState("");
   const [busy, setBusy] = useState(false);

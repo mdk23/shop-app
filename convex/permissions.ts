@@ -2,6 +2,9 @@ import { QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
 import { validateToken } from "./auth";
 
+// Any logged-in user, whatever the role: for reference data every screen needs.
+export { validateToken };
+
 /**
  * Server-side role → permission map. This is the authority; the client mirror in
  * `src/contexts/AuthContext.tsx` is only for hiding UI. Never trust the frontend

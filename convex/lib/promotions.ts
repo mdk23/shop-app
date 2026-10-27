@@ -28,7 +28,7 @@ export async function loadPromotions(ctx: QueryCtx, now: number): Promise<Promot
     const targets = await ctx.db
       .query("promotionTargets")
       .withIndex("by_promotion", (q) => q.eq("promotionId", p._id))
-      .collect();
+      .take(2000);
     running.push({ ...p, targets });
   }
 

@@ -17,9 +17,9 @@ const OPPORTUNITY_STAGES: DemandStage[] = ["PROCEEDING", "CONVERTED", "FULFILLED
 export default function InsightsPage() {
   const { t } = useTranslation();
   const token = useToken();
-  const reasons = useQuery(api.demands.countByReason, {});
-  const opportunities = useQuery(api.demands.listOpportunities, {});
-  const scorecard = useQuery(api.supplierEvaluations.scorecard, {});
+  const reasons = useQuery(api.demands.countByReason, { token });
+  const opportunities = useQuery(api.demands.listOpportunities, { token });
+  const scorecard = useQuery(api.supplierEvaluations.scorecard, { token });
   const quality = useQuery(api.qualityIssues.list, { token });
 
   if (reasons === undefined || opportunities === undefined || scorecard === undefined || quality === undefined) {
@@ -126,6 +126,7 @@ export default function InsightsPage() {
                 <Th>{t("Supplier")}</Th>
                 <Th className="text-right">{t("Punctuality")}</Th>
                 <Th className="text-right">{t("Open")}</Th>
+                <Th className="text-right">{t("Short / over / unannounced (12 months)")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -134,6 +135,11 @@ export default function InsightsPage() {
                   <Td>{s.name}</Td>
                   <Td className="text-right">{s.avgPunctuality !== null ? `${Math.round(s.avgPunctuality)}%` : "—"}</Td>
                   <Td className="text-right">{s.openQualityIssues}</Td>
+                  <Td className="text-right whitespace-nowrap">
+                    {s.discrepancies === 0
+                      ? "—"
+                      : `−${s.shortUnits} / +${s.overUnits} / ${s.unannouncedUnits}`}
+                  </Td>
                 </tr>
               ))}
             </tbody>

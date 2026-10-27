@@ -58,8 +58,9 @@ export async function generateSku(
 // ─────────────────────────────────────────────
 
 export const listByProduct = query({
-  args: { productId: v.id("products"), includeInactive: v.optional(v.boolean()) },
+  args: { token: v.string(), productId: v.id("products"), includeInactive: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const rows = await ctx.db
       .query("productVariants")
       .withIndex("by_product", (q) => q.eq("productId", args.productId))
@@ -71,8 +72,9 @@ export const listByProduct = query({
 });
 
 export const getBySkuOrBarcode = query({
-  args: { code: v.string() },
+  args: { token: v.string(), code: v.string() },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     const code = args.code.trim();
     if (!code) return null;
     const bySku = await ctx.db
@@ -93,8 +95,9 @@ export const getBySkuOrBarcode = query({
 
 /** A variant's selling price and cost over time, newest first. */
 export const priceHistory = query({
-  args: { productVariantId: v.id("productVariants") },
+  args: { token: v.string(), productVariantId: v.id("productVariants") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "products.view");
     return await ctx.db
       .query("variantPrices")
       .withIndex("by_variant_and_from", (q) => q.eq("productVariantId", args.productVariantId))

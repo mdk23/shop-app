@@ -59,12 +59,12 @@ export default function PosPage() {
 
   const catalog = useQuery(
     api.products.listForPos,
-    branchId ? { branchId } : "skip"
+    branchId ? { token, branchId } : "skip"
   );
   // Every payment needs an open register: check up front so the cashier knows before
   // ringing up a sale, not when the payment is refused.
   const registerClosed = useRegisterClosed(branchId);
-  const sizesList = useQuery(api.sizes.list, {});
+  const sizesList = useQuery(api.sizes.list, { token });
   const createSale = useMutation(api.sales.create);
   const getGeneric = useMutation(api.customers.getOrCreateGeneric);
   const setSizeProfile = useMutation(api.customers.setSizeProfile);
@@ -93,7 +93,7 @@ export default function PosPage() {
   // selected customer — skipped entirely for anonymous sales.
   const posContext = useQuery(
     api.customers.getPosContext,
-    customerId ? { customerId, branchId } : "skip"
+    customerId ? { token, customerId, branchId } : "skip"
   );
   // A disabled or archived customer cannot be used for a new sale.
   const customerBlocked = !!posContext?.customer && posContext.customer.status !== "ACTIVE";
@@ -316,7 +316,7 @@ export default function PosPage() {
             whatsappOptIn: captureWhatsappOptIn,
           });
         } else {
-          effectiveCustomerId = await getGeneric();
+          effectiveCustomerId = await getGeneric({ token });
         }
       }
       const saleId = await createSale({

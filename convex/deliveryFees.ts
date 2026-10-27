@@ -1,15 +1,17 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { writeAudit } from "./audit";
 
 export const list = query({
   args: {
+    token: v.string(),
     activeOnly: v.optional(v.boolean()),
     search: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    let fees = await ctx.db.query("deliveryFees").collect();
+    await validateToken(ctx, args.token);
+    let fees = await ctx.db.query("deliveryFees").take(1000);
 
     // Filtering active
     if (args.activeOnly) {
@@ -28,8 +30,9 @@ export const list = query({
 });
 
 export const getById = query({
-  args: { id: v.id("deliveryFees") },
+  args: { token: v.string(), id: v.id("deliveryFees") },
   handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
     return await ctx.db.get(args.id);
   },
 });

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { describeChanges, writeAudit } from "./audit";
 
 /**
@@ -154,18 +154,29 @@ export async function getSetting(ctx: QueryCtx | MutationCtx, key: string) {
     .unique();
 }
 
+/** Settings the app reads before anyone has logged in (language, branch mode, currency). */
+const PUBLIC_SETTING_KEYS = ["language", "multiBranchEnabled", "currencySymbol", "currency", "businessName"];
+
 export const getByKey = query({
-  args: { key: v.string() },
-  handler: async (ctx, args) =>
-    await ctx.db
+  args: { key: v.string(), token: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    if (!PUBLIC_SETTING_KEYS.includes(args.key)) {
+      if (!args.token) throw new Error("Unauthorized");
+      await validateToken(ctx, args.token);
+    }
+    return await ctx.db
       .query("settings")
       .withIndex("by_key", (q) => q.eq("key", args.key))
-      .unique(),
+      .unique();
+  },
 });
 
 export const getAll = query({
-  args: {},
-  handler: async (ctx) => await ctx.db.query("settings").collect(),
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
+    return await ctx.db.query("settings").take(500);
+  },
 });
 
 export const upsert = mutation({
@@ -190,9 +201,17 @@ export const upsert = mutation({
     if (rule && args.value !== undefined && parseNumberSetting(args.key, args.value) === null) {
       throw new Error(`${args.label ?? existing?.label ?? args.key} must be a number from ${rule.min} to ${rule.max}.`);
     }
+    // The currency code is an ISO 4217 code, stored upper case ("MZN").
+    if (args.key === "currency" && args.value !== undefined && !/^[A-Za-z]{3}$/.test(args.value.trim())) {
+      throw new Error("Currency code must be three letters, e.g. MZN.");
+    }
     // Number settings are stored in plain form ("16", not " 16,0").
     const value =
-      rule && args.value !== undefined ? String(parseNumberSetting(args.key, args.value)) : args.value;
+      rule && args.value !== undefined
+        ? String(parseNumberSetting(args.key, args.value))
+        : args.key === "currency" && args.value !== undefined
+          ? args.value.trim().toUpperCase()
+          : args.value;
     const next = {
       isActive: args.isActive,
       value: value ?? existing?.value,

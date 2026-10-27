@@ -11,6 +11,7 @@ const PREFIX: Record<DocumentType, string> = {
   PURCHASE_RECEIPT: "RC",
   TRANSFER: "TR",
   CUSTOMER_ORDER: "CE",
+  DELIVERY: "GE",
 };
 
 /**

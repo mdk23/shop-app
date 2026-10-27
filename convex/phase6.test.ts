@@ -132,7 +132,7 @@ describe("complaints", () => {
       saleId,
       description: "Seam split after one wash",
     });
-    const open = await t.query(api.complaints.listOpen, {});
+    const open = await t.query(api.complaints.listOpen, { token });
     expect(open.map((c) => c._id)).toEqual([complaintId]);
 
     await t.mutation(api.complaints.resolve, {

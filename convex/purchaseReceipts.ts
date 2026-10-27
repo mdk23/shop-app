@@ -4,6 +4,7 @@ import { Id } from "./_generated/dataModel";
 import { authorize } from "./permissions";
 import { receiveIntoStock, receiptSupplierId } from "./lib/receiving";
 import { formatVariantLabel, variantNames } from "./lib/variantNames";
+import { inTransitQuantity } from "./lib/shipping";
 
 /**
  * Goods-received note. With `purchaseOrderId`, lines match the order: quantities
@@ -18,6 +19,8 @@ export const create = mutation({
     branchId: v.optional(v.id("branches")),
     deliveryNoteRef: v.optional(v.string()),
     notes: v.optional(v.string()),
+    shipmentId: v.optional(v.id("shipments")),
+    discrepancyReason: v.optional(v.string()),
     lines: v.array(
       v.object({
         productVariantId: v.id("productVariants"),
@@ -59,13 +62,16 @@ export const create = mutation({
       lines: args.lines,
       allowOver: true,
       allowUnannounced: true,
+      shipmentId: args.shipmentId,
+      discrepancyReason: args.discrepancyReason,
     });
   },
 });
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const rows = await ctx.db.query("purchaseReceipts").order("desc").take(200);
     return await Promise.all(
       rows.map(async (row) => {
@@ -84,16 +90,17 @@ export const list = query({
 
 /** Orders still waiting for goods, with what is outstanding on each line. */
 export const openOrders = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const sent = await ctx.db
       .query("purchaseOrders")
       .withIndex("by_status", (q) => q.eq("status", "SENT"))
-      .collect();
+      .take(1000);
     const partial = await ctx.db
       .query("purchaseOrders")
       .withIndex("by_status", (q) => q.eq("status", "PARTIALLY_RECEIVED"))
-      .collect();
+      .take(1000);
     return await Promise.all(
       [...sent, ...partial].map(async (po) => {
         const supplier = await ctx.db.get(po.supplierId);
@@ -111,6 +118,8 @@ export const openOrders = query({
               productName: product?.name ?? "—",
               variantLabel: variant ? formatVariantLabel(await variantNames(ctx, variant), variant.sku) : "—",
               outstanding: line.quantityOrdered - line.quantityReceived,
+              // Of the outstanding units, those already on a shipment not yet received.
+              inTransit: await inTransitQuantity(ctx, line),
               unitCost: line.unitCost,
             };
           })
@@ -128,8 +137,9 @@ export const openOrders = query({
 });
 
 export const listByPurchaseOrder = query({
-  args: { purchaseOrderId: v.id("purchaseOrders") },
+  args: { token: v.string(), purchaseOrderId: v.id("purchaseOrders") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     return await ctx.db
       .query("purchaseReceipts")
       .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", args.purchaseOrderId))
@@ -139,8 +149,9 @@ export const listByPurchaseOrder = query({
 });
 
 export const get = query({
-  args: { id: v.id("purchaseReceipts") },
+  args: { token: v.string(), id: v.id("purchaseReceipts") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const receipt = await ctx.db.get(args.id);
     if (!receipt) return null;
     const rawItems = await ctx.db
@@ -161,9 +172,32 @@ export const get = query({
     const supplierId = await receiptSupplierId(ctx, receipt);
     const supplier = supplierId ? await ctx.db.get(supplierId) : null;
     const po = receipt.purchaseOrderId ? await ctx.db.get(receipt.purchaseOrderId) : null;
+    const shipment = receipt.shipmentId ? await ctx.db.get(receipt.shipmentId) : null;
+    const rawDiscrepancies = await ctx.db
+      .query("receiptDiscrepancies")
+      .withIndex("by_receipt", (q) => q.eq("receiptId", args.id))
+      .take(200);
+    const labelOf = new Map(items.map((i) => [i.productVariantId, `${i.productName} ${i.variantLabel}`]));
+    const discrepancies = await Promise.all(
+      rawDiscrepancies.map(async (d) => {
+        let label = labelOf.get(d.productVariantId);
+        if (!label) {
+          // A line that was shipped but never arrived is not among the receipt's items.
+          const variant = await ctx.db.get(d.productVariantId);
+          const product = variant ? await ctx.db.get(variant.productId) : null;
+          label = variant
+            ? `${product?.name ?? "—"} ${formatVariantLabel(await variantNames(ctx, variant), variant.sku)}`
+            : "—";
+        }
+        return { ...d, label };
+      })
+    );
     return {
       ...receipt,
       items,
+      discrepancies,
+      shipmentCarrier: shipment?.carrier ?? null,
+      shipmentTracking: shipment?.trackingReference ?? null,
       supplierName: supplier?.name ?? "—",
       supplierId: supplierId ?? null,
       orderCode: po?.orderCode ?? null,

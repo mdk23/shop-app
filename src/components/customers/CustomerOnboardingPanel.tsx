@@ -7,6 +7,7 @@ import { Modal, Button, Spinner } from "@/components/ui";
 import { FichaTamanhos } from "./FichaTamanhos";
 import { FichaPreferencias } from "./FichaPreferencias";
 import { useTranslation } from "@/contexts/LanguageContext";
+import { useToken } from "@/lib/useShop";
 
 /**
  * The optional "conhecer o cliente" step (Tier 2) — a cashier opens this only
@@ -23,8 +24,9 @@ export function CustomerOnboardingPanel({
   customerId: Id<"customers">;
   onClose: () => void;
 }) {
+  const token = useToken();
   const { t } = useTranslation();
-  const context = useQuery(api.customers.getPosContext, { customerId });
+  const context = useQuery(api.customers.getPosContext, { token, customerId });
 
   return (
     <Modal

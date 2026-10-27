@@ -25,8 +25,8 @@ export function FichaPreferencias({
 }) {
   const { t } = useTranslation();
   const token = useToken();
-  const colors = useQuery(api.colors.list, {});
-  const categories = useQuery(api.categories.list, {});
+  const colors = useQuery(api.colors.list, { token });
+  const categories = useQuery(api.categories.list, { token });
   const updateProfile = useMutation(api.customers.updateProfile);
   const customer = context.customer;
 

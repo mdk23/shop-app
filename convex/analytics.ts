@@ -218,25 +218,27 @@ export const customerDebt = query({
     const partlyPaid = await ctx.db
       .query("sales")
       .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "PARTIALLY_PAID"))
-      .collect();
+      .take(2000);
     const unpaid = await ctx.db
       .query("sales")
       .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "UNPAID"))
-      .collect();
+      .take(2000);
     const sales = [...partlyPaid, ...unpaid].filter(
       (s) =>
         s.status !== "CANCELLED" && (!branchId || s.branchId === branchId) && s.balance > 0
     );
+    // Walk-in sales (no customer) are grouped into one "Walk-in" row.
     const byCustomer: Record<string, { name: string; balance: number; sales: number }> = {};
     for (const s of sales) {
-      const e = byCustomer[s.customerId] ?? {
-        name: s.customerName ?? "Walk-in",
+      const key = s.customerId ?? "none";
+      const e = byCustomer[key] ?? {
+        name: s.customerId ? s.customerName ?? "—" : "Walk-in",
         balance: 0,
         sales: 0,
       };
       e.balance += s.balance;
       e.sales += 1;
-      byCustomer[s.customerId] = e;
+      byCustomer[key] = e;
     }
     return Object.entries(byCustomer)
       .map(([customerId, v2]) => ({ customerId, ...v2 }))
@@ -268,8 +270,8 @@ async function stockTotalsFor(ctx: QueryCtx, branchId?: Id<"branches">) {
     ? await ctx.db
         .query("stockTotals")
         .withIndex("by_branch", (q) => q.eq("branchId", branchId))
-        .collect()
-    : await ctx.db.query("stockTotals").collect();
+        .take(10000)
+    : await ctx.db.query("stockTotals").take(10000);
   return rows.reduce(
     (s, r) => ({
       units: s.units + r.units,

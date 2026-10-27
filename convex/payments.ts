@@ -8,10 +8,12 @@ import { adjustCustomerCredit } from "./customerCredits";
 import { authorize } from "./permissions";
 import { writeAudit } from "./audit";
 import { trackSale } from "./lib/salesMetrics";
+import { namedCustomer } from "./customers";
 
 export const listBySale = query({
-  args: { saleId: v.id("sales") },
+  args: { token: v.string(), saleId: v.id("sales") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "sales.view");
     return await ctx.db
       .query("payments")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
@@ -51,10 +53,10 @@ export const add = mutation({
     const byCredit = args.method === "STORE_CREDIT";
     const session = byCredit ? null : await requireOpenSession(ctx, sale.branchId);
     if (byCredit) {
-      const customer = await ctx.db.get(sale.customerId);
-      if (!customer || customer.isGeneric) throw new Error("Store credit needs a named customer.");
+      const customer = await namedCustomer(ctx, sale.customerId);
+      if (!customer) throw new Error("Store credit needs a named customer.");
       await adjustCustomerCredit(ctx, {
-        customerId: sale.customerId,
+        customerId: customer._id,
         delta: -amount,
         reason: "REDEEMED_ON_SALE",
         referenceType: "sale",

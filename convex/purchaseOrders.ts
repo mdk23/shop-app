@@ -59,6 +59,7 @@ async function cleanPoItems(ctx: MutationCtx, items: PoItemInput[]): Promise<PoI
  */
 export const listPaged = query({
   args: {
+    token: v.string(),
     supplierId: v.optional(v.id("suppliers")),
     branchId: v.optional(v.id("branches")),
     status: v.optional(
@@ -73,6 +74,7 @@ export const listPaged = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const result = args.status
       ? await ctx.db
           .query("purchaseOrders")
@@ -103,8 +105,9 @@ export const listPaged = query({
 });
 
 export const get = query({
-  args: { id: v.id("purchaseOrders") },
+  args: { token: v.string(), id: v.id("purchaseOrders") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "purchasing.view");
     const po = await ctx.db.get(args.id);
     if (!po) return null;
     const supplier = await ctx.db.get(po.supplierId);
@@ -292,6 +295,58 @@ export const updateStatus = mutation({
       details: po.orderCode,
     });
     return args.id;
+  },
+});
+
+/**
+ * Closes a partly received order: the supplier will not send the rest. Every line still
+ * short is recorded as a SHORT discrepancy (expected = ordered), and the order completes.
+ */
+export const closeShort = mutation({
+  args: { token: v.string(), id: v.id("purchaseOrders"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const actor = await authorize(ctx, args.token, "purchasing.manage");
+    const po = await ctx.db.get(args.id);
+    if (!po) throw new Error("Purchase order not found.");
+    if (po.status !== "SENT" && po.status !== "PARTIALLY_RECEIVED") {
+      throw new Error("Only an order still waiting for goods can be closed short.");
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new Error("Say why the rest will not arrive.");
+    const lines = await ctx.db
+      .query("purchaseOrderItems")
+      .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
+      .take(500);
+    const now = Date.now();
+    let short = 0;
+    for (const line of lines) {
+      if (!line.productVariantId || line.quantityReceived >= line.quantityOrdered) continue;
+      short += line.quantityOrdered - line.quantityReceived;
+      await ctx.db.insert("receiptDiscrepancies", {
+        supplierId: po.supplierId,
+        purchaseOrderId: po._id,
+        purchaseOrderItemId: line._id,
+        productVariantId: line.productVariantId,
+        kind: "SHORT",
+        expectedFrom: "ORDER",
+        expectedQuantity: line.quantityOrdered,
+        receivedQuantity: line.quantityReceived,
+        reason,
+        recordedBy: actor._id,
+        recordedByUsername: actor.username,
+        recordedAt: now,
+      });
+    }
+    await ctx.db.patch(po._id, { status: "COMPLETED" });
+    await writeAudit(ctx, {
+      userId: actor._id,
+      username: actor.username,
+      action: "purchase_order.closed_short",
+      entityType: "purchaseOrder",
+      entityId: po._id,
+      details: `${po.orderCode}: ${short} unit(s) short — ${reason}`,
+    });
+    return po._id;
   },
 });
 

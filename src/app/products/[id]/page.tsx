@@ -28,13 +28,13 @@ export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const productId = params.id as Id<"products">;
-  const product = useQuery(api.products.get, { id: productId });
-  const positioning = useQuery(api.commercialSettings.currentPositioning, { productId });
+  const product = useQuery(api.products.get, { token, id: productId });
+  const positioning = useQuery(api.commercialSettings.currentPositioning, { token, productId });
   const setPositioning = useMutation(api.commercialSettings.setPositioning);
   const [historyFor, setHistoryFor] = useState<Id<"productVariants"> | null>(null);
   const history = useQuery(
     api.productVariants.priceHistory,
-    historyFor ? { productVariantId: historyFor } : "skip"
+    historyFor ? { token, productVariantId: historyFor } : "skip"
   );
   const [busy, setBusy] = useState(false);
 

@@ -6,7 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Card, Table, Th, Td, Badge, PagedFooter, Spinner, EmptyState } from "@/components/ui";
 import { usePagedQuery } from "@/lib/pagination";
-import { useCurrency } from "@/lib/useShop";
+import { useCurrency, useToken } from "@/lib/useShop";
 import { formatDateTime } from "@/lib/utils";
 import {
   SALE_STATUS_TONE,
@@ -18,11 +18,12 @@ import { useTranslation } from "@/contexts/LanguageContext";
 
 /** Unbounded sales history for one customer — the one Ficha tab that doesn't share `getPosContext`. */
 export function FichaHistorico({ customerId }: { customerId: Id<"customers"> }) {
+  const token = useToken();
   const { t } = useTranslation();
   const fmt = useCurrency();
   const [expandedId, setExpandedId] = useState<Id<"sales"> | null>(null);
   const history = usePagedQuery(api.sales.listByCustomerPaged, { customerId });
-  const expanded = useQuery(api.sales.get, expandedId ? { id: expandedId } : "skip");
+  const expanded = useQuery(api.sales.get, expandedId ? { token, id: expandedId } : "skip");
 
   if (history.isLoading) return <Spinner />;
   if (history.rows.length === 0) return <EmptyState title={t("No sales yet")} />;

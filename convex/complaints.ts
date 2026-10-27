@@ -14,19 +14,21 @@ const RESOLUTION = v.union(
 );
 
 export const listOpen = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     return await ctx.db
       .query("complaints")
       .withIndex("by_status", (q) => q.eq("status", "OPEN"))
       .order("desc")
-      .collect();
+      .take(2000);
   },
 });
 
 export const list = query({
-  args: { status: v.optional(v.union(v.literal("OPEN"), v.literal("RESOLVED"), v.literal("REJECTED"))) },
+  args: { token: v.string(), status: v.optional(v.union(v.literal("OPEN"), v.literal("RESOLVED"), v.literal("REJECTED"))) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const rows = args.status
       ? await ctx.db
           .query("complaints")
@@ -44,8 +46,9 @@ export const list = query({
 });
 
 export const listBySale = query({
-  args: { saleId: v.id("sales") },
+  args: { token: v.string(), saleId: v.id("sales") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     return await ctx.db
       .query("complaints")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))

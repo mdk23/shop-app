@@ -5,8 +5,11 @@ import { writeAudit } from "./audit";
 import { currentNuit, recordNuit } from "./lib/fiscal";
 
 export const getNuit = query({
-  args: { customerId: v.id("customers") },
-  handler: async (ctx, args) => currentNuit(ctx, args.customerId),
+  args: { token: v.string(), customerId: v.id("customers") },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
+    return await currentNuit(ctx, args.customerId);
+  },
 });
 
 /** Records a new NUIT for the customer and closes the previous one, keeping history. */

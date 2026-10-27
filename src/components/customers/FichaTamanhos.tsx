@@ -21,8 +21,8 @@ export function FichaTamanhos({
 }) {
   const { t } = useTranslation();
   const token = useToken();
-  const categories = useQuery(api.categories.list, {});
-  const sizesList = useQuery(api.sizes.list, {});
+  const categories = useQuery(api.categories.list, { token });
+  const sizesList = useQuery(api.sizes.list, { token });
   const setSizeProfile = useMutation(api.customers.setSizeProfile);
   const removeSizeProfile = useMutation(api.customers.removeSizeProfile);
 

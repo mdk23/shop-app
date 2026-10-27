@@ -21,7 +21,7 @@ export default function OpportunitiesPage() {
   const { t } = useTranslation();
   const token = useToken();
   const fmt = useCurrency();
-  const opportunities = useQuery(api.demands.listOpportunities, {});
+  const opportunities = useQuery(api.demands.listOpportunities, { token });
   const create = useMutation(api.demands.create);
   const markConverted = useMutation(api.demands.markConverted);
 
@@ -40,7 +40,7 @@ export default function OpportunitiesPage() {
   const convertCustomer = opportunities?.find((o) => o._id === convertId)?.customerId;
   const openOrders = useQuery(
     api.customerOrders.list,
-    convertId ? { status: "OPEN" } : "skip"
+    convertId ? { token, status: "OPEN" } : "skip"
   );
   const candidateOrders = (openOrders ?? []).filter(
     (o) => !convertCustomer || o.customerId === convertCustomer

@@ -7,16 +7,18 @@ import { currentNuitOf, recordNuit } from "./lib/fiscal";
 
 export const list = query({
   args: {
+    token: v.string(),
     status: v.optional(v.union(v.literal("ACTIVE"), v.literal("INACTIVE"))),
     search: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "suppliers.view");
     let rows = args.status
       ? await ctx.db
           .query("suppliers")
           .withIndex("by_status", (q) => q.eq("status", args.status!))
-          .collect()
-      : await ctx.db.query("suppliers").collect();
+          .take(1000)
+      : await ctx.db.query("suppliers").take(1000);
     const s = args.search?.trim().toLowerCase();
     if (s)
       rows = rows.filter(

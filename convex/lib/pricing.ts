@@ -13,7 +13,8 @@ import { getSetting, numberSetting } from "../settings";
  */
 
 export type PriceInput = {
-  customerId: Id<"customers">;
+  /** Absent for a walk-in sale. */
+  customerId?: Id<"customers">;
   items: {
     productVariantId: Id<"productVariants">;
     quantity: number;
@@ -58,8 +59,10 @@ export function assertWholeQuantity(quantity: number, what = "Quantities") {
 
 export async function priceSale(ctx: QueryCtx, input: PriceInput) {
   if (input.items.length === 0) throw new Error("A sale needs at least one item.");
-  const customer = await ctx.db.get(input.customerId);
-  if (!customer) throw new Error("Customer not found.");
+  // A walk-in sale has no customer; the old walk-in placeholder counts as none.
+  const found = input.customerId ? await ctx.db.get(input.customerId) : null;
+  if (input.customerId && !found) throw new Error("Customer not found.");
+  const customer = found && !found.isGeneric ? found : null;
 
   // IVA for products without their own rate: always the setting, never the caller.
   const defaultTaxPercent = await numberSetting(ctx, "taxRatePercent");
@@ -128,7 +131,7 @@ export async function priceSale(ctx: QueryCtx, input: PriceInput) {
   const saleDiscount = Math.max(0, input.discount ?? 0);
 
   // Automatic tier discount — server-authoritative, and never a cashier choice.
-  const tier = customer.tier ?? "NOVO";
+  const tier = customer?.tier ?? "NOVO";
   const tierSettingKey =
     tier === "VIP" ? "tierDiscountPercentVIP" : tier === "REGULAR" ? "tierDiscountPercentREGULAR" : null;
   let tierDiscountPercent = 0;

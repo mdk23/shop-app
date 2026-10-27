@@ -67,7 +67,7 @@ export default function ComplaintsPage() {
   const { t } = useTranslation();
   const token = useToken();
   const [status, setStatus] = useState<"ALL" | Status>("OPEN");
-  const complaints = useQuery(api.complaints.list, status === "ALL" ? {} : { status });
+  const complaints = useQuery(api.complaints.list, status === "ALL" ? { token } : { token, status });
   const page = useClientPage(complaints ?? []);
   const create = useMutation(api.complaints.create);
   const resolve = useMutation(api.complaints.resolve);

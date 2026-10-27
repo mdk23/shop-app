@@ -34,9 +34,11 @@ const MAX_PROFILE_SALES = 60;
  */
 export async function refreshCustomerProfile(
   ctx: MutationCtx,
-  customerId: Id<"customers">,
+  customerId: Id<"customers"> | undefined,
   actor: { _id: Id<"users">; username: string }
 ): Promise<{ tier: Tier; changed: boolean } | null> {
+  // A walk-in sale has no customer profile to refresh.
+  if (!customerId) return null;
   const customer = await ctx.db.get(customerId);
   if (!customer || customer.isGeneric) return null;
 
@@ -93,13 +95,13 @@ export async function refreshCustomerProfile(
   // Resolve variant → product → category, and the variant's size and colour ids to
   // names, with memoized lookups so repeat products across many sales cost nothing.
   const sizesById = new Map(
-    (await ctx.db.query("sizes").collect()).map((s) => [s._id, s])
+    (await ctx.db.query("sizes").take(1000)).map((s) => [s._id, s])
   );
   const colorNameById = new Map(
-    (await ctx.db.query("colors").collect()).map((c) => [c._id, c.name])
+    (await ctx.db.query("colors").take(1000)).map((c) => [c._id, c.name])
   );
   const categoryNameById = new Map(
-    (await ctx.db.query("categories").collect()).map((c) => [c._id, c.name])
+    (await ctx.db.query("categories").take(1000)).map((c) => [c._id, c.name])
   );
   const variantCache = new Map<Id<"productVariants">, Awaited<ReturnType<typeof ctx.db.get>>>();
   const productCache = new Map<Id<"products">, Awaited<ReturnType<typeof ctx.db.get>>>();

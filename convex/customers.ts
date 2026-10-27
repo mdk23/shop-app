@@ -1,3 +1,4 @@
+import { creditBalance } from "./customerCredits";
 import { v } from "convex/values";
 import {
   mutation,
@@ -44,11 +45,9 @@ export async function customerSalesSummary(ctx: QueryCtx, customerId: Id<"custom
       : null;
   const avgTicket = purchaseCount > 0 ? totalPurchases / purchaseCount : 0;
 
-  const credits = await ctx.db
-    .query("customerCredits")
-    .withIndex("by_customer", (q) => q.eq("customerId", customerId))
-    .collect();
-  const storeCredit = credits.reduce((s, c) => s + c.delta, 0);
+  const storeCredit = await creditBalance(ctx, customerId);
+  // The account in one figure: owed on sales less store credit held (+ customer owes).
+  const accountBalance = Math.round((outstandingDebt - storeCredit) * 100) / 100;
 
   return {
     stats: {
@@ -60,6 +59,7 @@ export async function customerSalesSummary(ctx: QueryCtx, customerId: Id<"custom
       lastPurchase: lastPurchase || null,
       avgTicket,
       storeCredit,
+      accountBalance,
     },
     // Newest first, every status included — callers filter as needed
     // (e.g. `getPosContext` excludes CANCELLED for its "recent sales" list).
@@ -99,10 +99,12 @@ function computeInitials(name: string): string {
  */
 export const listPaginated = query({
   args: {
+    token: v.string(),
     paginationOpts: paginationOptsValidator,
     showArchived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const n = args.paginationOpts.numItems;
     const before = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : null;
     const statuses: Doc<"customers">["status"][] = args.showArchived
@@ -135,8 +137,9 @@ export const listPaginated = query({
 });
 
 export const search = query({
-  args: { query: v.string(), showArchived: v.optional(v.boolean()) },
+  args: { token: v.string(), query: v.string(), showArchived: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const term = args.query.trim().toLowerCase();
     if (!term) return [];
     const isPhone = /^[\d+\-\s()]+$/.test(args.query);
@@ -168,8 +171,9 @@ export const search = query({
  * Never matches the generic walk-in customer or archived rows.
  */
 export const findByPhone = query({
-  args: { phone: v.string() },
+  args: { token: v.string(), phone: v.string() },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const raw = args.phone.trim();
     if (!raw) return null;
     const normalized = normalizePhone(raw);
@@ -200,8 +204,9 @@ export const findByPhone = query({
 });
 
 export const getById = query({
-  args: { id: v.id("customers") },
+  args: { token: v.string(), id: v.id("customers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const customer = await ctx.db.get(args.id);
     if (!customer) return null;
     if (customer.isGeneric) {
@@ -229,10 +234,12 @@ export const getById = query({
  */
 export const getPosContext = query({
   args: {
+    token: v.string(),
     customerId: v.id("customers"),
     branchId: v.optional(v.id("branches")),
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "customers.view");
     const customer = await ctx.db.get(args.customerId);
 
     const empty = {
@@ -240,6 +247,7 @@ export const getPosContext = query({
       money: {
         storeCredit: 0,
         outstandingDebt: 0,
+        accountBalance: 0,
         lifetimeSpend: 0,
         saleCount: 0,
         avgTicket: 0,
@@ -468,6 +476,7 @@ export const getPosContext = query({
       money: {
         storeCredit: stats.storeCredit,
         outstandingDebt: stats.outstandingDebt,
+        accountBalance: stats.accountBalance,
         lifetimeSpend: stats.totalPurchases,
         saleCount: stats.purchaseCount,
         avgTicket: stats.avgTicket,
@@ -578,8 +587,9 @@ export const create = mutation({
 });
 
 export const getOrCreateGeneric = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "pos.use");
     const generic = await ctx.db
       .query("customers")
       .withIndex("by_isGeneric", (q) => q.eq("isGeneric", true))
@@ -616,6 +626,19 @@ export const update = mutation({
 });
 
 /** Refuses a sale or order for a customer who is disabled or archived. */
+/**
+ * The named customer behind a sale or return, or null for a walk-in: no customer, or
+ * the old walk-in placeholder (isGeneric) that sales pointed at before customerId was optional.
+ */
+export async function namedCustomer(
+  ctx: QueryCtx,
+  customerId: Id<"customers"> | undefined
+): Promise<Doc<"customers"> | null> {
+  if (!customerId) return null;
+  const customer = await ctx.db.get(customerId);
+  return customer && !customer.isGeneric ? customer : null;
+}
+
 export function assertCustomerCanBuy(customer: Doc<"customers">) {
   if (customer.status === "DISABLED") {
     throw new Error(`${customer.name} is disabled and cannot be used for new sales or orders.`);

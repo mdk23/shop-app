@@ -25,7 +25,7 @@ export default function CommercialSettingsPage() {
 function PaymentTermsCard() {
   const { t } = useTranslation();
   const token = useToken();
-  const terms = useQuery(api.commercialSettings.listPaymentTerms, {});
+  const terms = useQuery(api.commercialSettings.listPaymentTerms, { token });
   const create = useMutation(api.commercialSettings.createPaymentTerm);
   const setActive = useMutation(api.commercialSettings.setPaymentTermActive);
   const [name, setName] = useState("");
@@ -105,7 +105,7 @@ function PaymentTermsCard() {
 function PricingPolicyCard() {
   const { t } = useTranslation();
   const token = useToken();
-  const policies = useQuery(api.commercialSettings.listPricingPolicies, {});
+  const policies = useQuery(api.commercialSettings.listPricingPolicies, { token });
   const create = useMutation(api.commercialSettings.createPricingPolicy);
   const [name, setName] = useState("");
   const [margin, setMargin] = useState("");

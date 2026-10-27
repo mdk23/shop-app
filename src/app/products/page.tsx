@@ -62,7 +62,7 @@ export default function ProductsPage() {
   const token = useToken();
   const fmt = useCurrency();
 
-  const categories = useQuery(api.categories.list, {});
+  const categories = useQuery(api.categories.list, { token });
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
 
@@ -331,7 +331,7 @@ function ProductModal({
   const { t } = useTranslation();
   const existing = useQuery(
     api.products.get,
-    productId ? { id: productId } : "skip"
+    productId ? { token, id: productId } : "skip"
   );
   const create = useMutation(api.products.create);
   const update = useMutation(api.products.update);
@@ -476,9 +476,9 @@ function VariantManager({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const product = useQuery(api.products.get, { id: productId });
-  const availableSizes = useQuery(api.sizes.list, {});
-  const availableColors = useQuery(api.colors.list, {});
+  const product = useQuery(api.products.get, { token, id: productId });
+  const availableSizes = useQuery(api.sizes.list, { token });
+  const availableColors = useQuery(api.colors.list, { token });
   const generate = useMutation(api.productVariants.generateMatrix);
   const updateVariant = useMutation(api.productVariants.update);
   const removeVariant = useMutation(api.productVariants.remove);

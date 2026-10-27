@@ -1,12 +1,13 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { authorize } from "./permissions";
+import { authorize, validateToken } from "./permissions";
 import { writeAudit } from "./audit";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query("collections").collect();
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await validateToken(ctx, args.token);
+    const rows = await ctx.db.query("collections").take(1000);
     return rows.filter((r) => r.active).sort((a, b) => a.name.localeCompare(b.name));
   },
 });

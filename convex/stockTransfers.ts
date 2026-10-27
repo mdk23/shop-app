@@ -239,8 +239,9 @@ export const receive = mutation({
 
 /** The arrival count of a transfer, with its lines. */
 export const getReceipt = query({
-  args: { transferId: v.id("stockTransfers") },
+  args: { token: v.string(), transferId: v.id("stockTransfers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const receipt = await ctx.db
       .query("stockTransferReceipts")
       .withIndex("by_transfer", (q) => q.eq("transferId", args.transferId))
@@ -276,6 +277,7 @@ export const getReceipt = query({
  */
 export const listPaged = query({
   args: {
+    token: v.string(),
     status: v.optional(
       v.union(
         v.literal("DRAFT"),
@@ -289,6 +291,7 @@ export const listPaged = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const result = args.status
       ? await ctx.db
           .query("stockTransfers")
@@ -309,8 +312,9 @@ export const listPaged = query({
 });
 
 export const get = query({
-  args: { id: v.id("stockTransfers") },
+  args: { token: v.string(), id: v.id("stockTransfers") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "inventory.view");
     const transfer = await ctx.db.get(args.id);
     if (!transfer) return null;
     const items = await ctx.db

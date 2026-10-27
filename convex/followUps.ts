@@ -25,11 +25,11 @@ export const listFollowUps = query({
         const origins = await ctx.db
           .query("followUpOrigins")
           .withIndex("by_follow_up", (q) => q.eq("followUpId", row._id))
-          .collect();
+          .take(1000);
         const satisfactions = await ctx.db
           .query("followUpSatisfactions")
           .withIndex("by_follow_up", (q) => q.eq("followUpId", row._id))
-          .collect();
+          .take(1000);
         const participant = await ctx.db
           .query("relationParticipants")
           .withIndex("by_relation", (q) => q.eq("relationId", row.relationId))

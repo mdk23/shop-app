@@ -27,12 +27,16 @@ export async function purchaseOrderMoney(ctx: QueryCtx, po: Doc<"purchaseOrders"
   return { payments, paid, outstanding: round2(Math.max(0, po.totalAmount - paid)) };
 }
 
+/** The one rule for an order's paymentStatus: what was paid against its total. */
+export function purchaseOrderPaymentStatus(totalAmount: number, paid: number): Doc<"purchaseOrders">["paymentStatus"] {
+  return paid <= 0 ? "UNPAID" : paid + 0.005 >= totalAmount ? "PAID" : "PARTIALLY_PAID";
+}
+
 async function settlePurchaseOrder(ctx: MutationCtx, purchaseOrderId: Id<"purchaseOrders">) {
   const po = await ctx.db.get(purchaseOrderId);
   if (!po) return;
   const { paid } = await purchaseOrderMoney(ctx, po);
-  const paymentStatus =
-    paid <= 0 ? "UNPAID" : paid + 0.005 >= po.totalAmount ? "PAID" : "PARTIALLY_PAID";
+  const paymentStatus = purchaseOrderPaymentStatus(po.totalAmount, paid);
   if (paymentStatus !== po.paymentStatus) await ctx.db.patch(purchaseOrderId, { paymentStatus });
 }
 

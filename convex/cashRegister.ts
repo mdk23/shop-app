@@ -35,7 +35,7 @@ export async function openSessionForBranch(
   const open = await ctx.db
     .query("cashRegisterSessions")
     .withIndex("by_status", (q) => q.eq("status", "OPEN"))
-    .collect();
+    .take(1000);
   if (open.length === 0) return null;
   if (branchId) {
     return (
@@ -163,6 +163,7 @@ export const getActiveSession = query({
     branchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Answers only for a live session (null otherwise, e.g. before login).
     if (!args.token) return null;
     const session = await ctx.db
       .query("userSessions")
@@ -185,8 +186,9 @@ export const getActiveSession = query({
 });
 
 export const getSessionWithMovements = query({
-  args: { sessionId: v.id("cashRegisterSessions") },
+  args: { token: v.string(), sessionId: v.id("cashRegisterSessions") },
   handler: async (ctx, args) => {
+    await authorize(ctx, args.token, "cash_register.use");
     const session = await ctx.db.get(args.sessionId);
     if (!session) return null;
     const movements = await drawerEntries(ctx, args.sessionId);
@@ -311,7 +313,7 @@ export const openSession = mutation({
     const open = await ctx.db
       .query("cashRegisterSessions")
       .withIndex("by_status", (q) => q.eq("status", "OPEN"))
-      .collect();
+      .take(1000);
     if (open.some((s) => s.branchId === targetBranchId)) {
       throw new Error(
         "A cash register session is already open for this branch. Close it first."

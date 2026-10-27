@@ -45,7 +45,7 @@ export default function CashRegisterPage() {
   );
   const detail = useQuery(
     api.cashRegister.getSessionWithMovements,
-    session ? { sessionId: session._id } : "skip"
+    session ? { token, sessionId: session._id } : "skip"
   );
 
   const openSession = useMutation(api.cashRegister.openSession);

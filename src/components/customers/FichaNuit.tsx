@@ -16,7 +16,7 @@ import { useTranslation } from "@/contexts/LanguageContext";
 export function FichaNuit({ customerId }: { customerId: Id<"customers"> }) {
   const { t } = useTranslation();
   const token = useToken();
-  const nuit = useQuery(api.fiscalIdentities.getNuit, { customerId });
+  const nuit = useQuery(api.fiscalIdentities.getNuit, { token, customerId });
   const setNuit = useMutation(api.fiscalIdentities.setNuit);
 
   const [nuitInput, setNuitInput] = useState("");

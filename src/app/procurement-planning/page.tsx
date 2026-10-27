@@ -14,7 +14,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "@/contexts/LanguageContext";
 
 type Line = PickedVariant & { quantity: number };
-type Dialog = null | "need" | "decision" | "cover";
+type Dialog = null | "need" | "decision" | "cover" | "order";
 
 export default function ProcurementPlanningPage() {
   const { t } = useTranslation();
@@ -23,6 +23,8 @@ export default function ProcurementPlanningPage() {
   const createNeed = useMutation(api.procurementPlanning.createNeed);
   const createDecision = useMutation(api.procurementPlanning.createDecision);
   const coverNeed = useMutation(api.procurementPlanning.coverNeed);
+  const linkToOrder = useMutation(api.procurementPlanning.linkToOrder);
+  const branches = useQuery(api.branches.listActive);
 
   const [dialog, setDialog] = useState<Dialog>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -30,6 +32,8 @@ export default function ProcurementPlanningPage() {
   const [decisionItemId, setDecisionItemId] = useState("");
   const [needItemId, setNeedItemId] = useState("");
   const [coverQty, setCoverQty] = useState(1);
+  const [branchId, setBranchId] = useState("");
+  const [orderLineId, setOrderLineId] = useState("");
   const [busy, setBusy] = useState(false);
 
   const close = () => {
@@ -39,6 +43,8 @@ export default function ProcurementPlanningPage() {
     setDecisionItemId("");
     setNeedItemId("");
     setCoverQty(1);
+    setBranchId("");
+    setOrderLineId("");
   };
 
   const save = async () => {
@@ -46,7 +52,7 @@ export default function ProcurementPlanningPage() {
     try {
       const items = lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity }));
       if (dialog === "need") {
-        await createNeed({ token, items });
+        await createNeed({ token, branchId: branchId as Id<"branches">, items });
         toast.success(t("Need recognised"));
       } else if (dialog === "decision") {
         await createDecision({ token, decisionType, items });
@@ -59,6 +65,14 @@ export default function ProcurementPlanningPage() {
           quantity: coverQty,
         });
         toast.success(t("Need linked to decision"));
+      } else if (dialog === "order") {
+        await linkToOrder({
+          token,
+          decisionItemId: decisionItemId as Id<"procurementDecisionItems">,
+          purchaseOrderItemId: orderLineId as Id<"purchaseOrderItems">,
+          quantity: coverQty,
+        });
+        toast.success(t("Decision linked to purchase order"));
       }
       close();
     } catch (e) {
@@ -69,7 +83,16 @@ export default function ProcurementPlanningPage() {
   };
 
   const allDecisionItems = (overview?.decisions ?? []).flatMap((d) =>
-    d.items.map((i) => ({ _id: i._id, label: `${i.label} — ${d.decisionType} (${i.quantityDecided})` }))
+    d.items.map((i) => ({
+      _id: i._id,
+      variantId: i.productVariantId,
+      label: `${i.label} — ${d.decisionType} (${i.quantityDecided})`,
+    }))
+  );
+  const chosenVariant = allDecisionItems.find((i) => i._id === decisionItemId)?.variantId;
+  const orderLines = useQuery(
+    api.procurementPlanning.openOrderLines,
+    dialog === "order" && chosenVariant ? { token, variantId: chosenVariant } : "skip"
   );
   const allNeedItems = (overview?.needs ?? []).flatMap((n) =>
     n.items.map((i) => ({ _id: i._id, label: `${i.label} (${i.quantityRecognized})` }))
@@ -77,10 +100,12 @@ export default function ProcurementPlanningPage() {
 
   const canSave =
     dialog === "need"
-      ? lines.length > 0
+      ? lines.length > 0 && !!branchId
       : dialog === "decision"
         ? lines.length > 0 && decisionType.trim().length > 0
-        : !!decisionItemId && !!needItemId && coverQty > 0;
+        : dialog === "order"
+          ? !!decisionItemId && !!orderLineId && coverQty > 0
+          : !!decisionItemId && !!needItemId && coverQty > 0;
 
   return (
     <PageLayout
@@ -91,6 +116,9 @@ export default function ProcurementPlanningPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => setDialog("cover")}>
             {t("Link need to decision")}
+          </Button>
+          <Button variant="secondary" onClick={() => setDialog("order")}>
+            {t("Link decision to purchase order")}
           </Button>
         </div>
         <div className="ml-auto" />
@@ -117,7 +145,10 @@ export default function ProcurementPlanningPage() {
                 <div className="divide-y divide-outline/30">
                   {overview.needs.map((n) => (
                     <div key={n._id} className="p-3 space-y-1">
-                      <p className="text-xs text-on-surface-variant">{formatDate(n.recognizedAt)}</p>
+                      <p className="text-xs text-on-surface-variant">
+                        {formatDate(n.recognizedAt)}
+                        {n.branchName ? ` · ${n.branchName}` : ""}
+                      </p>
                       {n.items.map((i) => (
                         <p key={i._id} className="text-sm">
                           {i.label} <span className="font-bold">×{i.quantityRecognized}</span>
@@ -144,11 +175,22 @@ export default function ProcurementPlanningPage() {
                         <span className="text-xs text-on-surface-variant">{formatDate(d.decidedAt)}</span>
                       </div>
                       {d.items.map((i) => (
-                        <div key={i._id} className="flex justify-between gap-2 text-sm">
-                          <span>{i.label}</span>
-                          <Badge tone={i.coverages > 0 ? "success" : "warning"}>
-                            {i.quantityDecided} · {i.coverages > 0 ? t("covers a need") : t("not linked")}
-                          </Badge>
+                        <div key={i._id} className="space-y-0.5">
+                          <div className="flex justify-between gap-2 text-sm">
+                            <span>{i.label}</span>
+                            <Badge tone={i.coverages > 0 ? "success" : "warning"}>
+                              {i.quantityDecided} · {i.coverages > 0 ? t("covers a need") : t("not linked")}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-on-surface-variant">
+                            {i.orders.length > 0
+                              ? t("Ordered {ordered} of {decided}: {orders}", {
+                                  ordered: i.quantityOrdered,
+                                  decided: i.quantityDecided ?? 0,
+                                  orders: i.orders.map((o) => `${o.orderCode} ×${o.quantity}`).join(", "),
+                                })
+                              : t("Not on a purchase order yet")}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -168,7 +210,9 @@ export default function ProcurementPlanningPage() {
             ? t("New need")
             : dialog === "decision"
               ? t("New decision")
-              : t("Link need to decision")
+              : dialog === "order"
+                ? t("Link decision to purchase order")
+                : t("Link need to decision")
         }
         size="lg"
         footer={
@@ -191,6 +235,59 @@ export default function ProcurementPlanningPage() {
                 placeholder={t("e.g. Buy from supplier, Transfer from another branch")}
               />
             </Field>
+          )}
+          {dialog === "need" && (
+            <Field label={t("Branch")} required>
+              <Select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                <option value="">{t("Choose")}</option>
+                {(branches ?? []).map((b) => (
+                  <option key={b._id} value={b._id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {dialog === "order" && (
+            <>
+              <Field label={t("Decision")} required>
+                <Select
+                  value={decisionItemId}
+                  onChange={(e) => {
+                    setDecisionItemId(e.target.value);
+                    setOrderLineId("");
+                  }}
+                >
+                  <option value="">{t("Choose")}</option>
+                  {allDecisionItems.map((i) => (
+                    <option key={i._id} value={i._id}>
+                      {i.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t("Purchase order line")} required>
+                <Select value={orderLineId} onChange={(e) => setOrderLineId(e.target.value)} disabled={!decisionItemId}>
+                  <option value="">{t("Choose")}</option>
+                  {(orderLines ?? []).map((l) => (
+                    <option key={l._id} value={l._id}>
+                      {l.orderCode} · {l.supplierName} · {t("ordered {count}", { count: l.quantityOrdered })}
+                      {l.quantityFromDecisions > 0
+                        ? " (" + t("{count} from decisions", { count: l.quantityFromDecisions }) + ")"
+                        : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {decisionItemId && orderLines?.length === 0 && (
+                <p className="text-xs text-on-surface-variant">
+                  {t("No open purchase order has a line for this product. Create the order first.")}
+                </p>
+              )}
+              <Field label={t("Quantity")} required>
+                <TextInput type="number" min={1} value={coverQty} onChange={(e) => setCoverQty(Number(e.target.value))} />
+              </Field>
+            </>
           )}
           {(dialog === "need" || dialog === "decision") && (
             <Field label={t("Products")} required>
