@@ -7,19 +7,39 @@ import { purchaseOrderMoney, purchaseOrderPaymentStatus } from "./supplierPaymen
 
 /**
  * The daily check that every stored copy still matches its single source:
- *  - STOCK:       variantStock.quantity  = the sum of its inventoryMovements
+ *  - STOCK:       variantStock.quantity  = the balance after its latest inventoryMovement
+ *                 (every movement is written with the stock it leaves, by mutateStock)
  *  - SALE_MONEY:  sales.paidAmount / balance = lib/saleMoney (payments, returns, total)
  *  - PO_RECEIVED: purchaseOrderItems.quantityReceived = the sum of its receipt lines
  *  - PO_PAYMENT:  purchaseOrders.paymentStatus = its supplier payments against its total
  * It walks each table a page at a time (one mutation per page, scheduled one after the
  * other) and records what does not match in `integrityIssues`. It never corrects anything:
  * a mismatch is a bug to look at, and the source stays the truth.
+ *
+ * One run at a time: a run is identified by its start time (counter "integrity:running");
+ * a page from any other run stops. A new run first clears the previous findings.
  */
 
-const PHASES = ["stock", "sales", "purchaseLines", "purchaseOrders"] as const;
+const PHASES = ["clear", "stock", "sales", "purchaseLines", "purchaseOrders"] as const;
 type Phase = (typeof PHASES)[number];
-const PAGE = 100;
+const PAGE = 50;
 const LAST_RUN_KEY = "integrity:lastRun";
+const RUNNING_KEY = "integrity:running";
+// A run not finished after this long is taken as dead and may be replaced.
+const STALE_RUN_MS = 2 * 60 * 60 * 1000;
+
+async function counter(ctx: MutationCtx, key: string) {
+  return await ctx.db
+    .query("counters")
+    .withIndex("by_key", (q) => q.eq("key", key))
+    .unique();
+}
+
+async function setCounter(ctx: MutationCtx, key: string, value: number) {
+  const row = await counter(ctx, key);
+  if (row) await ctx.db.patch(row._id, { value, updatedAt: Date.now() });
+  else await ctx.db.insert("counters", { key, value, updatedAt: Date.now() });
+}
 const EPSILON = 0.005;
 
 async function record(
@@ -43,30 +63,46 @@ async function record(
 export const start = internalMutation({
   args: {},
   handler: async (ctx) => {
-    // Keep only the latest run's findings.
-    for (const old of await ctx.db.query("integrityIssues").take(1000)) await ctx.db.delete(old._id);
-    await ctx.scheduler.runAfter(0, internal.integrity.checkPage, { phase: "stock", cursor: null });
+    const now = Date.now();
+    const running = (await counter(ctx, RUNNING_KEY))?.value ?? 0;
+    if (running && now - running < STALE_RUN_MS) return { started: false };
+    await setCounter(ctx, RUNNING_KEY, now);
+    await ctx.scheduler.runAfter(0, internal.integrity.checkPage, { runId: now, phase: "clear", cursor: null });
+    return { started: true };
   },
 });
 
 export const checkPage = internalMutation({
-  args: { phase: v.union(...PHASES.map((p) => v.literal(p))), cursor: v.union(v.string(), v.null()) },
+  args: {
+    runId: v.number(),
+    phase: v.union(...PHASES.map((p) => v.literal(p))),
+    cursor: v.union(v.string(), v.null()),
+  },
   handler: async (ctx, args) => {
+    // A page from a run that is no longer the current one stops here.
+    if ((await counter(ctx, RUNNING_KEY))?.value !== args.runId) return;
     const opts = { numItems: PAGE, cursor: args.cursor };
     let isDone: boolean;
-    let cursor: string;
+    let cursor: string | null;
 
-    if (args.phase === "stock") {
+    if (args.phase === "clear") {
+      // The previous run's findings, a batch at a time.
+      const old = await ctx.db.query("integrityIssues").take(500);
+      for (const row of old) await ctx.db.delete(row._id);
+      isDone = old.length < 500;
+      cursor = null;
+    } else if (args.phase === "stock") {
       const page = await ctx.db.query("variantStock").paginate(opts);
       for (const row of page.page) {
-        let fromLedger = 0;
-        for await (const m of ctx.db
+        // One read per row: the latest movement and the stock it left.
+        const last = await ctx.db
           .query("inventoryMovements")
           .withIndex("by_branch_and_variant", (q) =>
             q.eq("branchId", row.branchId).eq("productVariantId", row.productVariantId)
-          )) {
-          fromLedger += m.quantity;
-        }
+          )
+          .order("desc")
+          .first();
+        const fromLedger = last?.newBalance ?? 0;
         if (fromLedger !== row.quantity) {
           const variant = await ctx.db.get(row.productVariantId);
           await record(ctx, {
@@ -133,22 +169,17 @@ export const checkPage = internalMutation({
     }
 
     if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.integrity.checkPage, { phase: args.phase, cursor });
+      await ctx.scheduler.runAfter(0, internal.integrity.checkPage, { runId: args.runId, phase: args.phase, cursor });
       return;
     }
     const next = PHASES[PHASES.indexOf(args.phase as Phase) + 1];
     if (next) {
-      await ctx.scheduler.runAfter(0, internal.integrity.checkPage, { phase: next, cursor: null });
+      await ctx.scheduler.runAfter(0, internal.integrity.checkPage, { runId: args.runId, phase: next, cursor: null });
       return;
     }
-    // Finished: remember when.
-    const now = Date.now();
-    const row = await ctx.db
-      .query("counters")
-      .withIndex("by_key", (q) => q.eq("key", LAST_RUN_KEY))
-      .unique();
-    if (row) await ctx.db.patch(row._id, { value: now, updatedAt: now });
-    else await ctx.db.insert("counters", { key: LAST_RUN_KEY, value: now, updatedAt: now });
+    // Finished: remember when, and free the slot for the next run.
+    await setCounter(ctx, LAST_RUN_KEY, Date.now());
+    await setCounter(ctx, RUNNING_KEY, 0);
   },
 });
 

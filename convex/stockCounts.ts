@@ -70,10 +70,11 @@ export const start = mutation({
       startedByUsername: actor.username,
       startedAt: now,
     });
+    // The whole branch: a count that silently skipped variants would be wrong.
     const stock = await ctx.db
       .query("variantStock")
       .withIndex("by_branch", (q) => q.eq("branchId", args.branchId))
-      .take(10000);
+      .collect();
     for (const row of stock) {
       await ctx.db.insert("stockCountLines", {
         countId,

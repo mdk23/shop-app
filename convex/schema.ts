@@ -85,6 +85,9 @@ const salesMetricsFields = {
   sizes: v.record(v.string(), metricsAgg),
   colors: v.record(v.string(), metricsAgg),
   customers: v.record(v.string(), v.number()),
+  // What each named customer bought and kept (net of returns). Absent on rows written
+  // before it existed until metrics:rebuildSalesMetrics is run.
+  customerSpend: v.optional(v.record(v.string(), v.number())),
   hours: v.record(v.string(), v.object({ revenue: v.number(), sales: v.number() })),
   updatedAt: v.number(),
 };

@@ -263,6 +263,82 @@ describe("deliveries", () => {
   });
 });
 
+describe("review fixes", () => {
+  test("one sale line listed twice in a delivery is added up before the check", async () => {
+    const { t, token, order } = await seed();
+    const saleId = await t.mutation(api.customerOrders.collect, {
+      token,
+      orderId: await order(),
+      payments: [{ method: "CASH", amount: 500 }],
+      isDelivery: true,
+    });
+    const saleItemId = (await t.query(api.deliveries.forSale, { token, saleId }))!.lines[0].saleItemId;
+    await expect(
+      t.mutation(api.deliveries.create, {
+        token,
+        saleId,
+        recipientName: "Jane",
+        address: "x",
+        lines: [
+          { saleItemId, quantity: 2 },
+          { saleItemId, quantity: 2 },
+        ],
+      })
+    ).rejects.toThrow(/Only 2/);
+  });
+
+  test("the same product twice on a new order becomes one line, and changing it keeps the total right", async () => {
+    const { t, token, ids, get } = await seed();
+    const id = await t.mutation(api.customerOrders.create, {
+      token,
+      customerId: ids.janeId,
+      branchId: ids.branchId,
+      items: [
+        { productVariantId: ids.teeId, quantity: 2 },
+        { productVariantId: ids.teeId, quantity: 3 },
+      ],
+    });
+    let o = await get(id);
+    expect(o.items).toHaveLength(1);
+    expect(o.items[0].quantity).toBe(5);
+
+    // An order saved before lines were merged: two lines for one product.
+    await t.run(async (ctx) => {
+      const line = (await ctx.db.query("customerOrderItems").first())!;
+      await ctx.db.patch(line._id, { quantity: 2, lineTotal: 500 });
+      await ctx.db.insert("customerOrderItems", { ...line, _id: undefined, _creationTime: undefined, quantity: 3, lineTotal: 750 } as never);
+    });
+    await t.mutation(api.customerOrders.changeLines, {
+      token,
+      orderId: id,
+      reason: "One fewer",
+      items: [{ productVariantId: ids.teeId, quantity: 4 }],
+    });
+    o = await get(id);
+    expect(o.items).toHaveLength(1);
+    expect(o.items[0].quantity).toBe(4);
+    expect(o.totalAmount).toBe(1000);
+    expect(o.events.at(-1)!.lineChanges).toEqual([expect.objectContaining({ quantityBefore: 5, quantityAfter: 4 })]);
+  });
+
+  test("changing an order whose reservation already lapsed does not create holds that are born expired", async () => {
+    const { t, token, ids, order } = await seed();
+    const id = await order({ reserve: true });
+    await t.run(async (ctx) => {
+      for (const h of await ctx.db.query("stockHolds").collect()) await ctx.db.patch(h._id, { expiresAt: Date.now() - 1000 });
+    });
+    await t.mutation(api.customerOrders.changeLines, {
+      token,
+      orderId: id,
+      reason: "More",
+      items: [{ productVariantId: ids.teeId, quantity: 3 }],
+    });
+    const holds = await t.run((ctx) => ctx.db.query("stockHolds").collect());
+    expect(holds.every((h) => h.status !== "ACTIVE")).toBe(true);
+    expect(holds.some((h) => h.status === "EXPIRED")).toBe(true);
+  });
+});
+
 describe("walk-in sales", () => {
   test("a sale without a customer, or with the walk-in placeholder, stores no customer", async () => {
     const { t, token, ids } = await seed();

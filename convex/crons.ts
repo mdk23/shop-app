@@ -8,6 +8,6 @@ crons.interval("expire stock reservations", { hours: 1 }, internal.stockHolds.ex
 
 // Every night: check that stored copies (stock, sale money, received quantities) still
 // match their source. 01:00 UTC is 03:00 in Maputo.
-crons.daily("check stored copies", { hourUTC: 1, minuteUTC: 0 }, internal.integrity.start, {});
+crons.cron("check stored copies", "0 1 * * *", internal.integrity.start, {});
 
 export default crons;

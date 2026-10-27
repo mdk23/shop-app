@@ -194,7 +194,7 @@ export const listForPos = query({
     const products = await ctx.db
       .query("products")
       .withIndex("by_active", (q) => q.eq("active", true))
-      .take(2000);
+      .collect(); // Complete on purpose: the till sells from this list and must see every row.
 
     const categories = await ctx.db.query("categories").take(1000);
     const catName = new Map(categories.map((c) => [c._id, c.name]));

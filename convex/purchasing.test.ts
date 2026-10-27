@@ -196,6 +196,46 @@ describe("receipt discrepancies", () => {
   });
 });
 
+describe("review fixes", () => {
+  test("a shipment carrying two orders can be received for the second after the first", async () => {
+    const { t, token, ids, shipBoth } = await seed();
+    const shipmentId = await shipBoth();
+    await t.mutation(api.purchaseReceipts.create, {
+      token,
+      purchaseOrderId: ids.a.poId,
+      shipmentId,
+      lines: [{ productVariantId: ids.teeId, quantityReceived: 10 }],
+    });
+    // Arrived with the first order, but still open for the second.
+    let [row] = await t.query(api.shipments.list, { token });
+    expect(row.status).toBe("ARRIVED");
+    expect(row.orders.find((o) => o.orderCode === "PO-B")!.received).toBe(false);
+    await t.mutation(api.purchaseReceipts.create, {
+      token,
+      purchaseOrderId: ids.b.poId,
+      shipmentId,
+      lines: [{ productVariantId: ids.jacketId, quantityReceived: 5 }],
+    });
+    [row] = await t.query(api.shipments.list, { token });
+    expect(row.orders.every((o) => o.received)).toBe(true);
+    expect(row.receipts).toHaveLength(2);
+  });
+
+  test("closing short after a short shipment does not count the missing units twice", async () => {
+    const { t, token, ids, shipBoth } = await seed();
+    const shipmentId = await shipBoth();
+    await t.mutation(api.purchaseReceipts.create, {
+      token,
+      purchaseOrderId: ids.a.poId,
+      shipmentId,
+      lines: [{ productVariantId: ids.teeId, quantityReceived: 8 }],
+    });
+    await t.mutation(api.purchaseOrders.closeShort, { token, id: ids.a.poId, reason: "Lost in transit" });
+    const card = (await t.query(api.supplierEvaluations.scorecard, { token })).find((s) => s.supplierId === ids.a.supplierId)!;
+    expect(card.shortUnits).toBe(2);
+  });
+});
+
 describe("landed cost", () => {
   test("applying a shipment's landed cost spreads it by value and raises the average cost", async () => {
     const { t, token, ids, shipBoth, costOf } = await seed();

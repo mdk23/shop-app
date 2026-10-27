@@ -191,8 +191,8 @@ export const lowStockSummary = query({
         ? await ctx.db
             .query("stockTotals")
             .withIndex("by_branch", (q) => q.eq("branchId", args.branchId!))
-            .take(10000)
-        : await ctx.db.query("stockTotals").take(10000)
+            .collect()
+        : await ctx.db.query("stockTotals").collect()
     ).reduce((s, r) => ({ low: s.low + r.lowCount, out: s.out + r.outCount }), { low: 0, out: 0 });
 
     const items: {

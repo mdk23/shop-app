@@ -133,7 +133,7 @@ const menuGroups: MenuGroup[] = [
     emoji: "⚙️",
     items: [
       { name: "Reports", href: "/reports", icon: BarChart3, allowedRoles: MANAGER },
-      { name: "Insights", href: "/insights", icon: TrendingUp, allowedRoles: MANAGER },
+      { name: "Active knowledge", href: "/insights", icon: TrendingUp, allowedRoles: MANAGER },
       { name: "Commercial settings", href: "/settings/commercial", icon: Wallet, allowedRoles: MANAGER },
       { name: "Users", href: "/users", icon: Shield, allowedRoles: MANAGER },
       { name: "Settings", href: "/settings", icon: Settings, allowedRoles: MANAGER },

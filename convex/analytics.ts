@@ -11,9 +11,9 @@ import { dayRows, sumTotals, totalsByBranch, totalsOf } from "./lib/salesMetrics
 // Accept it in the validator and normalize it to `undefined`.
 // ─────────────────────────────────────────────
 
-const branchIdArg = v.optional(v.union(v.id("branches"), v.literal("all")));
+export const branchIdArg = v.optional(v.union(v.id("branches"), v.literal("all")));
 
-function normalizeBranchId(
+export function normalizeBranchId(
   branchId: Id<"branches"> | "all" | undefined
 ): Id<"branches"> | undefined {
   return !branchId || branchId === "all" ? undefined : branchId;
@@ -25,7 +25,7 @@ function normalizeBranchId(
 // themselves: a month is a handful of rows however busy the shop is.
 // ─────────────────────────────────────────────
 
-const localRange = (start: number, end: number) => ({
+export const localRange = (start: number, end: number) => ({
   from: getLocalDateString(start),
   to: getLocalDateString(end),
 });
@@ -215,14 +215,15 @@ export const customerDebt = query({
   handler: async (ctx, args) => {
     await authorize(ctx, args.token, "reports.view");
     const branchId = normalizeBranchId(args.branchId);
+    // Every unpaid sale: a debt total cut off at a limit would be silently wrong.
     const partlyPaid = await ctx.db
       .query("sales")
       .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "PARTIALLY_PAID"))
-      .take(2000);
+      .collect();
     const unpaid = await ctx.db
       .query("sales")
       .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "UNPAID"))
-      .take(2000);
+      .collect();
     const sales = [...partlyPaid, ...unpaid].filter(
       (s) =>
         s.status !== "CANCELLED" && (!branchId || s.branchId === branchId) && s.balance > 0
@@ -264,14 +265,17 @@ export const inventoryValuation = query({
   },
 });
 
-/** Stock totals for one branch, or summed over all of them (one row per branch). */
-async function stockTotalsFor(ctx: QueryCtx, branchId?: Id<"branches">) {
+/**
+ * Stock totals for one branch, or summed over all of them (one row per branch). Reads every
+ * row: a total must see them all.
+ */
+export async function stockTotalsFor(ctx: QueryCtx, branchId?: Id<"branches">) {
   const rows = branchId
     ? await ctx.db
         .query("stockTotals")
         .withIndex("by_branch", (q) => q.eq("branchId", branchId))
-        .take(10000)
-    : await ctx.db.query("stockTotals").take(10000);
+        .collect()
+    : await ctx.db.query("stockTotals").collect();
   return rows.reduce(
     (s, r) => ({
       units: s.units + r.units,

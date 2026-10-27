@@ -35,6 +35,7 @@ import type * as fiscalIdentities from "../fiscalIdentities.js";
 import type * as followUps from "../followUps.js";
 import type * as integrity from "../integrity.js";
 import type * as inventory from "../inventory.js";
+import type * as knowledge from "../knowledge.js";
 import type * as landedCosts from "../landedCosts.js";
 import type * as lib_catalog from "../lib/catalog.js";
 import type * as lib_customers_derive from "../lib/customers/derive.js";
@@ -127,6 +128,7 @@ declare const fullApi: ApiFromModules<{
   followUps: typeof followUps;
   integrity: typeof integrity;
   inventory: typeof inventory;
+  knowledge: typeof knowledge;
   landedCosts: typeof landedCosts;
   "lib/catalog": typeof lib_catalog;
   "lib/customers/derive": typeof lib_customers_derive;

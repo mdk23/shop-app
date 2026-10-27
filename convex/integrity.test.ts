@@ -82,4 +82,19 @@ describe("data checks", () => {
     // The check only reports.
     expect((await t.run((ctx) => ctx.db.query("variantStock").first()))!.quantity).toBe(99);
   });
+
+  test("only one run at a time, and a new run clears every old finding", async () => {
+    const { t, check } = await seed();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 700; i++) {
+        await ctx.db.insert("integrityIssues", { kind: "STOCK", entityId: String(i), label: "old", stored: "1", expected: "0", foundAt: 1 });
+      }
+    });
+    expect(await t.mutation(internal.integrity.start, {})).toEqual({ started: true });
+    // A second start while the first is running does nothing.
+    expect(await t.mutation(internal.integrity.start, {})).toEqual({ started: false });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const result = await check();
+    expect(result.issues).toEqual([]);
+  });
 });

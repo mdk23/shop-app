@@ -319,9 +319,18 @@ export const closeShort = mutation({
       .take(500);
     const now = Date.now();
     let short = 0;
+    const recorded = await ctx.db
+      .query("receiptDiscrepancies")
+      .withIndex("by_purchase_order", (q) => q.eq("purchaseOrderId", po._id))
+      .take(1000);
     for (const line of lines) {
       if (!line.productVariantId || line.quantityReceived >= line.quantityOrdered) continue;
-      short += line.quantityOrdered - line.quantityReceived;
+      const alreadyShort = recorded
+        .filter((d) => d.kind === "SHORT" && d.purchaseOrderItemId === line._id)
+        .reduce((s, d) => s + Math.max(0, d.expectedQuantity - d.receivedQuantity), 0);
+      const missing = line.quantityOrdered - line.quantityReceived - alreadyShort;
+      if (missing <= 0) continue;
+      short += missing;
       await ctx.db.insert("receiptDiscrepancies", {
         supplierId: po.supplierId,
         purchaseOrderId: po._id,
@@ -329,7 +338,8 @@ export const closeShort = mutation({
         productVariantId: line.productVariantId,
         kind: "SHORT",
         expectedFrom: "ORDER",
-        expectedQuantity: line.quantityOrdered,
+        // Only what no earlier record already counts: expected − received = missing.
+        expectedQuantity: line.quantityReceived + missing,
         receivedQuantity: line.quantityReceived,
         reason,
         recordedBy: actor._id,

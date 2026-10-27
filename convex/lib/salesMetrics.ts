@@ -40,6 +40,7 @@ export type Totals = {
   sizes: Record<string, Agg>;
   colors: Record<string, Agg>;
   customers: Record<string, number>;
+  customerSpend?: Record<string, number>;
   hours: Record<string, HourAgg>;
 };
 
@@ -83,6 +84,7 @@ export function emptyTotals(): Totals {
     sizes: {},
     colors: {},
     customers: {},
+    customerSpend: {},
     hours: {},
   };
 }
@@ -113,6 +115,12 @@ export function addTotals(into: Totals, add: Totals, sign: 1 | -1 = 1): Totals {
     const cur = (into.customers[k] ?? 0) + sign * n;
     if (cur === 0) delete into.customers[k];
     else into.customers[k] = cur;
+  }
+  for (const [k, n] of Object.entries(add.customerSpend ?? {})) {
+    into.customerSpend ??= {};
+    const cur = round2((into.customerSpend[k] ?? 0) + sign * n);
+    if (isZero(cur)) delete into.customerSpend[k];
+    else into.customerSpend[k] = cur;
   }
   for (const [k, h] of Object.entries(add.hours)) {
     const cur = into.hours[k] ?? { revenue: 0, sales: 0 };
@@ -185,7 +193,11 @@ async function saleShare(ctx: QueryCtx, sale: Doc<"sales">): Promise<Totals> {
   t.collected = Math.max(0, sale.paidAmount - Math.max(0, creditKept));
 
   const customer = await namedCustomer(ctx, sale.customerId);
-  if (customer) t.customers[customer._id] = 1;
+  if (customer) {
+    t.customers[customer._id] = 1;
+    // Bought and kept: the same figure as the customer page's total purchases.
+    t.customerSpend = { [customer._id]: sale.paidAmount + sale.balance };
+  }
   const hour = new Date(sale.createdAt + 2 * 60 * 60 * 1000).getUTCHours();
   t.hours[String(hour).padStart(2, "0")] = { revenue: sale.total, sales: 1 };
   return addTotals(emptyTotals(), t); // rounds
@@ -296,6 +308,7 @@ function totalsOf(row: MetricsRow): Totals {
   t.paymentMethods = row.paymentMethods;
   for (const m of AGG_MAPS) t[m] = row[m];
   t.customers = row.customers;
+  t.customerSpend = row.customerSpend ?? {};
   t.hours = row.hours;
   return t;
 }
@@ -323,11 +336,11 @@ export async function dayRows(
         .withIndex("by_branch_and_date", (q) =>
           q.eq("branchId", branchId).gte("dateString", from).lte("dateString", to)
         )
-        .take(2000)
+        .collect()
     : await ctx.db
         .query("dailyMetrics")
         .withIndex("by_date", (q) => q.gte("dateString", from).lte("dateString", to))
-        .take(2000);
+        .collect();
 }
 
 /**
@@ -351,11 +364,11 @@ export async function totalsByBranch(
           ? await ctx.db
               .query("monthlyMetrics")
               .withIndex("by_branch_and_month", (q) => q.eq("branchId", branchId).eq("month", month))
-              .take(2000)
+              .collect()
           : await ctx.db
               .query("monthlyMetrics")
               .withIndex("by_month", (q) => q.eq("month", month))
-              .take(2000))
+              .collect())
       );
     } else {
       rows.push(...(await dayRows(ctx, from > first ? from : first, to < last ? to : last, branchId)));

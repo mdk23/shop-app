@@ -43,7 +43,7 @@ export default function NewReceiptPage() {
   const branch = useResolvedBranch();
   const openOrders = useQuery(api.purchaseReceipts.openOrders, { token });
   const suppliers = useQuery(api.suppliers.list, { token });
-  const inTransit = useQuery(api.shipments.list, { token, status: "IN_TRANSIT" });
+  const shipments = useQuery(api.shipments.list, { token });
   const create = useMutation(api.purchaseReceipts.create);
   const inspect = useMutation(api.receiptInspections.create);
 
@@ -57,14 +57,15 @@ export default function NewReceiptPage() {
   const [inspectionNotes, setInspectionNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Shipments still on the way that carry the chosen order.
-  const shipmentsForOrder = (inTransit ?? []).filter((sh) =>
+  // Shipments carrying the chosen order whose goods for it are not received yet. A
+  // shipment with several orders is already ARRIVED once the first one is received.
+  const shipmentsForOrder = (shipments ?? []).filter((sh) =>
     sh.orders.some((o) => o._id === source && !o.received)
   );
 
   const pickShipment = (value: string) => {
     setShipmentId(value);
-    const sh = inTransit?.find((x) => x._id === value);
+    const sh = shipments?.find((x) => x._id === value);
     // Expect what the shipment carries for this order; without one, what the order still has outstanding.
     setLines((prev) =>
       prev.map((l) => {

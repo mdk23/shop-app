@@ -20,7 +20,7 @@ async function cascadeDeactivateProducts(
   const products = await ctx.db
     .query("products")
     .withIndex("by_category", (q) => q.eq("categoryId", categoryId))
-    .take(2000);
+    .collect();
   const now = Date.now();
   let affected = 0;
   for (const p of products) {
@@ -58,7 +58,7 @@ export const list = query({
         const products = await ctx.db
           .query("products")
           .withIndex("by_category", (q) => q.eq("categoryId", c._id))
-          .take(2000);
+          .collect();
         return { ...c, productCount: products.length };
       })
     );

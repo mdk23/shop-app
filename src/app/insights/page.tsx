@@ -7,6 +7,7 @@ import { Card, Spinner, Table, Th, Td, EmptyState } from "@/components/ui";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 import { useTranslation } from "@/contexts/LanguageContext";
 import { useToken } from "@/lib/useShop";
+import { KnowledgeActive } from "@/components/KnowledgeActive";
 import { DEMAND_REASON_LABEL, DEMAND_STAGE_LABEL, type DemandReason, type DemandStage } from "@/lib/demands";
 
 const PALETTE = ["#8b2d3a", "#c9a227", "#2f6f4e", "#3b6ea5", "#7a5c99"];
@@ -24,7 +25,7 @@ export default function InsightsPage() {
 
   if (reasons === undefined || opportunities === undefined || scorecard === undefined || quality === undefined) {
     return (
-      <PageLayout title={t("Business insights")} subtitle="">
+      <PageLayout title={t("Active knowledge")} subtitle="">
         <Spinner />
       </PageLayout>
     );
@@ -50,7 +51,10 @@ export default function InsightsPage() {
   const open = quality.length - treated;
 
   return (
-    <PageLayout title={t("Business insights")} subtitle={t("What customers, suppliers and stock are telling us")}>
+    <PageLayout title={t("Active knowledge")} subtitle={t("Analysis, learning and decision support")}>
+      <KnowledgeActive />
+
+      <h2 className="mt-8 mb-3 text-sm font-black uppercase tracking-widest">{t("What customers and suppliers are telling us")}</h2>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card className="p-4">
           <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">

@@ -625,7 +625,6 @@ export const update = mutation({
   },
 });
 
-/** Refuses a sale or order for a customer who is disabled or archived. */
 /**
  * The named customer behind a sale or return, or null for a walk-in: no customer, or
  * the old walk-in placeholder (isGeneric) that sales pointed at before customerId was optional.
@@ -639,6 +638,7 @@ export async function namedCustomer(
   return customer && !customer.isGeneric ? customer : null;
 }
 
+/** Refuses a sale or order for a customer who is disabled or archived. */
 export function assertCustomerCanBuy(customer: Doc<"customers">) {
   if (customer.status === "DISABLED") {
     throw new Error(`${customer.name} is disabled and cannot be used for new sales or orders.`);

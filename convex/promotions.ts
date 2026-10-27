@@ -46,7 +46,7 @@ export const list = query({
         targets: await ctx.db
           .query("promotionTargets")
           .withIndex("by_promotion", (q) => q.eq("promotionId", p._id))
-          .take(2000),
+          .collect(),
       }))
     );
   },

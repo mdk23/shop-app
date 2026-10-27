@@ -266,9 +266,23 @@ export const create = mutation({
     const depositPercent = args.depositPercent ?? paymentTerm?.depositPercent ?? 0;
     if (depositPercent < 0 || depositPercent > 100) throw new Error("The deposit must be from 0 to 100%.");
 
+    // One line per product: the same product twice is added up into one line.
+    const items: typeof args.items = [];
+    for (const i of args.items) {
+      const same = items.find((x) => x.productVariantId === i.productVariantId);
+      if (!same) {
+        items.push({ ...i });
+        continue;
+      }
+      if (same.unitPrice !== i.unitPrice) throw new Error("A product appears twice at different prices. Use one line.");
+      same.quantity += i.quantity;
+      same.demandId ??= i.demandId;
+      same.demandResponseItemId ??= i.demandResponseItemId;
+    }
+
     const quote = await priceSale(ctx, {
       customerId: args.customerId,
-      items: args.items.map((i) => ({ productVariantId: i.productVariantId, quantity: i.quantity, unitPrice: i.unitPrice })),
+      items: items.map((i) => ({ productVariantId: i.productVariantId, quantity: i.quantity, unitPrice: i.unitPrice })),
     });
     if (quote.overriddenLines > 0) {
       const maxWithoutApproval = await numberSetting(ctx, "discountMaxPercentWithoutApproval");
@@ -319,7 +333,7 @@ export const create = mutation({
     for (const [index, line] of priced.entries()) {
       const itemId = await ctx.db.insert("customerOrderItems", { orderId, ...line });
       // priceSale keeps the input order, so the line and its input share an index.
-      const input = args.items[index];
+      const input = items[index];
       if (input?.demandId || input?.demandResponseItemId) {
         await recordOrigin(ctx, order, (await ctx.db.get(itemId))!, input);
       }
@@ -571,7 +585,15 @@ export const changeLines = mutation({
       .query("customerOrderItems")
       .withIndex("by_order", (q) => q.eq("orderId", order._id))
       .take(500);
-    const currentBy = new Map(current.map((l) => [l.productVariantId, l]));
+    const currentBy = new Map<Id<"productVariants">, Doc<"customerOrderItems">>();
+    const extraLines: Doc<"customerOrderItems">[] = [];
+    for (const l of current) {
+      const first = currentBy.get(l.productVariantId);
+      if (first) extraLines.push(l);
+      else currentBy.set(l.productVariantId, l);
+    }
+    const quantityBefore = (variantId: Id<"productVariants">) =>
+      current.filter((l) => l.productVariantId === variantId).reduce((n, l) => n + l.quantity, 0);
 
     // Kept lines at their agreed price, new ones at the till price; IVA and tier as today.
     const quote = await priceSale(ctx, {
@@ -594,9 +616,17 @@ export const changeLines = mutation({
       .take(500);
     const active = holds.filter((h) => h.status === "ACTIVE");
     const now = Date.now();
-    for (const h of active) await ctx.db.patch(h._id, { status: "RELEASED", releasedAt: now });
-    if (active.length > 0) {
-      const expiresAt = Math.min(...active.map((h) => h.expiresAt));
+    // Holds already past their expiry no longer hold anything (the cron just has not marked
+    // them yet): they are closed as EXPIRED and do not carry the reservation forward.
+    const live = active.filter((h) => h.expiresAt > now);
+    for (const h of active) {
+      await ctx.db.patch(
+        h._id,
+        h.expiresAt > now ? { status: "RELEASED", releasedAt: now } : { status: "EXPIRED", releasedAt: now }
+      );
+    }
+    if (live.length > 0) {
+      const expiresAt = Math.min(...live.map((h) => h.expiresAt));
       for (const line of quote.lines) {
         const { available } = await availableToSell(ctx, order.branchId, line.productVariantId);
         if (line.quantity > available) {
@@ -621,12 +651,13 @@ export const changeLines = mutation({
       const existing = currentBy.get(line.productVariantId);
       const lineTotal = round2(line.unitPrice * line.quantity);
       if (existing) {
-        if (existing.quantity !== line.quantity) {
-          await ctx.db.patch(existing._id, { quantity: line.quantity, lineTotal });
+        const before = quantityBefore(line.productVariantId);
+        if (existing.quantity !== line.quantity) await ctx.db.patch(existing._id, { quantity: line.quantity, lineTotal });
+        if (before !== line.quantity) {
           lineChanges.push({
             productVariantId: line.productVariantId,
             label: `${existing.productName} ${existing.variantLabel}`,
-            quantityBefore: existing.quantity,
+            quantityBefore: before,
             quantityAfter: line.quantity,
             unitPrice: existing.unitPrice,
           });
@@ -650,6 +681,17 @@ export const changeLines = mutation({
         });
       }
     }
+    // Second lines for a product that is kept: folded into its first line.
+    for (const extra of extraLines) {
+      if (!wanted.has(extra.productVariantId)) continue;
+      const keep = currentBy.get(extra.productVariantId)!;
+      const origins = await ctx.db
+        .query("orderItemOrigins")
+        .withIndex("by_order_item", (q) => q.eq("orderItemId", extra._id))
+        .take(50);
+      for (const o of origins) await ctx.db.patch(o._id, { orderItemId: keep._id });
+      await ctx.db.delete(extra._id);
+    }
     for (const existing of current) {
       if (wanted.has(existing.productVariantId)) continue;
       const origins = await ctx.db
@@ -658,10 +700,11 @@ export const changeLines = mutation({
         .take(50);
       for (const o of origins) await ctx.db.delete(o._id);
       await ctx.db.delete(existing._id);
+      if (lineChanges.some((c) => c.productVariantId === existing.productVariantId)) continue;
       lineChanges.push({
         productVariantId: existing.productVariantId,
         label: `${existing.productName} ${existing.variantLabel}`,
-        quantityBefore: existing.quantity,
+        quantityBefore: quantityBefore(existing.productVariantId),
         quantityAfter: 0,
         unitPrice: existing.unitPrice,
       });

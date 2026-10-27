@@ -152,9 +152,18 @@ export const create = mutation({
 
     const lines = await deliverableLines(ctx, sale);
     const byItem = new Map(lines.map((l) => [l.saleItem._id, l]));
-    const wanted = args.lines
-      ? args.lines.filter((l) => l.quantity > 0)
-      : lines.filter((l) => l.toDeliver > 0).map((l) => ({ saleItemId: l.saleItem._id, quantity: l.toDeliver }));
+    let wanted: { saleItemId: Id<"saleItems">; quantity: number }[];
+    if (args.lines) {
+      // The same line listed twice counts once, with its quantities added up.
+      const merged = new Map<Id<"saleItems">, number>();
+      for (const l of args.lines) {
+        if (l.quantity <= 0) continue;
+        merged.set(l.saleItemId, (merged.get(l.saleItemId) ?? 0) + l.quantity);
+      }
+      wanted = [...merged].map(([saleItemId, quantity]) => ({ saleItemId, quantity }));
+    } else {
+      wanted = lines.filter((l) => l.toDeliver > 0).map((l) => ({ saleItemId: l.saleItem._id, quantity: l.toDeliver }));
+    }
     if (wanted.length === 0) throw new Error("Nothing on this sale is left to deliver.");
     for (const w of wanted) {
       assertWholeQuantity(w.quantity, "Delivered quantities");
