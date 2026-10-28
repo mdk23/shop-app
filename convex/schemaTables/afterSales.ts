@@ -31,7 +31,8 @@ export const afterSalesTables = {
   })
     .index("by_supplier", ["supplierId"])
     .index("by_supplier_and_treatment", ["supplierId", "treatment"])
-    .index("by_source", ["source"]),
+    .index("by_source", ["source"])
+    .index("by_treatment", ["treatment"]),
 
   qualityIssueItems: defineTable({
     issueId: v.id("qualityIssues"),

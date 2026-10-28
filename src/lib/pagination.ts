@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import type { FunctionReference, FunctionReturnType } from "convex/server";
+import { useToken } from "./useShop";
 
 export const PAGE_SIZE = 15;
 
@@ -29,6 +30,7 @@ type RowOf<Query extends PagedFunction> = FunctionReturnType<Query>["page"][numb
  * too, by remembering the cursor that led to each page index.
  *
  * Pass `"skip"` for `args` to skip the query entirely (mirrors `useQuery`).
+ * The session token is added to `args` here, so pages pass only their filters.
  * Any change to `args` (compared by JSON value) resets back to page 0.
  */
 export function usePagedQuery<Query extends PagedFunction>(
@@ -36,6 +38,7 @@ export function usePagedQuery<Query extends PagedFunction>(
   args: Record<string, unknown> | "skip",
   pageSize: number = PAGE_SIZE
 ) {
+  const token = useToken();
   const filterKey = args === "skip" ? "skip" : JSON.stringify(args);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -53,7 +56,7 @@ export function usePagedQuery<Query extends PagedFunction>(
   const queryArgs =
     args === "skip"
       ? ("skip" as const)
-      : { ...args, paginationOpts: { numItems: pageSize, cursor } };
+      : { ...args, token, paginationOpts: { numItems: pageSize, cursor } };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = useQuery(query, queryArgs as any) as
     | FunctionReturnType<Query>

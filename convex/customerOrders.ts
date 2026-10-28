@@ -22,7 +22,7 @@ function sumDeposits(deposits: Doc<"payments">[]): number {
   return round2(deposits.reduce((s, d) => s + d.amount, 0));
 }
 
-async function orderPaid(ctx: QueryCtx, orderId: Id<"customerOrders">): Promise<number> {
+export async function orderPaid(ctx: QueryCtx, orderId: Id<"customerOrders">): Promise<number> {
   return sumDeposits(await orderDeposits(ctx, orderId));
 }
 

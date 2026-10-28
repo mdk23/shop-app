@@ -27,7 +27,7 @@ export default function SeedPage() {
     try {
       const msg = await seed({ token, wipe });
       setStatus("Success! " + (typeof msg === "string" ? msg : ""));
-      setTimeout(() => router.push("/dashboard"), 1800);
+      setTimeout(() => router.push("/my-day"), 1800);
     } catch (e) {
       setStatus("Error: " + (e instanceof Error ? e.message : String(e)));
     } finally {

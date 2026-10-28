@@ -52,7 +52,7 @@ import type * as lib_shipping from "../lib/shipping.js";
 import type * as lib_stockTotals from "../lib/stockTotals.js";
 import type * as lib_variantNames from "../lib/variantNames.js";
 import type * as metrics from "../metrics.js";
-import type * as offers from "../offers.js";
+import type * as myDay from "../myDay.js";
 import type * as payments from "../payments.js";
 import type * as permissions from "../permissions.js";
 import type * as phase1Backfill from "../phase1Backfill.js";
@@ -145,7 +145,7 @@ declare const fullApi: ApiFromModules<{
   "lib/stockTotals": typeof lib_stockTotals;
   "lib/variantNames": typeof lib_variantNames;
   metrics: typeof metrics;
-  offers: typeof offers;
+  myDay: typeof myDay;
   payments: typeof payments;
   permissions: typeof permissions;
   phase1Backfill: typeof phase1Backfill;

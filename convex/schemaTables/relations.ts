@@ -1,8 +1,7 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// Customer relations and demand responses (SQL module M01), plus offers and
-// assortments (M02). Demand is `demands`; supplier identity is suppliers.
+// Customer relations and demand responses (SQL module M01). Demand is `demands`; supplier identity is suppliers.
 export const relationTables = {
   businessRelations: defineTable({
     startedAt: v.number(),
@@ -54,34 +53,4 @@ export const relationTables = {
   })
     .index("by_response", ["responseId"])
     .index("by_variant", ["productVariantId"]),
-
-  offers: defineTable({
-    description: v.string(),
-    constitutedAt: v.number(),
-  }),
-
-  assortments: defineTable({
-    name: v.string(),
-    constitutedAt: v.number(),
-  }),
-
-  offerAssortments: defineTable({
-    offerId: v.id("offers"),
-    assortmentId: v.id("assortments"),
-    validFrom: v.number(),
-    validTo: v.optional(v.number()),
-  })
-    .index("by_offer", ["offerId"])
-    .index("by_assortment", ["assortmentId"]),
-
-  assortmentItems: defineTable({
-    assortmentId: v.id("assortments"),
-    // With a variant, the product is the variant's (checked on write); kept for by_product.
-    productId: v.id("products"),
-    productVariantId: v.optional(v.id("productVariants")),
-    validFrom: v.number(),
-    validTo: v.optional(v.number()),
-  })
-    .index("by_assortment", ["assortmentId"])
-    .index("by_product", ["productId"]),
 };

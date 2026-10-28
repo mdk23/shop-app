@@ -38,9 +38,9 @@ import {
   Percent,
   TrendingUp,
   Wallet,
-  Layers,
   Calculator,
   Coins,
+  Sun,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
@@ -59,7 +59,7 @@ type MenuGroup = { id: string; name: string; emoji: string; items: MenuItem[] };
 const MANAGER: UserRole[] = ["admin", "manager"];
 
 const topMenuItems: MenuItem[] = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, allowedRoles: MANAGER },
+  { name: "My day", href: "/my-day", icon: Sun },
   { name: "POS", href: "/pos", icon: ShoppingCart },
   { name: "Cash Register", href: "/cash-register", icon: Landmark },
 ];
@@ -96,7 +96,6 @@ const menuGroups: MenuGroup[] = [
       { name: "Products", href: "/products", icon: Shirt, allowedRoles: MANAGER },
       { name: "Categories", href: "/products/categories", icon: Tags, allowedRoles: MANAGER },
       { name: "Promotions", href: "/promotions", icon: Percent, allowedRoles: MANAGER },
-      { name: "Offers", href: "/offers", icon: Layers, allowedRoles: MANAGER },
       { name: "Sizes", href: "/settings/sizes", icon: Ruler, allowedRoles: MANAGER },
       { name: "Colors", href: "/settings/colors", icon: Palette, allowedRoles: MANAGER },
     ],
@@ -132,6 +131,7 @@ const menuGroups: MenuGroup[] = [
     name: "Administration",
     emoji: "⚙️",
     items: [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, allowedRoles: MANAGER },
       { name: "Reports", href: "/reports", icon: BarChart3, allowedRoles: MANAGER },
       { name: "Active knowledge", href: "/insights", icon: TrendingUp, allowedRoles: MANAGER },
       { name: "Commercial settings", href: "/settings/commercial", icon: Wallet, allowedRoles: MANAGER },

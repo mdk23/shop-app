@@ -25,7 +25,7 @@ function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  const redirectTo = searchParams.get("redirect") || "/pos";
+  const redirectTo = searchParams.get("redirect") || "/my-day";
 
   // If already logged in, redirect immediately
   useEffect(() => {
